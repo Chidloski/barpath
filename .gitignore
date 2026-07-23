@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.DS_Store
+.ipynb_checkpoints/
+
+# Raw captures are immutable inputs, not source. Back these up separately.
+data/raw/*
+!data/raw/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+
+# Xcode
+watch/**/xcuserdata/
+watch/**/*.xcworkspace/xcuserdata/
+build/
