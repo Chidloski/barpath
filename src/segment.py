@@ -75,41 +75,76 @@ def runs(mask: np.ndarray) -> list[tuple[int, int]]:
 
 def rep_bounds(log: dict, vertical: np.ndarray,
                lift: str = "deadlift",
-               rest_tolerance: float = 0.10) -> list[tuple[int, int]]:
-    """Classify stationary windows into rep boundaries.
+               grind_band: float = 0.15,
+               min_excursion: float = 0.12) -> list[tuple[int, int]]:
+    """Rep boundaries from the stationary windows and a rough, drifting vertical.
 
-    `vertical` is rough vertical position from the first integration pass.
+    A rep is a departure from the rest position and a return to it. The rest
+    position is fixed in the room — the bar racks, locks out, or sits on the
+    floor at the same height every rep — but the rough vertical from a single
+    integration drifts by metres across a set (uncorrected accelerometer bias;
+    the leak from gyro bias is already gone by this stage). So ABSOLUTE height
+    is useless. What survives is the shape relative to a locally-fitted rest
+    line, and that is what this works on.
 
-    A boundary sits near the lift's rest position; a mid-rep pause (a grind,
-    a paused bench, a held lockout) sits near full range of motion. Those are
-    tens of centimetres apart, so a few centimetres of drift cannot confuse
-    them.
+    Method:
+      1. Stationary windows — drift-immune, from accel/gyro variance.
+      2. Fit the drift through the REST windows only. Every rest sits at the
+         same true height, so a low-order fit through them recovers the drift.
+         A window sitting more than `grind_band` on the range-of-motion side of
+         that line is a hold at mid-ROM — a sticking point, a paused rep — and
+         is dropped from the fit, robustly, by refitting until the rest set
+         stops changing. Subtracting the fit flattens the rest line to ~0.
+      3. Anchors are the rest windows. Between each consecutive pair, a rep is
+         present iff the bar deviates from the rest line by more than
+         `min_excursion` in the lift's ROM direction. That single test rejects
+         gaps with no real movement AND lets a rep span a mid-rep hold: the
+         hold is not a rest window, so the rep simply runs from the rest before
+         it to the rest after — a grind cannot split or hide a rep, and it is
+         never itself mistaken for a boundary.
 
-    Where the rest position is depends on the lift:
-        deadlift  — bar on the floor, so rest is the MINIMUM of vertical
-        squat     — standing, so rest is the MAXIMUM
-        bench     — locked out, so rest is the MAXIMUM
+    Where "rest" sits depends on the lift:
+        deadlift     — bar on the floor, so rest is the MINIMUM of vertical
+        squat, bench — standing / locked out, so rest is the MAXIMUM
 
-    Returns [start, end) index pairs, one per rep.
+    Returns [start, end) index pairs, one per rep: from the last still sample
+    before the rep to the first still sample after it.
     """
-    mask = stationary_mask(log)
-    windows = runs(mask)
+    windows = runs(stationary_mask(log))
     if len(windows) < 2:
         return []
 
+    idx = np.arange(len(vertical))
     heights = np.array([vertical[a:b].mean() for a, b in windows])
-    rest = heights.min() if lift == "deadlift" else heights.max()
-    at_rest = np.abs(heights - rest) < rest_tolerance
+    centers = np.array([(a + b) / 2 for a, b in windows])
+    top_is_max = lift != "deadlift"
 
-    anchors = [w for w, keep in zip(windows, at_rest) if keep]
+    # Robust drift fit: drop windows on the ROM side of the rest line (grinds /
+    # held reps), refit, until the set of rest windows is stable.
+    keep = np.ones(len(windows), dtype=bool)
+    for _ in range(len(windows)):
+        resid = heights - np.polyval(np.polyfit(centers[keep], heights[keep], 2), centers)
+        ref = np.median(resid[keep])
+        new_keep = (resid > ref - grind_band) if top_is_max else (resid < ref + grind_band)
+        if np.array_equal(new_keep, keep) or new_keep.sum() < 3:
+            break
+        keep = new_keep
+
+    flat = vertical - np.polyval(np.polyfit(centers[keep], heights[keep], 2), idx)
+    win_flat = np.array([flat[a:b].mean() for a, b in windows])
+    top = np.median(win_flat[keep])
 
     # A rep runs from the LAST still sample before motion to the FIRST still
-    # sample after it. Not the window centres: the pause between reps can be
-    # a second long, and taking its midpoint would put the boundary half a
-    # second inside the rest period, which is exactly the sort of small
-    # systematic offset that survives every later correction.
-    return [(anchors[i][1] - 1, anchors[i + 1][0])
-            for i in range(len(anchors) - 1)]
+    # sample after it — not the window centres, which would place the boundary
+    # a systematic half-second inside the rest.
+    anchors = [w for w, k in zip(windows, keep) if k]
+    bounds = []
+    for (_, b0), (a1, _) in zip(anchors, anchors[1:]):
+        gap = flat[b0 - 1:a1]
+        excursion = (top - gap.min()) if top_is_max else (gap.max() - top)
+        if excursion > min_excursion:
+            bounds.append((b0 - 1, a1))
+    return bounds
 
 
 def quality_flags(log: dict, bounds: list[tuple[int, int]]) -> list[dict]:

@@ -43,13 +43,10 @@ correct_attitude(log, bias) -> (N, 4) quaternions, w x y z
     way that only shows up on long sets — check it against synth.quat_true,
     which is exactly what that field is for.
 
-to_world(accel_body, quat) -> (N, 3) world-frame acceleration, m/s^2
-    Rotate each sample. io.load_log has already converted from Core Motion's
-    units of g to m/s^2; do not convert again.
-
-    The resulting frame has z vertical and x, y horizontal but rotated by an
-    unknown angle — the watch has no idea which way the lifter is facing.
-    project.py resolves that later.
+to_world(accel_body, reported_quat, corrected_quat) -> (N, 3) world-frame acceleration, m/s^2
+    Add gravity back in to userAccel to prevent a gravity leak, via the
+    use of the reported attitude. Then rotate this by the corrected attitude
+    and then remove gravity.
 
 
 Suggested check

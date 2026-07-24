@@ -146,6 +146,7 @@ def test_to_world_removes_gravity_leak():
     b, _ = calibrate.gyro_bias(log)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
+    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
     _, p = integrate.integrate(a, log["dt"])
 
     def linear_detrend(seg):
@@ -163,6 +164,40 @@ def test_to_world_removes_gravity_leak():
     assert worst < 0.01, f"horizontal path off by {worst * 100:.1f} cm — gravity leak not removed"
 
 
+# ------------------------------------------- gate 4c: accel-bias removal --
+def test_accel_bias_removal_meets_horizontal_spec():
+    """Realistic bias, pipeline through integration WITH coarse accel-bias
+    removal: the endpoint-CHORD detrend (what correct.detrend_rep will do) must
+    recover each rep's horizontal path to under 1 cm — compared against zeroed
+    truth, exactly as the full-pipeline gate does.
+
+    Isolates the accel-bias step from segmentation (true bounds) and from the
+    reserved detrend (chord subtracted inline). Without calibrate.accel_bias the
+    residual is ~1.3 cm: the body-fixed accel bias rotates with the forearm, so
+    it is not the removable ramp a linear detrend assumes. Removing it in the
+    world frame from the pause drops the residual well under spec.
+    """
+    s = synth.generate()
+    log = as_log(s)
+    b, _ = calibrate.gyro_bias(log)
+    q = orient.correct_attitude(log, b)
+    a = orient.to_world(log["accel"], log["quat"], q)
+    a = a - calibrate.accel_bias(a, log)
+    _, p = integrate.integrate(a, log["dt"])
+
+    def chord_detrend(seg):
+        n = len(seg)
+        u = (np.arange(n) / (n - 1))[:, None]
+        return seg - (seg[0] + (seg[-1] - seg[0]) * u)  # line through the endpoints
+
+    worst = 0.0
+    for a0, b0 in s.rep_bounds:
+        rep = chord_detrend(p[a0:b0])
+        truth = s.pos_true[a0:b0] - s.pos_true[a0]
+        worst = max(worst, np.abs(rep[:, :2] - truth[:, :2]).max())
+    assert worst < 0.01, f"horizontal off by {worst * 100:.1f} cm — accel bias not removed"
+
+
 # ---------------------------------------------------------------- gate 5 --
 def test_segmentation_finds_every_rep():
     s = synth.generate()
@@ -170,6 +205,7 @@ def test_segmentation_finds_every_rep():
     b, _ = calibrate.gyro_bias(log)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
+    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
     _, p = integrate.integrate(a, log["dt"])
     bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
     assert len(bounds) == len(s.rep_bounds)
@@ -178,24 +214,52 @@ def test_segmentation_finds_every_rep():
 
 
 def test_mid_rep_pause_is_not_a_boundary():
-    """The synthetic bar is momentarily stationary at full depth every rep —
-    velocity AND acceleration both go to zero at the turnaround, exactly like
-    a grind or a paused bench. The detector should see it as stationary; the
-    classifier must not mistake it for a rep boundary."""
-    s = synth.generate()
+    """A rep with a sustained hold at the BOTTOM — a sticking point, a paused
+    rep — registers as a stationary window at mid-ROM. The segmenter must see
+    it as stationary yet NOT mistake it for a rep boundary: the rep spans the
+    hold rather than being split into two or dropped.
+
+    Checked drift-robustly. The rough vertical drifts metres across the set (so
+    much that a late rep's own range is dominated by drift), which is why
+    boundary placement is verified against the KNOWN true rep starts — all at
+    the rest position — and not against absolute height."""
+    s = synth.generate(set_cfg=SetConfig(grind_reps=(2,), grind_depth=1.0))
     log = as_log(s)
     b, _ = calibrate.gyro_bias(log)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
+    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
     _, p = integrate.integrate(a, log["dt"])
 
     windows = segment.runs(segment.stationary_mask(log))
-    assert len(windows) > len(s.rep_bounds), "turnaround pauses not detected"
+    assert len(windows) > len(s.rep_bounds), "the bottom hold was not detected as stationary"
 
     bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
-    depths = [p[i0:i1, 2].min() for i0, i1 in s.rep_bounds]
-    for start, _ in bounds:
-        assert p[start, 2] > 0.5 * max(depths), "boundary placed at full depth"
+    assert len(bounds) == len(s.rep_bounds)  # every rep found, none split by the hold
+    for (a0, _), (t0, _) in zip(bounds, s.rep_bounds):
+        assert abs(a0 - t0) < 0.15 * s.fs    # boundary at the top, not the hold
+
+    # no boundary lands in the interior of the grinding rep — that would be the
+    # bottom hold mistaken for a between-rep rest.
+    gi0, gi1 = s.rep_bounds[2]
+    assert not any(gi0 + 0.15 * s.fs < a0 < gi1 - 0.15 * s.fs for a0, _ in bounds)
+
+
+def test_grind_near_lockout_is_not_a_boundary():
+    """A hold near the TOP — near lockout, on the way up — sits close to the
+    rest position, the hardest case to distinguish from a real between-rep
+    rest. It must not spawn a spurious extra rep."""
+    s = synth.generate(set_cfg=SetConfig(grind_reps=(2,), grind_depth=0.15))
+    log = as_log(s)
+    b, _ = calibrate.gyro_bias(log)
+    q = orient.correct_attitude(log, b)
+    a = orient.to_world(log["accel"], log["quat"], q)
+    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
+    _, p = integrate.integrate(a, log["dt"])
+    bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
+    assert len(bounds) == len(s.rep_bounds)
+    for (a0, _), (t0, _) in zip(bounds, s.rep_bounds):
+        assert abs(a0 - t0) < 0.15 * s.fs
 
 
 # ---------------------------------------------------------------- gate 6 --
@@ -207,6 +271,7 @@ def test_full_pipeline_meets_spec():
     b, _ = calibrate.gyro_bias(log)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
+    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
     _, p = integrate.integrate(a, log["dt"])
     bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
     reps = correct.detrend_set(p, bounds)
@@ -224,6 +289,7 @@ def test_principal_axis_finds_the_sagittal_plane():
     b, _ = calibrate.gyro_bias(log)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
+    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
     _, p = integrate.integrate(a, log["dt"])
     bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
     reps = correct.detrend_set(p, bounds)

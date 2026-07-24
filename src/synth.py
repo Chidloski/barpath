@@ -80,6 +80,47 @@ def _bump(tau, T):
     return v, d1, d2
 
 
+def _grind(tau, T, T_hold, depth=1.0):
+    """A paused / grinding rep: descend, HOLD at `depth` (fraction of ROM) for
+    T_hold, then finish. depth=1.0 pauses at the bottom (a sticking point off
+    the floor or out of the hole); a smaller value pauses near lockout on the
+    way up. The descent and the two ascent phases share the rep's T; the hold
+    is extra time on top.
+
+    Because smootherstep has zero first and second derivative at each end,
+    velocity and acceleration are continuous where each phase meets the next —
+    so the hold is a genuine stationary period, not a kink. Returns
+    (value, d/dt, d2/dt2), with value = depth fraction (0 top, 1 full depth).
+    """
+    Th = T / 2.0
+    t_desc = Th                 # descend 0 -> 1
+    t_up1 = (1.0 - depth) * Th  # ascend 1 -> depth (empty when depth == 1)
+    t_up2 = depth * Th          # ascend depth -> 0
+
+    d = np.zeros_like(tau)
+    d1 = np.zeros_like(tau)
+    d2 = np.zeros_like(tau)
+
+    m = tau < t_desc
+    v, a, b = _ramp(tau[m], t_desc)
+    d[m], d1[m], d2[m] = v, a, b
+
+    lo, hi = t_desc, t_desc + t_up1
+    if t_up1 > 0:
+        m = (tau >= lo) & (tau < hi)
+        v, a, b = _ramp(tau[m] - lo, t_up1)
+        d[m], d1[m], d2[m] = 1.0 - (1.0 - depth) * v, -(1.0 - depth) * a, -(1.0 - depth) * b
+
+    lo, hi = hi, hi + T_hold
+    d[(tau >= lo) & (tau < hi)] = depth  # the hold: zero velocity/accel
+
+    lo = hi
+    m = tau >= lo
+    v, a, b = _ramp(tau[m] - lo, t_up2)
+    d[m], d1[m], d2[m] = depth * (1.0 - v), -depth * a, -depth * b
+    return d, d1, d2
+
+
 # --------------------------------------------------------------------------
 # Configuration
 # --------------------------------------------------------------------------
@@ -107,6 +148,15 @@ class SetConfig:
 
     # Base orientation of the watch at rest (roll, pitch, yaw in radians).
     base_euler: tuple = (0.0, -0.35, 0.9)
+
+    # Grind: reps that pause at the bottom (a sticking point / paused rep).
+    # Indices into the set; each such rep holds at full depth for
+    # grind_duration before rising, which produces a sustained stationary
+    # window at mid-ROM — the thing rep segmentation must not mistake for a
+    # rep boundary.
+    grind_reps: tuple = ()
+    grind_duration: float = 0.6  # s held on a grinding rep
+    grind_depth: float = 1.0     # ROM fraction of the hold: 1.0 bottom, ~0.15 near lockout
 
 
 @dataclass
@@ -156,7 +206,10 @@ def _trajectory(cfg: SetConfig, fs: float):
     World frame: x = forward (anterior), y = lateral (left), z = up.
     """
     dt = 1.0 / fs
-    total = cfg.calib_pause + cfg.n_reps * (cfg.rep_duration + cfg.rest_between)
+    grind_reps = set(cfg.grind_reps)
+    rep_durs = [cfg.rep_duration + (cfg.grind_duration if r in grind_reps else 0.0)
+                for r in range(cfg.n_reps)]
+    total = cfg.calib_pause + sum(d + cfg.rest_between for d in rep_durs)
     n = int(round(total * fs))
     t = np.arange(n) * dt
 
@@ -165,17 +218,21 @@ def _trajectory(cfg: SetConfig, fs: float):
     depth = np.zeros(n)  # 0 at top, 1 at bottom — drives forearm rotation
     bounds = []
 
+    t0 = cfg.calib_pause
     for r in range(cfg.n_reps):
-        t0 = cfg.calib_pause + r * (cfg.rep_duration + cfg.rest_between)
+        Tr = rep_durs[r]
         i0 = int(round(t0 * fs))
-        i1 = int(round((t0 + cfg.rep_duration) * fs))
+        i1 = int(round((t0 + Tr) * fs))
         bounds.append((i0, i1))
 
         tau = t[i0:i1] - t0
-        T = cfg.rep_duration
 
-        # Vertical: down to full depth at mid-rep, back up. A bump.
-        d, dd, ddd = _bump(tau, T)
+        # Vertical: down to full depth and back up. A grinding rep holds at the
+        # bottom; a normal rep is a smooth bump.
+        if r in grind_reps:
+            d, dd, ddd = _grind(tau, cfg.rep_duration, cfg.grind_duration, cfg.grind_depth)
+        else:
+            d, dd, ddd = _bump(tau, Tr)
         pos[i0:i1, 2] = -cfg.rom * d
         acc[i0:i1, 2] = -cfg.rom * ddd
 
@@ -187,13 +244,16 @@ def _trajectory(cfg: SetConfig, fs: float):
 
         # The concentric returns on a different line from the eccentric, so
         # the path is a loop rather than a retrace. Bump over the second half
-        # only, which keeps position and both derivatives continuous.
-        half = i0 + (i1 - i0) // 2
-        tau2 = t[half:i1] - t[half]
-        T2 = t[i1 - 1] - t[half] + dt
-        w, _, ddw = _bump(tau2, T2)
-        pos[half:i1, 0] += cfg.loop_width * w
-        acc[half:i1, 0] += cfg.loop_width * ddw
+        # only, which keeps position and both derivatives continuous. Skipped
+        # for a grind, whose split timing makes the simple half-bump ill-posed
+        # and which the grind fixture does not exercise anyway.
+        if r not in grind_reps:
+            half = i0 + (i1 - i0) // 2
+            tau2 = t[half:i1] - t[half]
+            T2 = t[i1 - 1] - t[half] + dt
+            w, _, ddw = _bump(tau2, T2)
+            pos[half:i1, 0] += cfg.loop_width * w
+            acc[half:i1, 0] += cfg.loop_width * ddw
 
         # Lateral: small, and slightly worse as the set goes on.
         lat = cfg.lateral_amp * (1 + 0.4 * r)
@@ -201,6 +261,7 @@ def _trajectory(cfg: SetConfig, fs: float):
         acc[i0:i1, 1] = lat * ddd
 
         depth[i0:i1] = d
+        t0 += Tr + cfg.rest_between
 
     return t, pos, acc, depth, bounds
 
