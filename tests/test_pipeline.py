@@ -91,7 +91,7 @@ def test_attitude_correction_recovers_truth():
 def test_world_frame_acceleration_exact():
     s = synth.generate(sensor_cfg=CLEAN)
     log = as_log(s)
-    a = orient.to_world(log["accel"], log["quat"])
+    a = orient.to_world(log["accel"], log["quat"], log["quat"])
     assert np.abs(a - s.acc_true).max() < 1e-9
 
 
@@ -100,7 +100,7 @@ def test_integration_recovers_clean_path():
     """Trapezoidal, no error injected: sub-millimetre."""
     s = synth.generate(sensor_cfg=CLEAN)
     log = as_log(s)
-    a = orient.to_world(log["accel"], log["quat"])
+    a = orient.to_world(log["accel"], log["quat"], log["quat"])
     _, p = integrate.integrate(a, log["dt"])
     assert np.abs(p - s.pos_true).max() < 1e-3
 
@@ -110,9 +110,57 @@ def test_uncorrected_gyro_bias_blows_up():
     s = synth.generate(sensor_cfg=SensorConfig(
         gyro_bias=(1.0 * DEG, 0, 0), accel_noise=0, gyro_noise=0))
     log = as_log(s)
-    a = orient.to_world(log["accel"], log["quat"])  # NO bias correction
+    a = orient.to_world(log["accel"], log["quat"], log["quat"])  # NO bias correction
     _, p = integrate.integrate(a, log["dt"])
     assert np.abs(p[:, :2] - s.pos_true[:, :2]).max() > 0.15
+
+
+# ------------------------------------------------- gate 4b: gravity leak --
+def test_to_world_removes_gravity_leak():
+    """Realistic gyro bias, attitude corrected: the recovered horizontal PATH
+    must match truth to under 1 cm once per-rep linear drift is removed.
+
+    This isolates STEP 3 (to_world) from segmentation and the reserved detrend
+    by using the true rep bounds and detrending both sides identically. It
+    fails today by tens of centimetres, and the reason is a gravity leak:
+
+      Core Motion subtracts gravity using its OWN gyro-biased attitude before
+      it reports userAcceleration. Rotating that vector by the corrected
+      attitude cannot undo a subtraction made in the wrong frame, so a
+      fraction of g ~ g*sin(bias*t) stays leaked into the horizontal axes and
+      grows across the set. A per-rep LINEAR detrend cannot remove it (the
+      leak is nonlinear within a rep), so the horizontal is left ~tens of cm
+      off — see the residual growing 23 -> 86 cm across the five reps.
+
+    To pass, to_world must RECONSTRUCT gravity: add back the gravity Core
+    Motion removed using the REPORTED quaternion (log["quat"]), recovering the
+    raw specific force, then subtract gravity using the CORRECTED quaternion.
+    With that, the same detrend lands at ~0.74 cm.
+
+    NOTE: reconstruction needs the reported attitude as well as the corrected
+    one, so to_world's inputs will change. Update the call below to match
+    whatever signature you settle on.
+    """
+    s = synth.generate()
+    log = as_log(s)
+    b, _ = calibrate.gyro_bias(log)
+    q = orient.correct_attitude(log, b)
+    a = orient.to_world(log["accel"], log["quat"], q)
+    _, p = integrate.integrate(a, log["dt"])
+
+    def linear_detrend(seg):
+        t = np.arange(len(seg))
+        out = np.empty_like(seg)
+        for k in range(seg.shape[1]):
+            out[:, k] = seg[:, k] - np.polyval(np.polyfit(t, seg[:, k], 1), t)
+        return out
+
+    worst = 0.0
+    for a0, b0 in s.rep_bounds:
+        rep = linear_detrend(p[a0:b0])
+        truth = linear_detrend(s.pos_true[a0:b0])
+        worst = max(worst, np.abs(rep[:, :2] - truth[:, :2]).max())
+    assert worst < 0.01, f"horizontal path off by {worst * 100:.1f} cm — gravity leak not removed"
 
 
 # ---------------------------------------------------------------- gate 5 --
@@ -121,7 +169,7 @@ def test_segmentation_finds_every_rep():
     log = as_log(s)
     b, _ = calibrate.gyro_bias(log)
     q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], q)
+    a = orient.to_world(log["accel"], log["quat"], q)
     _, p = integrate.integrate(a, log["dt"])
     bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
     assert len(bounds) == len(s.rep_bounds)
@@ -138,7 +186,7 @@ def test_mid_rep_pause_is_not_a_boundary():
     log = as_log(s)
     b, _ = calibrate.gyro_bias(log)
     q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], q)
+    a = orient.to_world(log["accel"], log["quat"], q)
     _, p = integrate.integrate(a, log["dt"])
 
     windows = segment.runs(segment.stationary_mask(log))
@@ -158,7 +206,7 @@ def test_full_pipeline_meets_spec():
 
     b, _ = calibrate.gyro_bias(log)
     q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], q)
+    a = orient.to_world(log["accel"], log["quat"], q)
     _, p = integrate.integrate(a, log["dt"])
     bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
     reps = correct.detrend_set(p, bounds)
@@ -175,7 +223,7 @@ def test_principal_axis_finds_the_sagittal_plane():
     log = as_log(s)
     b, _ = calibrate.gyro_bias(log)
     q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], q)
+    a = orient.to_world(log["accel"], log["quat"], q)
     _, p = integrate.integrate(a, log["dt"])
     bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
     reps = correct.detrend_set(p, bounds)

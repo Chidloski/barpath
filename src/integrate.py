@@ -54,7 +54,12 @@ deliberately is worth more than reading about it.
 from __future__ import annotations
 
 import numpy as np
+from scipy.integrate import cumulative_trapezoid
 
 
-def integrate(accel_world: np.ndarray, dt: np.ndarray):
-    raise NotImplementedError("Reserved module — see docstring.")
+def integrate(accel_world: np.ndarray, dt: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    times = np.cumsum(dt)
+    velocity = cumulative_trapezoid(accel_world, times, axis=0, initial=0)
+    displacement = cumulative_trapezoid(velocity, times, axis=0, initial=0)
+
+    return velocity, displacement

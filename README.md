@@ -1,9 +1,8 @@
 # barpath
 
-Barbell path reconstruction from a single Apple Watch IMU.
+Barbell path reconstruction from a wrist-worn wearable - initially developed for an Apple Watch
 
-Proof of concept: can one wrist-worn sensor produce a bar path good enough
-that a lifter can see form anomalies in it? Not an app. Not yet.
+This is simply a proof of concept which may later be incorporated into a workout app
 
 ## Why this is hard
 
@@ -29,7 +28,6 @@ Gates 1–2 pass out of the box. The rest fail until the reserved modules in
 failing test, make it pass, commit.
 
 ## Layout
-
     src/synth.py       known bar path -> corrupted IMU log   [keystone]
     src/io.py          CSV load/save, timestamp handling
     src/calibrate.py   step 1  gyro bias from the pre-set pause

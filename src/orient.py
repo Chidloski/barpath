@@ -62,11 +62,25 @@ built, so if it does not, the bug is yours and not the generator's.
 from __future__ import annotations
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 
 def correct_attitude(log: dict, bias: np.ndarray) -> np.ndarray:
-    raise NotImplementedError("Reserved module — see docstring.")
+    R_log = Rotation.from_quat(log["quat"], scalar_first=True)
+    time_log = log["t"] - log["t"][0] # first log needs no bias applied as movement is relative to the first log
+
+    bias_with_time = np.outer(time_log, bias)
+
+    # reverse the effect of the gyro bias to get the true attitude of the watch
+    R_true = R_log * Rotation.from_rotvec(bias_with_time).inv()
+
+    return R_true.as_quat(scalar_first=True)
 
 
-def to_world(accel_body: np.ndarray, quat: np.ndarray) -> np.ndarray:
-    raise NotImplementedError("Reserved module — see docstring.")
+def to_world(accel_body: np.ndarray, reported_quat: np.ndarray, corrected_quat: np.ndarray) -> np.ndarray:
+    R = Rotation.from_quat(corrected_quat, scalar_first=True)
+    G = np.array([0, 0, -9.80665])
+
+    accel_with_g = accel_body - Rotation.from_quat(reported_quat, scalar_first=True).inv().apply(G)
+
+    return R.apply(accel_with_g) + G

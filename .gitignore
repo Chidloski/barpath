@@ -5,6 +5,7 @@ __pycache__/
 venv/
 .DS_Store
 .ipynb_checkpoints/
+.vscode/
 
 # Raw captures are immutable inputs, not source. Back these up separately.
 data/raw/*
