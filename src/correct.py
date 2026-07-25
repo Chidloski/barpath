@@ -90,10 +90,25 @@ def apply_offset(position: np.ndarray, quat: np.ndarray,
     raise NotImplementedError("Reserved module — see docstring.")
 
 
-def detrend_rep(position: np.ndarray, start: int, stop: int) -> np.ndarray:
-    raise NotImplementedError("Reserved module — see docstring.")
+def detrend_rep(position: np.ndarray, start: int, stop: int, t: np.ndarray) -> np.ndarray:
+    rep = position[start:stop]
+    drift = rep[-1] - rep[0]
+
+    times = (t - t[0]) / (t[-1] - t[0])
+
+    drift_line = times[:, None] * drift
+
+    return rep - drift_line
 
 
 def detrend_set(position: np.ndarray,
-                bounds: list[tuple[int, int]]) -> list[np.ndarray]:
-    raise NotImplementedError("Reserved module — see docstring.")
+                bounds: list[tuple[int, int]], t: np.ndarray) -> list[np.ndarray]:
+
+    reps = []
+
+    for start, end in bounds:
+        rep = detrend_rep(position, start, end, t[start:end])
+        rep -= rep[0]
+        reps.append(rep)
+
+    return reps

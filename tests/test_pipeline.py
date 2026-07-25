@@ -274,7 +274,7 @@ def test_full_pipeline_meets_spec():
     a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
     _, p = integrate.integrate(a, log["dt"])
     bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
-    reps = correct.detrend_set(p, bounds)
+    reps = correct.detrend_set(p, bounds, log["t"])
 
     for (a0, b0), rep in zip(bounds, reps):
         truth = s.pos_true[a0:b0] - s.pos_true[a0]
@@ -292,7 +292,7 @@ def test_principal_axis_finds_the_sagittal_plane():
     a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
     _, p = integrate.integrate(a, log["dt"])
     bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
-    reps = correct.detrend_set(p, bounds)
+    reps = correct.detrend_set(p, bounds, log["t"])
 
     axis, ratio, excursion = project.principal_axis(reps)
     assert ratio > 3.0

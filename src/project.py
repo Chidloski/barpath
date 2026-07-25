@@ -70,8 +70,18 @@ from __future__ import annotations
 
 import numpy as np
 
-
+# find the vector with the most variance via the max eigenvalue in the xy plane
 def principal_axis(paths: list[np.ndarray]):
+    all_reps_xy = np.concatenate(paths)[:, :2] # combines all reps, and slices off the z coordinate
+    covariance = np.cov(all_reps_xy, rowvar=False)
+
+    eigenvalues, eigenvectors = np.linalg.eig(covariance)
+
+    projection = all_reps_xy @ eigenvectors[:, eigenvalues.argmax()]
+    excursion = projection.max() - projection.min()
+
+    return eigenvectors[:, eigenvalues.argmax()], (eigenvalues.max() / eigenvalues.min()), excursion
+
     raise NotImplementedError("Reserved module — see docstring.")
 
 

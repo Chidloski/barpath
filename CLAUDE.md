@@ -88,6 +88,11 @@ around it.
 - Prefer deleting code to adding it. This project has already discarded
   Kalman filters, factor graphs, spline fits and UWB ranging, and is better
   for it.
+- When a concept or bug is hard to see in numbers, **plot the data**. A graph
+  of the intermediate signal — per-rep overlays, drift vs signal, before/after
+  a stage — routinely makes clear in seconds what a table of numbers hides. The
+  owner is learning the domain, so reach for a plot at troublesome spots rather
+  than only explaining in prose. Render to the scratchpad and view it.
 
 ## Milestones
 
