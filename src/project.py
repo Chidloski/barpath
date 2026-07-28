@@ -82,8 +82,6 @@ def principal_axis(paths: list[np.ndarray]):
 
     return eigenvectors[:, eigenvalues.argmax()], (eigenvalues.max() / eigenvalues.min()), excursion
 
-    raise NotImplementedError("Reserved module — see docstring.")
-
 
 def project_to_plane(paths: list[np.ndarray], axis: np.ndarray):
     raise NotImplementedError("Reserved module — see docstring.")

@@ -3,7 +3,10 @@
 Reconstruct barbell path from a single Apple Watch IMU and render it as an
 overlaid 2D plot. Proof of concept only — not an app, not a product.
 
-Read `NON_GOALS.md` before proposing anything. It is binding.
+Read `NON_GOALS.md` before proposing anything. Its Scope section is binding.
+Its Estimation and Sensing rejections were deleted on 2026-07-28 because they
+rested on synthetic evidence — recover them with `git show HEAD:NON_GOALS.md`
+if you want to re-argue one, but do not treat them as still in force.
 
 ## Spec
 
@@ -19,11 +22,16 @@ you stop showing someone their bar path and start inventing faults for them.
 Vertical: ±2–3 cm. Rep timing: ±50 ms. Absolute position in the room: not
 needed, ever.
 
-What matters is **rep-to-rep difference**, not absolute truth. Error is
-common-mode across the reps of one set and largely cancels in the
-comparison, so the tight requirement happens to sit on the best-conditioned
-quantity. A path systematically 1.5 cm forward of truth is fine if it is
-consistently so.
+What matters is **rep-to-rep difference**, not absolute truth. A path
+systematically 1.5 cm forward of truth is fine if it is consistently so.
+
+That argument is load-bearing and it has a known hole. It holds for error
+that is constant across a set, which largely cancels in the comparison. It
+does **not** hold for error correlated with the motion — the body-frame accel
+bias projected through a rotating forearm, or Core Motion's gravity reference
+cutting out at the same phase of every rep. That error repeats with the rep,
+so the comparison preserves it perfectly. Do not invoke "it's common-mode"
+without saying which of the two you mean.
 
 ## Pipeline
 
@@ -40,32 +48,39 @@ Nine steps, one module each, numbered to match.
 8. `project.py` — PCA on horizontal displacement picks the display axis.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
 
-`synth.py` generates logs from a known bar path with injected bias. It is the
-keystone: ground truth on the desk means you can tell which stage broke,
-not just that something did.
+`synth.py` generates logs from a known bar path with injected bias. It was
+the keystone and is no longer. Its model of lifting is wrong in ways real
+captures have now measured — it emits stationary windows between reps, which
+loaded lifting does not have, and a constant accel bias, which the real one is
+not. Every stage passed against it and several fail on real data, so as a
+referee it certifies broken stages.
+
+What it is still good for is algebraic identities that hold regardless of how
+lifting behaves: round-tripping `to_world`, integrating a known acceleration,
+recovering an injected bias. Those catch sign and frame-convention bugs that
+no gym capture can see. Use it for that and let real data judge whether the
+pipeline works.
 
 ## Learning contract
 
 The owner is learning this domain. That is a goal of the project, not an
 obstacle to it.
 
-**Reserved — the owner writes these. Do not implement them, do not fill in
-the stubs, do not write "a quick version to get things running".**
+**Every file is collaborative.** `orient.py`, `integrate.py`, `correct.py` and
+`project.py` used to be reserved for the owner; that restriction is lifted as
+of 2026-07-28. There is nothing you may not edit.
 
-- `src/orient.py`
-- `src/integrate.py`
-- `src/correct.py`
-- `src/project.py`
+The learning goal survives the lockout that used to enforce it, and it changes
+*how* you work in those modules rather than *whether* you do:
 
-You may review this code, find bugs in it, explain the concepts behind it,
-and write tests against it. When asked a conceptual question, explain the
-mechanism and stop there.
-
-Everything else is yours: I/O, plotting, test scaffolding, the Swift logger,
-synthetic generator plumbing, refactors.
-
-If a reserved module is blocking progress, say so and wait. Do not route
-around it.
+- Explain the mechanism before or alongside changing it, not instead of.
+- When a change encodes a judgement about the physics — what error model, what
+  assumption about the motion — say what the judgement is and what would
+  falsify it. A diff that silently picks one is worse than no diff.
+- Prefer handing back a diagnosis with a plot over a fix the owner cannot
+  evaluate. Speed is not the constraint here; understanding is.
+- Conceptual questions still get a conceptual answer. Do not answer "why does
+  this drift" with a patch.
 
 ## Conventions
 
@@ -80,35 +95,67 @@ around it.
 
 ## Working style
 
-- Use plan mode for anything touching a reserved module or changing the
-  pipeline's shape.
-- One milestone at a time. Each has a numeric gate in `tests/`. Do not start
-  the next before the current one passes.
-- Commit at every gate, plots included.
-- Prefer deleting code to adding it. This project has already discarded
-  Kalman filters, factor graphs, spline fits and UWB ranging, and is better
-  for it.
+- Use plan mode for anything changing the pipeline's shape, or changing an
+  assumption about the error model rather than the code implementing it.
+- Work one open problem at a time, and state which one. A change that is not
+  attached to a problem in the list below needs a reason.
+- A gate only counts if it runs on real captures. Synthetic gates are unit
+  tests now, not evidence.
+- Commit when a problem's status changes — including to "worse" — plots
+  included. The record of what was tried and failed is worth as much as the
+  fix.
+- Prefer deleting code to adding it. That still holds, but it is no longer a
+  licence to keep rejections alive past their evidence: `NON_GOALS.md` lost its
+  Estimation and Sensing tables on 2026-07-28 for exactly that reason.
 - When a concept or bug is hard to see in numbers, **plot the data**. A graph
   of the intermediate signal — per-rep overlays, drift vs signal, before/after
   a stage — routinely makes clear in seconds what a table of numbers hides. The
   owner is learning the domain, so reach for a plot at troublesome spots rather
   than only explaining in prose. Render to the scratchpad and view it.
 
-## Milestones
+## Open problems
 
-| # | Deliverable | Gate |
-|---|---|---|
-| 1 | Synthetic generator + I/O | zero-error log encodes truth exactly |
-| 2 | Calibration | injected gyro bias recovered to <0.01 °/s |
-| 3 | Orientation | attitude within 0.5°; world accel exact |
-| 4 | Integration | clean path recovered to <1 mm |
-| 5 | Segmentation | every rep found; turnaround pauses rejected |
-| 6 | Detrend + projection | full pipeline <1 cm horizontal |
-| 7 | Watch logger | 100 Hz CSV off the device, sane timestamps |
-| 8 | Real deadlift | integrated ROM within 3 cm of tape measure |
-| 9 | Bench and squat | paths match video |
+The milestone table is gone. Milestones 1–6 all passed and the project does
+not work; a schedule that reports success while the artefact fails is worse
+than no schedule. What survived it is real: the watch logger works, and
+`data/raw/` holds 13 captures, 11 of them labelled with rep counts (14 bench,
+15 squat, 15 deadlift).
 
-Milestones 1–6 need no watch and no gym.
+Work the problems instead. Each is stated with the evidence that it is real,
+so it can be closed by evidence rather than by opinion.
+
+**P1 — Segmentation does not find reps under load.** Benches: 0 of 14. Squats:
+1 of 15, in the wrong place. The stationary detector assumes a quiet window
+between reps and loaded lifting has none — only 13.5% of a deadlift capture is
+quiet enough to qualify, essentially all of it the pre-set pause. The reps are
+plainly visible as velocity oscillations the segmenter ignores.
+*Evidence:* `analysis/04`–`07`, `12`.
+
+**P2 — Horizontal is drift-dominated by two orders of magnitude.** Paused
+bench reconstructs to ~1 m fore-aft against a real 0.1–0.2 m. The spec is
+1 cm. Vertical timing and structure come out fine; the side-on view is not
+trustworthy at all. *Evidence:* `analysis/13`.
+
+**P3 — The per-rep linear detrend's premise is violated.** It was justified on
+errors being smooth and monotonic while true motion is periodic and closes.
+But the accel bias is fixed in the *body* frame and the forearm rotates
+through the rep, so in the world frame that error is periodic **at rep
+frequency** — the one shape a per-rep line cannot separate from real motion.
+`calibrate.accel_bias`'s own docstring says so. P2 most likely lives here.
+
+**P4 — Calibration is below its own noise floor.** The "stillest" window
+carries 7.2 °/s peak-to-peak of ~6.5 Hz physiological tremor; the bias being
+extracted from it is 0.1–0.9 °/s. Block-resampled standard error of the mean
+is 0.16–0.36 °/s, and the observed spread across all 13 captures is 0.33–0.47
+°/s — meaning the capture-to-capture variation is tremor, not bias. More
+captures will not help; the estimator is the limit.
+
+**P5 — Apple's residual gyro bias is unobservable with what we log.**
+`dm.rotationRate` is already bias-corrected by Core Motion, so the logger
+records the residual after an opaque, time-varying internal estimate. Logging
+raw `CMGyroData` alongside would expose that estimate directly by difference.
+Raw accelerometer adds nothing — `userAccel + R⁻¹·g` already reconstructs it
+exactly (9.8065 m/s² measured at rest against 9.80665 expected).
 
 Validate on **deadlift** first — not because the pipeline differs by lift
 (it does not) but because it is the only lift with external ground truth:
