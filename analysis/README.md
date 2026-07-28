@@ -128,3 +128,9 @@ Owner called this from the velocity plots — squat and bench begin with an
 eccentric and deadlift with a concentric, and all three showed the opposite
 sign. An earlier session had attributed it to bias instead; that was wrong,
 and the tests it rested on could not have distinguished the two.
+- `18_a1_rep_windows_corrected.png` — rep windows after the sign fix, same
+  layout as `16`. The physical structure is now visible directly: squat and
+  bench reps begin with a NEGATIVE velocity lobe (the descent) and deadlift reps
+  begin POSITIVE (the pull), each closing on a floor impact. Under the old
+  inverted sign every one of these was the wrong way round, which is what the
+  owner spotted from plot 16. 44/44 on all ten captures.
