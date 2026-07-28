@@ -313,3 +313,42 @@ def test_video_deadlift_rom_is_physical(video, csv, reps):
     assert len(peaks) >= reps - 1, f"only {len(peaks)} lockouts resolved"
     for p in peaks:
         assert 0.40 < p < 0.85, f"lockout {p*100:.0f} cm above the floor is not a deadlift"
+
+
+@pytest.mark.parametrize("video", ["bench_90x4_1_20260727", "bench_92.5x2_20260727"])
+def test_bench_tracking_fails_loudly_rather_than_silently(video):
+    """Bench must raise, not return a confident wrong answer.
+
+    The plate there is small, sits against a dark ceiling and abuts the
+    lifter-and-bench silhouette, which is a larger dark blob — so find_plate
+    prefers the clutter. It tracked a motionless background patch for a whole
+    clip at 0.907 median NCC and reported 0.0 cm of bar travel, which would
+    have gone downstream as ground truth.
+
+    This test pins the CURRENT state: automatic seeding does not work on bench.
+    When it does, or when a seed_yx is wired in, this test should be replaced
+    by a real one — not deleted.
+    """
+    path = VIDEO / f"{video}.mov"
+    if not path.exists():
+        pytest.skip(f"{video} not present")
+    from src import truth
+
+    with pytest.raises(ValueError, match="locked onto something static"):
+        truth.bar_path(path)
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_deadlift_tracking_is_clean_enough_to_trust(video, csv, reps):
+    """Deadlifts must track well, unattended, with no warning."""
+    if not _has(video, csv):
+        pytest.skip(f"{video} not present")
+    import warnings as w
+    from src import truth
+
+    with w.catch_warnings():
+        w.simplefilter("error")          # any quality warning fails the test
+        path = truth.bar_path(VIDEO / f"{video}.mov")
+
+    assert path["travel_m"] > 0.40
+    assert np.nanmedian(path["score"]) > truth.GOOD_SCORE

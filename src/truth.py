@@ -34,9 +34,16 @@ that tolerance is the strongest validation in the project.
 
 Limits, honestly
 ----------------
-- **Deadlift only, for now.** The squat framing clips the plate at the top of
-  frame at lockout, so the centre leaves the image and cannot be tracked. Bench
-  is likely fine but unvalidated. Fixing squats needs a wider shot, not code.
+- **Deadlift: automatic and trustworthy.** No seeding, no clicking. Median NCC
+  0.83-0.94, 49-70 cm of travel, sync to the IMU at 11-16 ms.
+- **Squat: tracks, but only indicatively.** Median NCC ~0.40 because the plate
+  clips the top of frame at lockout and the template only partly matches. A
+  warning is raised. Needs a wider shot, not code.
+- **Bench: does not work automatically and RAISES.** The plate is small, sits
+  against a dark ceiling and abuts the lifter-and-bench silhouette, which is a
+  larger dark blob, so the matched filter prefers the clutter. It tracked
+  motionless background at 0.907 median NCC reporting 0.0 cm of travel before
+  `validate` existed. Pass `seed_yx` to place it by hand.
 - Lens distortion is uncorrected. A phone wide lens bows straight lines, and
   the bar crosses much of the frame vertically. This is the largest unquantified
   error here and it wants a checkerboard, or at least a plumb line in shot.
@@ -50,6 +57,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -196,27 +204,52 @@ def track(stack: np.ndarray, seed: int, cy: int, cx: int,
 
 
 # ------------------------------------------------------------------ path --
+MIN_TRAVEL_M = 0.10   # a tracked barbell moves. Less than this means it did not.
+GOOD_SCORE = 0.60     # median NCC a clean deadlift track gives; squats sit at 0.40.
+
+
 def bar_path(video: str | Path, scale: float = 0.5,
-             seed_time: float | None = None) -> dict:
+             seed_time: float | None = None,
+             seed_yx: tuple[int, int] | None = None,
+             seed_radius: int | None = None,
+             check: bool = True) -> dict:
     """Track the plate and return the bar path in metres.
 
-    `seed_time` should sit where the bar is DOWN, so `find_plate` has a light
-    background to work against. Defaults to the frame with the strongest disc
-    response in the middle of the clip.
+    Automatic on deadlifts: the plate sits isolated against a bright floor, so
+    `find_plate` locks onto it unaided and no seeding is needed.
+
+    NOT automatic on bench. There the plate is small, against a dark ceiling,
+    and adjacent to the lifter-and-bench silhouette, which is a larger dark
+    blob — so the matched filter prefers the clutter. It reported a confident
+    0.907 median NCC while tracking a static background patch, and the bar
+    "moved" 0.0 cm. Pass `seed_yx` (and `seed_radius`) to place it by hand
+    there; the coordinates are in the DECODED frame, so at `scale=0.5` they are
+    half the pixel positions you would read off the original video.
+
+    `check` raises when the tracked bar barely moves. That silent-confident
+    failure is the one worth being loud about: a high score means the template
+    matched, not that it matched the plate.
     """
     stack, fps, _ = frames(video, scale)
-    if seed_time is None:
+    if seed_time is not None:
+        seed = int(seed_time * fps)
+    elif seed_yx is not None:
+        seed = len(stack) // 2
+    else:
         candidates = range(len(stack) // 4, 3 * len(stack) // 4, max(1, int(fps)))
         seed = max(candidates, key=lambda i: find_plate(stack[i])[3])
-    else:
-        seed = int(seed_time * fps)
 
-    cy, cx, radius, _ = find_plate(stack[seed])
+    if seed_yx is not None:
+        cy, cx = seed_yx
+        radius = seed_radius or find_plate(stack[seed])[2]
+    else:
+        cy, cx, radius, _ = find_plate(stack[seed])
+
     raw = track(stack, seed, cy, cx)
 
     m_per_px = PLATE_DIAMETER_M / (2 * radius)
     t = np.arange(len(raw)) / fps
-    return {
+    path = {
         "t": t,
         "x": (raw[:, 1] - np.nanmedian(raw[:, 1])) * m_per_px,   # fore-aft
         "height": -(raw[:, 0] - np.nanmax(raw[:, 0])) * m_per_px,  # image y is down
@@ -225,7 +258,39 @@ def bar_path(video: str | Path, scale: float = 0.5,
         "m_per_px": m_per_px,
         "plate_radius_px": radius,
         "seed_frame": seed,
+        "travel_m": float(np.nanmax(raw[:, 0]) - np.nanmin(raw[:, 0])) * m_per_px,
     }
+    if check:
+        validate(path, video)
+    return path
+
+
+def validate(path: dict, video: str | Path = "") -> None:
+    """Raise if the track cannot be a barbell. Silence here is expensive.
+
+    A high NCC score only says the template kept matching something. On bench
+    it matched a motionless piece of background for the whole clip at 0.907
+    median and reported 0.0 cm of travel without complaint — which would have
+    gone downstream as ground truth.
+    """
+    name = Path(video).name or "video"
+    if path["travel_m"] < MIN_TRAVEL_M:
+        raise ValueError(
+            f"{name}: tracked bar moved only {path['travel_m']*100:.1f} cm over "
+            f"the whole clip (median NCC {np.nanmedian(path['score']):.3f}). The "
+            f"tracker locked onto something static — pass seed_yx to place it on "
+            f"the plate by hand."
+        )
+
+    score = float(np.nanmedian(path["score"]))
+    if score < GOOD_SCORE:
+        warnings.warn(
+            f"{name}: median NCC {score:.2f}, well below the {GOOD_SCORE:.2f} a "
+            f"clean track gives. The template is only partly matching — on the "
+            f"squats this is the plate leaving the top of frame at lockout. "
+            f"Treat the path as indicative, not as truth.",
+            stacklevel=2,
+        )
 
 
 # ------------------------------------------------------------------ sync --
