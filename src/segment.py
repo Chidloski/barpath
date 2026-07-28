@@ -36,10 +36,28 @@ is not re-litigated. On `deadlift_155x6_1` two setup lobes correlate 0.73-0.82
 with the rep cluster while a genuine late rep correlates 0.27. No threshold
 separates those. The impact anchors do.
 
-Honest limit: this is validated against rep COUNTS from filenames. Counts
-cannot confirm the boundaries are in the right places, only that the right
-number of things were found. Boundary accuracy needs the video ground truth
-(A2) and is not claimed here.
+**Then the video showed the velocity signal cannot be trusted at all.**
+
+Segmenting on band-passed vertical velocity found 44 of 44 reps and put every
+window half a rep out of phase — lockout to lockout, holding one rep's descent
+followed by the next one's ascent. Against video truth the band-passed IMU
+vertical correlates **-0.82** with real bar height, and the in-band error is
+145 cm against a 69 cm signal. It is already there at the acceleration stage
+(correlation -0.16), so it is not an integration or filtering artefact. It is
+P3: body-frame accel bias projected through a rotating forearm lands at REP
+FREQUENCY, so no filter can remove it. The segmenter was finding real structure
+in the error — hence the right count and the wrong phase.
+
+So where the bar sets down, boundaries now come from the impacts alone and the
+velocity signal is not consulted. Impacts use raw acceleration magnitude: no
+attitude, no integration, no filtering, and they match video to 13.5 ms rms.
+All 15 deadlift windows contain exactly one video lockout, at 0.58-0.84 through
+the window.
+
+Honest limit: **bench and squat have no anchor and still segment on the
+corrupted velocity.** Their counts are right and their phase is unverified and
+probably wrong the same way. Fixing that is B2 and B6 — removing the in-band
+error — not a change in this module.
 
 ---
 
@@ -232,13 +250,51 @@ def rep_bounds(log: dict, vertical_velocity: np.ndarray,
         return []
 
     anchors = impact_anchors(log)
-    sets_down = len(anchors) >= 3
-    if sets_down:
-        chosen = _lobes_before(lobes, anchors, t)
-    else:
-        chosen = _similar_cluster(v, t, lobes, similarity, peak_ratio)
+    if len(anchors) >= 3:
+        return _cycles_from_impacts(t, anchors)
 
-    return _full_cycles(_all_lobes(v, t, min_area), chosen, sets_down, len(v))
+    chosen = _similar_cluster(v, t, lobes, similarity, peak_ratio)
+    return _full_cycles(_all_lobes(v, t, min_area), chosen, False, len(v))
+
+
+def _cycles_from_impacts(t: np.ndarray, anchors: list[int]) -> list[tuple[int, int]]:
+    """Rep windows straight from the floor impacts. Floor to floor, one per rep.
+
+    This ignores the velocity signal entirely, and that is the point.
+
+    Segmenting on band-passed vertical velocity looked right — it found 44 of
+    44 reps — and was keying off the wrong thing. Against video truth the
+    band-passed IMU vertical correlates **-0.82** with the real bar height, and
+    the in-band error is 145 cm against a 69 cm signal. The corruption is
+    already there at the acceleration stage (correlation -0.16), so it is not
+    an integration or filtering artefact: it is P3, the body-frame accel bias
+    projected through a rotating forearm, which lands at REP FREQUENCY and
+    therefore cannot be filtered out. The segmenter was finding real structure
+    in the error, which is why it got the count right and the phase half a rep
+    wrong.
+
+    The impacts are not affected. They come from raw acceleration magnitude —
+    no attitude, no integration, no filtering — and match the video to 13.5 ms
+    rms. A deadlift rep runs floor to floor, so consecutive impacts bound it
+    exactly, and the first rep starts one median rep-gap before the first
+    impact.
+
+    Bench and squat have no such anchor and still segment on the corrupted
+    velocity. Their windows find the right NUMBER of reps; their phase is
+    unverified and probably wrong the same way. That needs B2 and B6, not a
+    change here.
+    """
+    gaps = np.diff([t[k] for k in anchors])
+    lead = float(np.median(gaps)) if len(gaps) else 3.0
+
+    bounds = []
+    start = int(np.searchsorted(t, t[anchors[0]] - lead))
+    for k in anchors:
+        stop = min(int(k) + 1, len(t))
+        if stop > start:
+            bounds.append((start, stop))
+        start = stop
+    return bounds
 
 
 def _full_cycles(all_lobes: list, chosen: list, sets_down: bool,

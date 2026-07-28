@@ -390,3 +390,45 @@ def test_pipeline_surfaces_log_warnings():
     result = pipeline.run(path)
     assert result["warnings"], "expected a saturation warning on deadlift_180x3"
     assert "WARNING" in pipeline.summary(result)
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_rep_windows_are_in_phase_with_the_video(video, csv, reps):
+    """Each rep window must hold exactly one lockout. This is the phase gate.
+
+    Rep COUNT cannot see phase. The previous segmenter scored a perfect 44/44
+    while every window ran lockout-to-lockout — holding the descent of one rep
+    followed by the ascent of the next, half a rep out of step — because it
+    keyed off band-passed vertical velocity, which correlates -0.82 with the
+    real bar height. The in-band error is 145 cm against a 69 cm signal, and it
+    is present at the acceleration stage already, so no filter removes it.
+
+    Only the video can catch that, which is the whole argument for A2.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} not present")
+    from src import truth
+
+    log = io.load_log(RAW / f"{csv}.csv")
+    path = truth.bar_path(VIDEO / f"{video}.mov")
+    impacts = np.array([float(log["t"][i]) for i in segment.impact_anchors(log)])
+    fit = truth.sync(truth.landings(path), impacts)
+    t_video = truth.to_imu_time(path, fit)
+
+    edges = np.r_[0.0, truth.landings(path), path["t"][-1]]
+    lockouts = []
+    for a, b in zip(edges, edges[1:]):
+        m = (path["t"] >= a) & (path["t"] < b)
+        if m.any() and np.nanmax(path["height"][m]) > 0.2:
+            lockouts.append(float(t_video[m][np.nanargmax(path["height"][m])]))
+
+    bounds = segment.rep_bounds(log, world(log)[0][:, 2])
+    assert len(bounds) == reps
+
+    for n, (a, b) in enumerate(bounds, 1):
+        t0, t1 = log["t"][a], log["t"][b - 1]
+        inside = [q for q in lockouts if t0 <= q <= t1]
+        assert len(inside) == 1, (
+            f"{csv} rep {n} [{t0:.1f},{t1:.1f}] contains {len(inside)} lockouts, "
+            f"expected 1 — the window is out of phase with the bar"
+        )

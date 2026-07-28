@@ -34,7 +34,7 @@ fixed-*duration* window, floor-impact anchors where the lift provides them
 both a concentric and an eccentric phase of comparable size (0/44 unbalanced,
 was 9/15 deadlift reps holding only the pull).
 
-Not finished — see **#13** below.
+Phase error later found by A2 and fixed — see below.
 
 ### A2 — video ground truth `374392b` `f6ff01c` `09c6bfc`
 `src/truth.py`. Plate tracked from footage; first external truth for the
@@ -42,6 +42,21 @@ horizontal axis. Video landings match IMU floor impacts 6/6, 6/6, 3/3 at
 **11–16 ms rms**, clock drift <0.25%. Deadlift is automatic and unattended;
 squat warns; bench raises and needs a manual seed. Full detail and ten
 drawbacks in `src/README.md`.
+
+### #13 — rep-window phase, on deadlift
+Windows ran lockout-to-lockout, half a rep out of phase. The cause was not a
+bug in `segment.py`: band-passed IMU vertical correlates **-0.82** with video
+truth, with 145 cm of in-band error against a 69 cm signal, already present at
+the acceleration stage (-0.16). That is P3 — accel bias through a rotating
+forearm sits at rep frequency, so no filter removes it. The segmenter was
+finding real structure in the error, which is why the count was right and the
+phase was wrong.
+
+Where the bar sets down, boundaries now come from the impacts alone, which use
+raw acceleration magnitude and match video to 13.5 ms. **All 15 deadlift
+windows contain exactly one video lockout.** Bench and squat have no anchor,
+still segment on the corrupted velocity, and their phase is unverified — that
+needs B2 and B6, not a segmentation change.
 
 ### A4 — end-to-end driver `91ed978`
 `src/pipeline.py` + `run.py`. The pipeline had never been executed end to end
@@ -56,18 +71,7 @@ previously dead code.
 
 Ordered by what unblocks the most.
 
-### #13 — fix the A1 rep-window phase error  ← next
-Windows run lockout-to-lockout: each holds the descent of one rep followed by
-the ascent of the next. **Half a rep out of phase**, so what `segment.py` calls
-the concentric is the eccentric. Confirmed against video — window starts
-16.42/19.21/22.64/25.91/29.48/34.60 s against video lockout peaks
-16.23/19.23/22.33/25.70/29.23/34.27 s on `deadlift_155x6_1`.
-
-Predicted by the owner from the velocity plots before the video existed. Also
-the likely cause of the first-rep over-extension that resisted three separate
-fixes while unverifiable.
-
-### A3 — real-data error metrics
+### A3 — real-data error metrics  ← next
 `src/metrics.py`: `dispersion(reps)` for rep-to-rep spread after start
 alignment, and `vs_truth(reps, video)` against A2. **The absence of this is why
 every stage could pass while the product failed.** Nothing in B is trustworthy

@@ -89,3 +89,17 @@ per-run diagnostics (gitignored). Two things it made visible on its first run:
 
 `io.check_log` and `segment.quality_flags` were both dead code before this —
 written, sound, and called by nothing but a test.
+
+## Rep-window phase (2026-07-28)
+The A2 video showed A1's windows were half a rep out of phase. Root cause is
+not segmentation: band-passed IMU vertical correlates **-0.82** with video bar
+height, with **145 cm of in-band error against a 69 cm signal**, and the
+correlation is already only -0.16 at the ACCELERATION stage. That is P3 —
+body-frame accel bias through a rotating forearm lands at rep frequency, where
+no filter can reach it. The segmenter was finding genuine structure in the
+error signal, which is why 44/44 counts coexisted with wrong phase.
+
+Deadlift boundaries now come from floor impacts alone (raw acceleration
+magnitude, no attitude, no integration, matched to video at 13.5 ms rms). All
+15 windows contain exactly one video lockout. Bench and squat still segment on
+the corrupted velocity and their phase remains unverified.
