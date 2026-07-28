@@ -58,6 +58,24 @@ windows contain exactly one video lockout.** Bench and squat have no anchor,
 still segment on the corrupted velocity, and their phase is unverified — that
 needs B2 and B6, not a segmentation change.
 
+### Acceleration sign inversion `3c2cbed`
+**Core Motion's `userAcceleration` is the negative of physical acceleration.**
+`io.load_log` negates it at the boundary; `synth.py` emits the device
+convention so the CSV means the same thing whichever wrote it.
+
+Invisible for months because at rest `userAcceleration` is zero — the gravity
+check at the pause, `to_world` returning ~0 while still, and the synthetic
+round trip are all evaluated exactly where the term vanishes. `synth.py` shared
+the wrong convention with `orient.to_world`, so they agreed with each other and
+disagreed with the watch.
+
+Caught two ways: integrating world acceleration over 0.2-0.3 s windows
+correlates **-0.76** with the video bar and **+0.76** negated (short window, so
+it tests sign not drift); and the floor impact gave a negative velocity step on
+all 9 impacts where a floor decelerating a falling bar demands positive. Both
+are gates now. Segmentation needed cadence selection afterwards to stay at
+44/44.
+
 ### A4 — end-to-end driver `91ed978`
 `src/pipeline.py` + `run.py`. The pipeline had never been executed end to end
 against a gym capture; every prior real-data result came from scripts outside
