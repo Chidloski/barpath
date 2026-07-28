@@ -13,6 +13,14 @@ data/raw/*
 data/synthetic/*
 !data/synthetic/.gitkeep
 
+# Video is a large immutable input, same rule as data/raw.
+data/video/*
+!data/video/.gitkeep
+
+# Per-run diagnostics from `python run.py --plot`. Regenerable; the curated
+# records in analysis/ are numbered and committed, these are not.
+analysis/run_*.png
+
 # Xcode
 watch/**/xcuserdata/
 watch/**/*.xcworkspace/xcuserdata/

@@ -74,3 +74,18 @@ Both need the video ground truth (A2).
   ascent of the next. Half a rep out of phase, i.e. what the pipeline calls the
   concentric is the eccentric. Owner predicted this from the plots before the
   video existed. Not yet fixed.
+
+## A4 — the driver (2026-07-28)
+`python run.py` runs every capture and prints what happened; `--plot` writes
+per-run diagnostics (gitignored). Two things it made visible on its first run:
+
+- **`quality_flags` rejects 12 of 44 reps for strap resonance, wrongly.** It
+  thresholds the FRACTION of accel energy above 10 Hz, so a quiet rep fails for
+  having little signal at all. The rejected bench reps carry 13-18k of absolute
+  high-frequency energy against 0.9-2.9M in accepted deadlift reps — 50-200x
+  LESS. Its own docstring intends absolute energy.
+- **Horizontal excursion is 66-253 cm** where real is 10-20 cm, quantifying the
+  drift problem through the actual pipeline rather than a proxy.
+
+`io.check_log` and `segment.quality_flags` were both dead code before this —
+written, sound, and called by nothing but a test.

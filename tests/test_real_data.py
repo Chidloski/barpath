@@ -352,3 +352,41 @@ def test_deadlift_tracking_is_clean_enough_to_trust(video, csv, reps):
 
     assert path["travel_m"] > 0.40
     assert np.nanmedian(path["score"]) > truth.GOOD_SCORE
+
+
+# ------------------------------------------------------------------- A4 --
+@needs_data
+@pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
+def test_pipeline_runs_end_to_end_without_raising(path):
+    """The driver must survive stages that are not implemented.
+
+    Three functions still raise NotImplementedError, so the pipeline genuinely
+    cannot complete. It must record that and return the eight stages that did
+    work — throwing would lose all of them, and a partial result you can see is
+    worth more than an exception.
+    """
+    from src import pipeline
+
+    result = pipeline.run(path)
+    assert result["blocked"], "unimplemented stages must be reported, not hidden"
+    assert len(result["bounds"]) == truth_reps(path)
+    assert result["position"].shape == (len(result["log"]["t"]), 3)
+    assert isinstance(pipeline.summary(result), str)
+
+
+@needs_data
+def test_pipeline_surfaces_log_warnings():
+    """io.check_log was dead code. The driver must actually report it.
+
+    deadlift_180x3 peaks at 21.8 g and trips the saturation check. Before the
+    driver existed that warning was computed by nothing and seen by nobody.
+    """
+    from src import pipeline
+
+    path = next((p for p in CAPTURES if p.stem.startswith("deadlift_180x3")), None)
+    if path is None:
+        pytest.skip("deadlift_180x3 not present")
+
+    result = pipeline.run(path)
+    assert result["warnings"], "expected a saturation warning on deadlift_180x3"
+    assert "WARNING" in pipeline.summary(result)
