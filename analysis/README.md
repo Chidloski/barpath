@@ -62,3 +62,15 @@ Both need the video ground truth (A2).
   the balance search runs back to the walkout. Not a filter artefact: the median
   eccentric/concentric ratio at the 0.12 Hz corner is 0.9-1.3 across captures.
   Unresolved, and left for A2.
+- `17_a2_video_ground_truth.png` — A2. Plate tracked from video on all three
+  deadlifts (red), against IMU floor impacts (orange) and A1 rep windows
+  (green). Sync residual 11-16 ms rms, clock drift <0.25%. This is the first
+  external truth for the horizontal axis in the project.
+
+  **It immediately found a bug in A1.** The rep windows start at the video
+  lockout peak every time (16.42 vs 16.23, 19.21 vs 19.23, 22.64 vs 22.33,
+  25.91 vs 25.70, 29.48 vs 29.23, 34.60 vs 34.27 on deadlift_155x6_1), so each
+  window runs lockout to lockout — the descent of one rep followed by the
+  ascent of the next. Half a rep out of phase, i.e. what the pipeline calls the
+  concentric is the eccentric. Owner predicted this from the plots before the
+  video existed. Not yet fixed.

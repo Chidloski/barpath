@@ -240,3 +240,76 @@ def test_every_rep_contains_both_phases(path):
             f"{path.stem} rep {n}: up {up*100:.0f} cm vs down {down*100:.0f} cm "
             f"— the window is missing a phase, so the rep does not close"
         )
+
+
+# ------------------------------------------------------------------- A2 --
+VIDEO = Path(__file__).resolve().parents[1] / "data" / "video"
+
+DEADLIFTS = [
+    ("deadlift_155x6_1_20260728", "deadlift_155x6_1_20260728_122828", 6),
+    ("deadlift_155x6_2_20260728", "deadlift_155x6_2_20260728_123603", 6),
+    ("deadlift_180x3_20260728", "deadlift_180x3_20260728_121739", 3),
+]
+
+
+def _has(video: str, csv: str) -> bool:
+    return (VIDEO / f"{video}.mov").exists() and (RAW / f"{csv}.csv").exists()
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_video_and_imu_agree_on_when_the_bar_lands(video, csv, reps):
+    """Two unrelated sensors must agree on the same moments.
+
+    The video sees the plate reach the floor; the IMU sees a 15-21 g spike.
+    Nothing links them but the event itself, so agreement is real evidence
+    rather than a self-consistency check — and it is what makes the video
+    usable as ground truth for everything else.
+
+    Rep timing is specified at +/-50 ms, so the fit residual must beat that.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import truth
+
+    path = truth.bar_path(VIDEO / f"{video}.mov")
+    seen = truth.landings(path)
+    log = io.load_log(RAW / f"{csv}.csv")
+    impacts = np.array([float(log["t"][i]) for i in segment.impact_anchors(log)])
+
+    assert len(seen) == reps, f"video found {len(seen)} landings, expected {reps}"
+    assert len(impacts) == reps
+
+    fit = truth.sync(seen, impacts)
+    assert fit["rms_ms"] < 50.0, f"sync residual {fit['rms_ms']:.0f} ms exceeds the spec"
+    assert abs(fit["drift_pct"]) < 1.0, f"clock drift {fit['drift_pct']:.2f}% is implausible"
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_video_deadlift_rom_is_physical(video, csv, reps):
+    """Per-rep lockout height must be a plausible deadlift ROM.
+
+    Measured from the bar resting on the floor, so it excludes the 22.5 cm
+    plate radius: true bar height at lockout is this plus that. A wrong
+    PLATE_DIAMETER_M would scale every measurement proportionally, and this is
+    what would catch it.
+
+    Deliberately a band, not a number. The tape-measured lockout height has not
+    been recorded yet, and asserting a precise value without it would invent
+    the ground truth this module exists to supply.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import truth
+
+    path = truth.bar_path(VIDEO / f"{video}.mov")
+    edges = np.r_[0.0, truth.landings(path), path["t"][-1]]
+    peaks = []
+    for a, b in zip(edges, edges[1:]):
+        window = path["height"][(path["t"] >= a) & (path["t"] < b)]
+        if len(window):
+            peaks.append(float(np.nanmax(window)))
+    peaks = [p for p in peaks if p > 0.2]
+
+    assert len(peaks) >= reps - 1, f"only {len(peaks)} lockouts resolved"
+    for p in peaks:
+        assert 0.40 < p < 0.85, f"lockout {p*100:.0f} cm above the floor is not a deadlift"
