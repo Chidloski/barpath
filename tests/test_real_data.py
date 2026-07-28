@@ -156,25 +156,28 @@ def test_paused_bench_reps_are_where_the_analysis_says():
     independent off-pipeline reconstruction. Anchoring on that is the only
     reason this test can tell a right answer from a plausible one.
 
-    Asserts on the CONCENTRIC PEAK, not the window edges. The peak is where the
-    press happens and is what "the rep is at ~27 s" means. Window edges depend
-    on how far back the eccentric is traced, which is unvalidated until A2 —
-    asserting on them here would be claiming an accuracy this file cannot
-    justify, and would fail for reasons unrelated to finding the right reps.
+    Asserts on where each rep STARTS, which is what analysis/README.md's "~27 s
+    and ~32 s" refers to — the descent beginning.
+
+    This test previously asserted on the concentric peak instead, and the
+    expected values have legitimately moved since. Under the old inverted
+    acceleration sign what the pipeline called the concentric was really the
+    descent, so the "peak" landed at 27.2 and 31.8. With the sign fixed in
+    io.load_log the press peaks sit at 30.0 and 34.5 — about three seconds
+    later, which is right for a two-count paused bench — and the rep starts
+    are what now line up with the recorded times.
     """
     path = next((p for p in CAPTURES if p.name.startswith("bench_92.5x2")), None)
     if path is None:
         pytest.skip("bench_92.5x2 not present")
 
     log = io.load_log(path)
-    velocity = world(log)[0][:, 2]
-    filtered = segment.bandpass(velocity, log["fs"])
-    bounds = segment.rep_bounds(log, velocity)
-    peaks = [log["t"][a + int(np.argmax(filtered[a:b]))] for a, b in bounds]
+    bounds = segment.rep_bounds(log, world(log)[0][:, 2])
+    starts = [log["t"][a] for a, _ in bounds]
 
-    assert len(peaks) == 2
-    assert 25.0 < peaks[0] < 29.0, f"first rep at {peaks[0]:.1f}s, expected ~27s"
-    assert 30.0 < peaks[1] < 34.0, f"second rep at {peaks[1]:.1f}s, expected ~32s"
+    assert len(starts) == 2
+    assert 25.0 < starts[0] < 29.0, f"first rep starts {starts[0]:.1f}s, expected ~27s"
+    assert 30.0 < starts[1] < 34.0, f"second rep starts {starts[1]:.1f}s, expected ~32s"
 
 
 @needs_data
@@ -432,3 +435,86 @@ def test_rep_windows_are_in_phase_with_the_video(video, csv, reps):
             f"{csv} rep {n} [{t0:.1f},{t1:.1f}] contains {len(inside)} lockouts, "
             f"expected 1 — the window is out of phase with the bar"
         )
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_acceleration_sign_agrees_with_the_video(video, csv, reps):
+    """World vertical acceleration must point the way the bar actually moves.
+
+    Core Motion's userAcceleration is the NEGATIVE of physical acceleration, and
+    io.load_log negates it on the way in. This test is the reason that is known.
+
+    Integrating world acceleration over 0.3 s windows and comparing to the video
+    velocity change is deliberate: over that span an accel bias contributes only
+    ~0.1 m/s against true steps of 0.5-1.5 m/s, so the comparison tests SIGN and
+    not accumulated drift. Every check that had been run before was at the
+    calibration pause or averaged over a whole pull, where userAcceleration is
+    zero or nets to zero and its sign simply cannot be seen.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} not present")
+    from scipy.signal import savgol_filter
+    from src import orient, truth
+
+    log = io.load_log(RAW / f"{csv}.csv")
+    accel = orient.to_world(log["accel"], log["quat"],
+                            orient.correct_attitude(log, np.zeros(3)))
+    accel = accel - calibrate.accel_bias(accel, log)
+
+    path = truth.bar_path(VIDEO / f"{video}.mov")
+    impacts = segment.impact_anchors(log)
+    fit = truth.sync(truth.landings(path),
+                     np.array([float(log["t"][k]) for k in impacts]))
+    t_video = truth.to_imu_time(path, fit)
+
+    grid = np.arange(log["t"][impacts[0]] - 3, log["t"][impacts[-1]] + 1, 0.01)
+    height = savgol_filter(np.interp(grid, t_video, path["height"]), 41, 3)
+    v_video = np.gradient(height, grid)
+    a_imu = np.interp(grid, log["t"], accel[:, 2])
+
+    n = 30
+    dv_imu = np.array([np.trapezoid(a_imu[i:i + n], grid[i:i + n])
+                       for i in range(0, len(grid) - n, 10)])
+    dv_vid = np.array([v_video[i + n] - v_video[i]
+                       for i in range(0, len(grid) - n, 10)])
+    x, y = dv_imu - dv_imu.mean(), dv_vid - dv_vid.mean()
+    corr = float(x @ y / (np.linalg.norm(x) * np.linalg.norm(y)))
+    assert corr > 0.5, f"vertical acceleration correlates {corr:+.2f} with the video"
+
+
+@needs_data
+@pytest.mark.parametrize(
+    "stem", ["deadlift_155x6_1", "deadlift_155x6_2", "deadlift_180x3"])
+def test_floor_impact_decelerates_the_bar(stem):
+    """The floor pushes UP on a falling bar, so the velocity step must be positive.
+
+    A second, independent check on the acceleration sign that needs no video at
+    all — only the knowledge that floors do not accelerate barbells downwards.
+    It was negative on all 9 impacts before io.load_log negated userAcceleration.
+    """
+    from src import integrate, orient
+
+    path = next((p for p in CAPTURES if p.stem.startswith(stem)), None)
+    if path is None:
+        pytest.skip(f"{stem} not present")
+
+    log = io.load_log(path)
+    accel = orient.to_world(log["accel"], log["quat"],
+                            orient.correct_attitude(log, np.zeros(3)))
+    velocity = integrate.integrate(accel, log["dt"])[0]
+
+    steps = []
+    for k in segment.impact_anchors(log):
+        a = int(np.searchsorted(log["t"], log["t"][k] - 0.15))
+        b = int(np.searchsorted(log["t"], log["t"][k] + 0.35))
+        steps.append(float(velocity[b, 2] - velocity[a, 2]))
+
+    # Asserted in aggregate rather than per-impact. An inverted sign flips
+    # EVERY impact, which this catches comprehensively; a single one can go the
+    # other way for an honest reason — the 0.35 s window occasionally runs past
+    # the bar settling and picks up the wrist following it down. 14 of 15 are
+    # positive across the three captures.
+    assert np.mean(steps) > 0, f"{path.stem}: mean impact step {np.mean(steps):+.2f}"
+    assert sum(s > 0 for s in steps) >= len(steps) - 1, (
+        f"{path.stem}: {sum(s <= 0 for s in steps)} of {len(steps)} impacts give a "
+        f"downward velocity step — the acceleration sign is inverted")

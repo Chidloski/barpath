@@ -33,7 +33,7 @@ def as_log(s):
     return {
         "t": s.t, "dt": dt,
         "quat": s.quat_log,
-        "accel": s.accel_log * G,
+        "accel": -s.accel_log * G,   # mirrors io.load_log
         "gyro": s.gyro_log,
         "fs": s.fs,
     }
@@ -47,7 +47,7 @@ def test_synth_is_self_consistent():
     s = synth.generate(sensor_cfg=CLEAN)
     q = s.quat_log
     R = Rotation.from_quat(np.column_stack([q[:, 1], q[:, 2], q[:, 3], q[:, 0]]))
-    a_world = R.apply(s.accel_log * G)
+    a_world = R.apply(-s.accel_log * G)
     assert np.abs(a_world - s.acc_true).max() < 1e-9
 
 
@@ -56,7 +56,7 @@ def test_log_roundtrip(tmp_path):
     p = io.save_log(tmp_path / "x.csv", synth.to_log_dict(s))
     log = io.load_log(p)
     assert len(log["t"]) == len(s.t)
-    assert np.abs(log["accel"] / G - s.accel_log).max() < 1e-6
+    assert np.abs(log["accel"] / G + s.accel_log).max() < 1e-6  # load negates
     assert io.check_log(log) == []
 
 

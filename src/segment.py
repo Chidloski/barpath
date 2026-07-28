@@ -54,10 +54,26 @@ attitude, no integration, no filtering, and they match video to 13.5 ms rms.
 All 15 deadlift windows contain exactly one video lockout, at 0.58-0.84 through
 the window.
 
-Honest limit: **bench and squat have no anchor and still segment on the
-corrupted velocity.** Their counts are right and their phase is unverified and
-probably wrong the same way. Fixing that is B2 and B6 — removing the in-band
-error — not a change in this module.
+**And then the sign turned out to be inverted.** Core Motion's
+`userAcceleration` is the negative of physical acceleration, so every velocity
+this module ever saw pointed the wrong way. `io.load_log` negates it now. Once
+corrected, what the module calls the concentric really is the concentric — but
+the selection had been tuned against the inverted signal, so three of four
+bench captures over-detected until cadence selection was added.
+
+**Cadence is the third discriminator, and it was in the plan from the start.**
+Reps come at a regular interval; an unrack does not belong to that rhythm. On
+`bench_90x4_1` the four reps sit 2.16, 2.13 and 2.33 s apart while the unrack
+is 15.9 s before the first — obvious in the gaps, invisible to shape and to
+size. Gaps are compared to EACH OTHER rather than to their own median: against
+a median, 6.6 s and 12.9 s both fall inside a wide band and a bad run of three
+survives.
+
+Honest limit: **bench and squat have no impact anchor and still segment on the
+integrated velocity**, which carries 145 cm of in-band error against a 69 cm
+signal. Their counts are right; their boundaries are only as good as that
+signal. Fixing it is B2 and B6 — removing the in-band error — not a change
+here.
 
 ---
 
@@ -409,6 +425,42 @@ def _lobes_before(lobes, anchors, t) -> list:
     return chosen
 
 
+def _longest_cadence(chosen, t, tol=1.6):
+    """Keep the longest run of candidates that share a cadence.
+
+    Reps in a set come at a regular interval; the unrack does not belong to
+    that rhythm and sits seconds away from it. On bench_90x4_1 the four reps
+    are 2.16, 2.13 and 2.33 s apart while the unrack sits 15.9 s before the
+    first — obvious in the gaps, invisible to shape and to size.
+
+    Ties go to the later run, because a set is always set up first and lifted
+    second. That is what resolves bench_92.5x2, where two reps and two setup
+    events each form a pair and no cadence argument can separate them.
+    """
+    if len(chosen) < 3:
+        return chosen
+
+    times = [t[l[0]] for l in chosen]
+    runs_found = []
+    i = 0
+    while i < len(chosen):
+        j = i + 1
+        while j < len(chosen):
+            gaps = np.diff(times[i:j + 1])
+            # Compare the gaps to EACH OTHER, not to their own median. Against
+            # the median, 6.6 s and 12.9 s both sit inside a +/-60% band and a
+            # run of three survives with gaps that differ by 2x — which is how
+            # bench_92.5x2 kept an extra rep.
+            if gaps.min() <= 0 or gaps.max() / gaps.min() > tol:
+                break
+            j += 1
+        runs_found.append((j - i, float(np.median(times[i:j])), i, j))
+        i += 1
+
+    best = max(runs_found, key=lambda r: (r[0], r[1]))
+    return chosen[best[2]:best[3]]
+
+
 def _grow(shapes, peaks, seed, similarity, peak_ratio):
     """Grow a cluster from one seed by alternating template fit and membership."""
     keep = (shapes @ shapes[seed]) > similarity
@@ -455,7 +507,7 @@ def _similar_cluster(v, t, lobes, similarity, peak_ratio) -> list:
 
     if best is None:
         return []
-    chosen = [l for l, k in zip(lobes, best) if k]
+    chosen = _longest_cadence(([l for l, k in zip(lobes, best) if k]), t)
 
     # Non-maximum suppression: a pull that breaks into two lobes is one rep.
     if len(chosen) > 2:

@@ -324,7 +324,11 @@ def generate(set_cfg: SetConfig | None = None,
         acc_true=acc,
         quat_true=_wxyz(R_true),
         quat_log=_wxyz(R_log),
-        accel_log=user_accel / G,  # Core Motion reports in units of g
+        # Negated to match Core Motion, whose userAcceleration is the
+        # negative of physical acceleration. This generator emitted the
+        # physics sign for months and orient.to_world was built to match it,
+        # so both agreed with each other and disagreed with the watch.
+        accel_log=-user_accel / G,
         gyro_log=gyro,
         rep_bounds=bounds,
         fs=fs,

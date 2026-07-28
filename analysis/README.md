@@ -103,3 +103,28 @@ Deadlift boundaries now come from floor impacts alone (raw acceleration
 magnitude, no attitude, no integration, matched to video at 13.5 ms rms). All
 15 windows contain exactly one video lockout. Bench and squat still segment on
 the corrupted velocity and their phase remains unverified.
+
+## The sign inversion (2026-07-29)
+**Core Motion's `userAcceleration` is the negative of physical acceleration.**
+`io.load_log` now negates it at the boundary.
+
+Missed for months because at rest `userAcceleration` is zero, so its sign is
+invisible — and every check that had been run was at the calibration pause, or
+averaged over a whole pull, where the term vanishes or nets to zero. `synth.py`
+encoded the same wrong convention and `orient.to_world` was built to match it,
+so generator and pipeline agreed with each other and disagreed with the watch.
+Exactly the failure a synthetic gate cannot see.
+
+Caught two independent ways:
+- integrating world acceleration over 0.2-0.3 s windows correlates **-0.76**
+  with the video-tracked bar and **+0.76** negated. The short window is the
+  point: bias contributes ~0.07 m/s there against true steps of 0.5-1.5 m/s,
+  so it tests SIGN, not drift.
+- the floor impact gave a **negative** velocity step on all 9 impacts across
+  two captures, where a floor decelerating a falling bar demands positive.
+  After the fix, 14 of 15 are positive.
+
+Owner called this from the velocity plots — squat and bench begin with an
+eccentric and deadlift with a concentric, and all three showed the opposite
+sign. An earlier session had attributed it to bias instead; that was wrong,
+and the tests it rested on could not have distinguished the two.
