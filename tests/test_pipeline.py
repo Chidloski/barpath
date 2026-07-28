@@ -62,12 +62,20 @@ def test_log_roundtrip(tmp_path):
 
 # ---------------------------------------------------------------- gate 2 --
 def test_gyro_bias_recovered():
-    """The pause must recover injected bias to well under the in-run floor."""
+    """The pause must recover injected bias to well under the in-run floor.
+
+    Asserts on info["raw"] — the MEASUREMENT — not on the returned bias.
+    Whether to apply the measurement is a policy decision that now defaults to
+    off, because on real captures the estimate is confounded with genuine slow
+    wrist rotation and applying it is worse than doing nothing in 13 of 13
+    captures. The estimator itself is fine, and this test keeps it honest.
+    """
     true_bias = np.array([0.45, -0.70, 0.30]) * DEG
     s = synth.generate(sensor_cfg=SensorConfig(gyro_bias=tuple(true_bias)))
     b, info = calibrate.gyro_bias(as_log(s))
     assert info["confident"]
-    assert np.abs(b - true_bias).max() < 0.01 * DEG
+    assert not info["applied"] and np.array_equal(b, np.zeros(3))
+    assert np.abs(info["raw"] - true_bias).max() < 0.01 * DEG
 
 
 def test_calibration_falls_back_rather_than_blocking():
@@ -82,7 +90,7 @@ def test_attitude_correction_recovers_truth():
     """orient.correct_attitude must undo the integrated gyro bias."""
     s = synth.generate(sensor_cfg=SensorConfig(accel_noise=0, gyro_noise=0))
     log = as_log(s)
-    b, _ = calibrate.gyro_bias(log)
+    b, _ = calibrate.gyro_bias(log, apply=True)
     q = orient.correct_attitude(log, b)
     dot = np.abs(np.sum(q * s.quat_true, axis=1))
     assert np.degrees(2 * np.arccos(np.clip(dot, 0, 1))).max() < 0.5
@@ -143,7 +151,7 @@ def test_to_world_removes_gravity_leak():
     """
     s = synth.generate()
     log = as_log(s)
-    b, _ = calibrate.gyro_bias(log)
+    b, _ = calibrate.gyro_bias(log, apply=True)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
     a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
@@ -179,7 +187,7 @@ def test_accel_bias_removal_meets_horizontal_spec():
     """
     s = synth.generate()
     log = as_log(s)
-    b, _ = calibrate.gyro_bias(log)
+    b, _ = calibrate.gyro_bias(log, apply=True)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
     a = a - calibrate.accel_bias(a, log)
@@ -202,7 +210,7 @@ def test_accel_bias_removal_meets_horizontal_spec():
 def test_segmentation_finds_every_rep():
     s = synth.generate()
     log = as_log(s)
-    b, _ = calibrate.gyro_bias(log)
+    b, _ = calibrate.gyro_bias(log, apply=True)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
     a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
@@ -225,7 +233,7 @@ def test_mid_rep_pause_is_not_a_boundary():
     the rest position — and not against absolute height."""
     s = synth.generate(set_cfg=SetConfig(grind_reps=(2,), grind_depth=1.0))
     log = as_log(s)
-    b, _ = calibrate.gyro_bias(log)
+    b, _ = calibrate.gyro_bias(log, apply=True)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
     a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
@@ -251,7 +259,7 @@ def test_grind_near_lockout_is_not_a_boundary():
     rest. It must not spawn a spurious extra rep."""
     s = synth.generate(set_cfg=SetConfig(grind_reps=(2,), grind_depth=0.15))
     log = as_log(s)
-    b, _ = calibrate.gyro_bias(log)
+    b, _ = calibrate.gyro_bias(log, apply=True)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
     a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
@@ -268,7 +276,7 @@ def test_full_pipeline_meets_spec():
     s = synth.generate()
     log = as_log(s)
 
-    b, _ = calibrate.gyro_bias(log)
+    b, _ = calibrate.gyro_bias(log, apply=True)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
     a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
@@ -286,7 +294,7 @@ def test_principal_axis_finds_the_sagittal_plane():
     """Synthetic fore-aft excursion is ~10x the lateral, so PCA must find it."""
     s = synth.generate()
     log = as_log(s)
-    b, _ = calibrate.gyro_bias(log)
+    b, _ = calibrate.gyro_bias(log, apply=True)
     q = orient.correct_attitude(log, b)
     a = orient.to_world(log["accel"], log["quat"], q)
     a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
