@@ -144,15 +144,18 @@ def impact_anchors(log: dict, threshold_g: float = 6.0,
     return peaks
 
 
-def _concentric_lobes(v: np.ndarray, t: np.ndarray,
-                      min_area: float = 0.08) -> list[tuple[int, int, int, float]]:
-    """Positive-velocity lobes with enough displacement to be a lift.
+def _all_lobes(v: np.ndarray, t: np.ndarray,
+               min_area: float) -> list[tuple[int, int, int, float]]:
+    """Every velocity lobe carrying at least `min_area` of displacement.
 
-    Every rep of every lift has exactly one upward phase — the deadlift pull,
-    the squat ascent, the bench press — so working on positive lobes gives one
-    candidate per rep without needing to know which lift it is.
+    Both signs, in time order. Filtering by area here is what makes the
+    boundary search in `_full_cycles` trustworthy: the raw zero crossings
+    include ringing and tremor, so extending a rep to the nearest crossing
+    stops at a noise blip instead of the real turnaround. Working on
+    significant lobes means "the turnaround before this concentric" is the
+    physical one.
 
-    Returns (peak_index, start, stop, area).
+    Returns (peak_index, start, stop, signed_area).
     """
     sign = np.sign(v)
     sign[sign == 0] = 1
@@ -163,9 +166,22 @@ def _concentric_lobes(v: np.ndarray, t: np.ndarray,
         if b - a < 5:
             continue
         area = float(np.trapezoid(v[a:b], t[a:b]))
-        if area > min_area:
-            out.append((a + int(np.argmax(v[a:b])), a, b, area))
+        if abs(area) < min_area:
+            continue
+        extreme = a + int(np.argmax(v[a:b]) if area > 0 else np.argmin(v[a:b]))
+        out.append((extreme, a, b, area))
     return out
+
+
+def _concentric_lobes(v: np.ndarray, t: np.ndarray,
+                      min_area: float = 0.08) -> list[tuple[int, int, int, float]]:
+    """Upward lobes big enough to be a lift.
+
+    Every rep of every lift has exactly one upward phase — the deadlift pull,
+    the squat ascent, the bench press — so working on positive lobes gives one
+    candidate per rep without needing to know which lift it is.
+    """
+    return [l for l in _all_lobes(v, t, min_area) if l[3] > 0]
 
 
 def _shape(v: np.ndarray, t: np.ndarray, i: int,
@@ -222,11 +238,11 @@ def rep_bounds(log: dict, vertical_velocity: np.ndarray,
     else:
         chosen = _similar_cluster(v, t, lobes, similarity, peak_ratio)
 
-    return _full_cycles(v, chosen, sets_down)
+    return _full_cycles(_all_lobes(v, t, min_area), chosen, sets_down, len(v))
 
 
-def _full_cycles(v: np.ndarray, chosen: list,
-                 sets_down: bool) -> list[tuple[int, int]]:
+def _full_cycles(all_lobes: list, chosen: list, sets_down: bool,
+                 n: int, balance: float = 0.5) -> list[tuple[int, int]]:
     """Extend each concentric to a whole rep, rest position to rest position.
 
     A rep must start and end at the same place for the detrend in step 7 to
@@ -237,23 +253,83 @@ def _full_cycles(v: np.ndarray, chosen: list,
     FOLLOWS. A bench or squat rests at lockout, so the cycle is descend-then-
     press and the eccentric PRECEDES. `sets_down` comes from whether the signal
     contained floor impacts, so the lift is never named.
+
+    The eccentric is taken from the significant-lobe list rather than from raw
+    zero crossings. Crossings include ringing and tremor, so the nearest one is
+    often a noise blip a few samples away — which silently truncated reps to
+    the concentric alone and produced 2.78 s and 0.96 s windows for two reps of
+    the same set.
     """
-    sign = np.sign(v)
-    sign[sign == 0] = 1
-    crossings = np.flatnonzero(np.diff(sign)) + 1
+    starts = [l[1] for l in all_lobes]
+    limits = [l[0] for l in chosen]          # never absorb a neighbouring rep
 
     out = []
-    for _, a, b, _ in chosen:
+    for idx, (peak, a, b, area) in enumerate(chosen):
+        k = starts.index(a) if a in starts else None
+        if k is None:
+            out.append((a, b))
+            continue
+
+        before = limits[idx - 1] if idx > 0 else -1
+        after = limits[idx + 1] if idx + 1 < len(limits) else n
+        out.append(_absorb(all_lobes, k, a, b, area, sets_down, before, after,
+                           balance))
+
+    return _clip_overlaps(out, n)
+
+
+def _absorb(all_lobes, k, a, b, area, sets_down, before, after, balance):
+    """Widen one concentric until the window holds a matching eccentric.
+
+    A rep starts and ends in about the same place, so it must contain both an
+    up phase and a down phase of comparable size. That is a physical fact about
+    lifting, not a tuning parameter, and it is the criterion used here: absorb
+    adjacent lobes outward until the accumulated opposite-sign displacement
+    reaches `balance` times the concentric's.
+
+    Taking only the single adjacent lobe is not enough. A heavy pull often
+    breaks into two positive lobes at the knee, so the lobe next to the chosen
+    one is itself positive and no eccentric is ever picked up — which left 9 of
+    15 deadlift reps containing zero downward travel.
+
+    A pause inside a rep is absorbed rather than avoided. The bar is barely
+    moving, so it contributes almost nothing to either total, and including it
+    keeps the window closed at both ends.
+
+    Absorption stops at the neighbouring rep's peak, so a window can never
+    swallow the rep next to it.
+    """
+    start, stop = a, b
+    gathered = 0.0
+    step = 1 if sets_down else -1
+    j = k
+
+    while gathered < balance * abs(area):
+        j += step
+        if j < 0 or j >= len(all_lobes):
+            break
+        peak_j, aj, bj, area_j = all_lobes[j]
+        if sets_down and peak_j >= after:
+            break
+        if not sets_down and peak_j <= before:
+            break
         if sets_down:
-            after = crossings[crossings > b]
-            stop = int(after[0]) if len(after) else len(v)
-            start = a
+            stop = bj
         else:
-            before = crossings[crossings < a]
-            start = int(before[-1]) if len(before) else 0
-            stop = b
-        out.append((start, stop))
-    return out
+            start = aj
+        if area_j < 0:
+            gathered += abs(area_j)
+    return (start, stop)
+
+
+def _clip_overlaps(bounds: list[tuple[int, int]], n: int) -> list[tuple[int, int]]:
+    """Reps must be disjoint. Where two windows meet, split at the boundary."""
+    out = []
+    for i, (a, b) in enumerate(bounds):
+        if out and a < out[-1][1]:
+            a = out[-1][1]
+        out.append((a, min(b, n)))
+    return [(a, b) for a, b in out if b > a]
 
 
 def _lobes_before(lobes, anchors, t) -> list:
@@ -261,6 +337,13 @@ def _lobes_before(lobes, anchors, t) -> list:
 
     The bar goes up, then it comes down and lands. So the rep owning an impact
     is the last concentric before it.
+
+    A heavy pull sometimes breaks into two lobes at the knee, and this then
+    anchors on the lockout half rather than the whole pull, which is why rep
+    durations within a deadlift set are uneven. Taking the FIRST concentric
+    since the previous impact was tried and is worse: with no previous impact
+    to bound it, rep 1 reaches back into the walkout. Neither is right, and
+    choosing between them needs the video (A2) rather than another guess.
     """
     chosen = []
     for k in anchors:

@@ -53,3 +53,12 @@ Caveat on both: measured with the 2 s tiled-window proxy in
 ranks two pipelines reliably; the absolute centimetres are not error. Rep
 BOUNDARY accuracy is likewise unvalidated — counts cannot confirm placement.
 Both need the video ground truth (A2).
+- `16_a1_rep_windows_inspection.png` — A1 rep windows for inspection, 3 captures
+  per lift, start/end marked. Every rep now contains both a concentric and an
+  eccentric phase of comparable size (0/44 unbalanced, was 9/15 deadlift reps
+  holding only the pull). Reps 2..n are well placed; the FIRST rep of each set
+  over-extends backwards because its own eccentric is under-measured — on
+  squat_130x5 rep 1 the descent registers -12.8 cm against a +57.8 cm ascent, so
+  the balance search runs back to the walkout. Not a filter artefact: the median
+  eccentric/concentric ratio at the 0.12 Hz corner is 0.9-1.3 across captures.
+  Unresolved, and left for A2.

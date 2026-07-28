@@ -155,18 +155,26 @@ def test_paused_bench_reps_are_where_the_analysis_says():
     analysis/README.md records the two paused reps at ~27 s and ~32 s from an
     independent off-pipeline reconstruction. Anchoring on that is the only
     reason this test can tell a right answer from a plausible one.
+
+    Asserts on the CONCENTRIC PEAK, not the window edges. The peak is where the
+    press happens and is what "the rep is at ~27 s" means. Window edges depend
+    on how far back the eccentric is traced, which is unvalidated until A2 —
+    asserting on them here would be claiming an accuracy this file cannot
+    justify, and would fail for reasons unrelated to finding the right reps.
     """
     path = next((p for p in CAPTURES if p.name.startswith("bench_92.5x2")), None)
     if path is None:
         pytest.skip("bench_92.5x2 not present")
 
     log = io.load_log(path)
-    bounds = segment.rep_bounds(log, world(log)[0][:, 2])
-    starts = [log["t"][a] for a, _ in bounds]
+    velocity = world(log)[0][:, 2]
+    filtered = segment.bandpass(velocity, log["fs"])
+    bounds = segment.rep_bounds(log, velocity)
+    peaks = [log["t"][a + int(np.argmax(filtered[a:b]))] for a, b in bounds]
 
-    assert len(starts) == 2
-    assert 25.0 < starts[0] < 29.0, f"first rep at {starts[0]:.1f}s, expected ~27s"
-    assert 30.0 < starts[1] < 34.0, f"second rep at {starts[1]:.1f}s, expected ~32s"
+    assert len(peaks) == 2
+    assert 25.0 < peaks[0] < 29.0, f"first rep at {peaks[0]:.1f}s, expected ~27s"
+    assert 30.0 < peaks[1] < 34.0, f"second rep at {peaks[1]:.1f}s, expected ~32s"
 
 
 @needs_data
@@ -200,3 +208,35 @@ def test_impacts_do_not_fire_on_lifts_that_never_touch_down():
             continue
         n = len(segment.impact_anchors(io.load_log(p)))
         assert n < 3, f"{p.name}: {n} impacts would wrongly trigger anchoring"
+
+
+@needs_data
+@pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
+def test_every_rep_contains_both_phases(path):
+    """A rep starts and ends in about the same place, so it must contain both
+    an up phase and a down phase of comparable size.
+
+    This is a physical fact about lifting rather than a tuned threshold, and it
+    is the strongest check available without video. It catches a failure that
+    rep COUNTS cannot see: before segment._absorb existed, 9 of 15 deadlift
+    reps contained zero downward travel — the window held only the pull — while
+    the count was a perfect 44/44. A heavy pull often breaks into two positive
+    lobes at the knee, so the lobe adjacent to the chosen concentric is itself
+    positive and no eccentric was ever absorbed.
+
+    Pauses inside a rep are fine and are deliberately included: the bar is
+    barely moving, so a pause adds little to either total and keeping it makes
+    the window closed at both ends.
+    """
+    log = io.load_log(path)
+    velocity = world(log)[0][:, 2]
+    filtered = segment.bandpass(velocity, log["fs"])
+
+    for n, (a, b) in enumerate(segment.rep_bounds(log, velocity), 1):
+        seg, tt = filtered[a:b], log["t"][a:b]
+        up = np.trapezoid(np.clip(seg, 0, None), tt)
+        down = abs(np.trapezoid(np.clip(seg, None, 0), tt))
+        assert min(up, down) > 0.3 * max(up, down), (
+            f"{path.stem} rep {n}: up {up*100:.0f} cm vs down {down*100:.0f} cm "
+            f"— the window is missing a phase, so the rep does not close"
+        )
