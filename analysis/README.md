@@ -38,3 +38,18 @@ session scratchpad (not the repo). Data in `data/raw/`.
 
 See the session memory notes `segmentation-real-data-anchors` and
 `drift-residual-orientation-dependent` for the conclusions.
+
+## Pipeline rebuild (2026-07-28)
+- `14_b1_gyro_bias_harm.png` — B1. Applying `calibrate.gyro_bias` was worse than
+  bias=0 on every capture. Median per-rep-scale horizontal residual 71.5 cm ->
+  4.2 cm (17x), better on 10/10, worse on 0/10. The correction is now opt-in.
+- `15_a1_rep_segmentation.png` — A1. Rep windows (green) and floor impacts (red
+  dotted) on all 10 captures. 44/44 reps, zero false positives, against the old
+  segmenter's 0/14 bench and 1/15 squat. Note the setup burst at 5-15 s in every
+  capture is correctly rejected despite being LARGER than the reps.
+
+Caveat on both: measured with the 2 s tiled-window proxy in
+`tests/test_real_data.py`, which conflates real bar movement with error. It
+ranks two pipelines reliably; the absolute centimetres are not error. Rep
+BOUNDARY accuracy is likewise unvalidated — counts cannot confirm placement.
+Both need the video ground truth (A2).

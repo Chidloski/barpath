@@ -206,102 +206,44 @@ def test_accel_bias_removal_meets_horizontal_spec():
     assert worst < 0.01, f"horizontal off by {worst * 100:.1f} cm — accel bias not removed"
 
 
-# ---------------------------------------------------------------- gate 5 --
-def test_segmentation_finds_every_rep():
-    s = synth.generate()
-    log = as_log(s)
-    b, _ = calibrate.gyro_bias(log, apply=True)
-    q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], log["quat"], q)
-    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
-    _, p = integrate.integrate(a, log["dt"])
-    bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
-    assert len(bounds) == len(s.rep_bounds)
-    for (a0, _), (b0, _) in zip(bounds, s.rep_bounds):
-        assert abs(a0 - b0) < 0.15 * s.fs
-
-
-def test_mid_rep_pause_is_not_a_boundary():
-    """A rep with a sustained hold at the BOTTOM — a sticking point, a paused
-    rep — registers as a stationary window at mid-ROM. The segmenter must see
-    it as stationary yet NOT mistake it for a rep boundary: the rep spans the
-    hold rather than being split into two or dropped.
-
-    Checked drift-robustly. The rough vertical drifts metres across the set (so
-    much that a late rep's own range is dominated by drift), which is why
-    boundary placement is verified against the KNOWN true rep starts — all at
-    the rest position — and not against absolute height."""
-    s = synth.generate(set_cfg=SetConfig(grind_reps=(2,), grind_depth=1.0))
-    log = as_log(s)
-    b, _ = calibrate.gyro_bias(log, apply=True)
-    q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], log["quat"], q)
-    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
-    _, p = integrate.integrate(a, log["dt"])
-
-    windows = segment.runs(segment.stationary_mask(log))
-    assert len(windows) > len(s.rep_bounds), "the bottom hold was not detected as stationary"
-
-    bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
-    assert len(bounds) == len(s.rep_bounds)  # every rep found, none split by the hold
-    for (a0, _), (t0, _) in zip(bounds, s.rep_bounds):
-        assert abs(a0 - t0) < 0.15 * s.fs    # boundary at the top, not the hold
-
-    # no boundary lands in the interior of the grinding rep — that would be the
-    # bottom hold mistaken for a between-rep rest.
-    gi0, gi1 = s.rep_bounds[2]
-    assert not any(gi0 + 0.15 * s.fs < a0 < gi1 - 0.15 * s.fs for a0, _ in bounds)
-
-
-def test_grind_near_lockout_is_not_a_boundary():
-    """A hold near the TOP — near lockout, on the way up — sits close to the
-    rest position, the hardest case to distinguish from a real between-rep
-    rest. It must not spawn a spurious extra rep."""
-    s = synth.generate(set_cfg=SetConfig(grind_reps=(2,), grind_depth=0.15))
-    log = as_log(s)
-    b, _ = calibrate.gyro_bias(log, apply=True)
-    q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], log["quat"], q)
-    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
-    _, p = integrate.integrate(a, log["dt"])
-    bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
-    assert len(bounds) == len(s.rep_bounds)
-    for (a0, _), (t0, _) in zip(bounds, s.rep_bounds):
-        assert abs(a0 - t0) < 0.15 * s.fs
-
-
-# ---------------------------------------------------------------- gate 6 --
-def test_full_pipeline_meets_spec():
-    """THE GATE. Realistic bias and noise, recovered to under 1 cm."""
-    s = synth.generate()
-    log = as_log(s)
-
-    b, _ = calibrate.gyro_bias(log, apply=True)
-    q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], log["quat"], q)
-    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
-    _, p = integrate.integrate(a, log["dt"])
-    bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
-    reps = correct.detrend_set(p, bounds, log["t"])
-
-    for (a0, b0), rep in zip(bounds, reps):
-        truth = s.pos_true[a0:b0] - s.pos_true[a0]
-        n = min(len(truth), len(rep))
-        assert np.abs(rep[:n, :2] - truth[:n, :2]).max() < 0.01
+# ------------------------------------------------------------- deleted --
+# Gates 5 and 6 lived here: test_segmentation_finds_every_rep,
+# test_mid_rep_pause_is_not_a_boundary, test_grind_near_lockout_is_not_a_boundary
+# and test_full_pipeline_meets_spec. All four passed for months while the
+# pipeline failed in the gym by two orders of magnitude, because they asked
+# synth.py whether the pipeline handled lifting and synth.py's model of lifting
+# is wrong in the ways that mattered — it emits stationary windows between reps,
+# which loaded lifting does not have, and a constant accel bias, which the real
+# one is not.
+#
+# They are replaced by tests/test_real_data.py, which asks the captures. The
+# equivalent claims now have real referees: 44 reps across 10 sets for
+# detection, and bench_92.5x2's two paused reps for the mid-rep hold.
+#
+# Recover them with `git show 17d5eee:tests/test_pipeline.py` if a synthetic
+# version is ever wanted for a specific mechanism — but do not restore them as
+# gates. See CLAUDE.md, "Open problems".
 
 
 def test_principal_axis_finds_the_sagittal_plane():
-    """Synthetic fore-aft excursion is ~10x the lateral, so PCA must find it."""
-    s = synth.generate()
-    log = as_log(s)
-    b, _ = calibrate.gyro_bias(log, apply=True)
-    q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], log["quat"], q)
-    a = a - calibrate.accel_bias(a, log)   # coarse accel-bias removal
-    _, p = integrate.integrate(a, log["dt"])
-    bounds = segment.rep_bounds(log, p[:, 2], lift="squat")
-    reps = correct.detrend_set(p, bounds, log["t"])
+    """PCA must pick the axis of greatest horizontal variance.
+
+    Built from paths directly rather than by running the pipeline. This is a
+    property of the covariance eigendecomposition and nothing else, so routing
+    it through calibration, orientation, integration and segmentation only
+    meant it could fail — or pass — for reasons that have nothing to do with
+    what it claims to test.
+    """
+    rng = np.random.default_rng(0)
+    reps = []
+    for _ in range(5):
+        n = 200
+        u = np.linspace(0, 1, n)
+        fore_aft = 0.10 * np.sin(np.pi * u) + rng.normal(0, 0.002, n)
+        lateral = 0.01 * np.sin(np.pi * u) + rng.normal(0, 0.002, n)
+        reps.append(np.column_stack([fore_aft, lateral, 0.5 * u]))
 
     axis, ratio, excursion = project.principal_axis(reps)
     assert ratio > 3.0
-    assert abs(abs(float(axis[0])) - 1.0) < 0.2  # world x is fore-aft
+    assert abs(abs(float(axis[0])) - 1.0) < 0.2   # world x is fore-aft
+    assert 0.08 < excursion < 0.13                # ~10 cm of fore-aft travel
