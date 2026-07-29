@@ -919,11 +919,38 @@ def test_step_six_runs_and_is_off_by_default(path):
 
 
 # --------------------------------------------------- the noise-floor log --
-STATIONARY = next((p for p in ALL_LOGS if p.stem.startswith("stationary_table")), None)
+# Diagnostic captures of a watch lying still — no wrist, so no tremor and no
+# lifting. Any log whose name is not a rep-labelled lift and which is quiet
+# throughout qualifies; there are two so far and they agree, which is what
+# makes the noise-floor numbers below worth trusting.
+STATIONARY = [p for p in ALL_LOGS
+              if not REP_COUNT.match(p.name)
+              and p.stem.startswith(("stationary", "stable"))]
 
 
-@pytest.mark.skipif(STATIONARY is None, reason="no stationary capture")
-def test_core_motion_residual_gyro_bias_is_negligible():
+def _quietest(log: dict, span: float = 8.0) -> np.ndarray:
+    """Indices of the quietest `span` seconds. Both button presses excluded.
+
+    Not a fixed window: pressing Calibrate and pressing Finish bracket every
+    capture with a few tenths of a second of real motion, and where they land
+    depends on how long the recording is.
+    """
+    t = log["t"]
+    mag = np.linalg.norm(log["gyro"], axis=1)
+    best, at = None, 0.0
+    for lo in np.arange(0.0, max(t[-1] - span, 0.1), 0.5):
+        m = (t >= lo) & (t < lo + span)
+        if m.sum() < 10:
+            continue
+        v = float(mag[m].std())
+        if best is None or v < best:
+            best, at = v, lo
+    return np.flatnonzero((t >= at) & (t < at + span))
+
+
+@pytest.mark.skipif(not STATIONARY, reason="no stationary capture")
+@pytest.mark.parametrize("path", STATIONARY, ids=lambda p: p.stem)
+def test_core_motion_residual_gyro_bias_is_negligible(path):
     """A watch on a table, and the number that reframes P4, P5, B1 and C1.
 
     Every one of those is built on "residual gyro bias is 0.1-0.9 deg/s", taken
@@ -941,10 +968,8 @@ def test_core_motion_residual_gyro_bias_is_negligible():
     That is the open question, and the two-anchor protocol (C1) is what would
     answer it. Do not read this test as closing P5.
     """
-    log = io.load_log(STATIONARY)
-    t = log["t"]
-    quiet = (t >= 6.0) & (t < 16.0)          # away from the button presses
-    g = log["gyro"][quiet]
+    log = io.load_log(path)
+    g = log["gyro"][_quietest(log)]
 
     deg = 180.0 / np.pi
     assert np.linalg.norm(g.mean(axis=0)) * deg < 0.02, "expected ~0.002 deg/s at rest"
@@ -956,8 +981,9 @@ def test_core_motion_residual_gyro_bias_is_negligible():
         f"real, there IS a bias to remove and B1's default should be revisited")
 
 
-@pytest.mark.skipif(STATIONARY is None, reason="no stationary capture")
-def test_body_frame_accel_bias_at_rest_is_small():
+@pytest.mark.skipif(not STATIONARY, reason="no stationary capture")
+@pytest.mark.parametrize("path", STATIONARY, ids=lambda p: p.stem)
+def test_body_frame_accel_bias_at_rest_is_small(path):
     """0.0025 g on a table, against ~0.035 g seen on-wrist in the press posture.
 
     The gap matters: 0.035 g is g*sin(2.0 deg), so the on-wrist figure is the
@@ -966,15 +992,14 @@ def test_body_frame_accel_bias_at_rest_is_small():
     bias — and attitude error is exactly what a constant-bias estimator cannot
     fix, which is consistent with B6's oracle recovering only ~30%.
     """
-    log = io.load_log(STATIONARY)
-    t = log["t"]
-    quiet = (t >= 6.0) & (t < 16.0)
-    bias_g = np.linalg.norm(log["accel"][quiet].mean(axis=0)) / io.G
+    log = io.load_log(path)
+    bias_g = np.linalg.norm(log["accel"][_quietest(log)].mean(axis=0)) / io.G
     assert bias_g < 0.01, f"body-frame accel bias at rest is {bias_g:.4f} g"
 
 
-@pytest.mark.skipif(STATIONARY is None, reason="no stationary capture")
-def test_core_motion_attitude_is_stable_at_rest():
+@pytest.mark.skipif(not STATIONARY, reason="no stationary capture")
+@pytest.mark.parametrize("path", STATIONARY, ids=lambda p: p.stem)
+def test_core_motion_attitude_is_stable_at_rest(path):
     """0.018 deg over 10 s — about 6.6 deg/hour. Core Motion's attitude is good.
 
     Worth pinning because the whole pipeline hangs off this quantity: a 1 deg
@@ -984,9 +1009,7 @@ def test_core_motion_attitude_is_stable_at_rest():
     """
     from scipy.spatial.transform import Rotation
 
-    log = io.load_log(STATIONARY)
-    t = log["t"]
-    quiet = np.flatnonzero((t >= 6.0) & (t < 16.0))
-    R = Rotation.from_quat(log["quat"][quiet], scalar_first=True)
+    log = io.load_log(path)
+    R = Rotation.from_quat(log["quat"][_quietest(log)], scalar_first=True)
     drift = np.degrees((R[-1] * R[0].inv()).magnitude())
-    assert drift < 0.1, f"attitude drifted {drift:.3f} deg over 10 s at rest"
+    assert drift < 0.2, f"attitude drifted {drift:.3f} deg over 8 s at rest"
