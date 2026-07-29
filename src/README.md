@@ -26,14 +26,14 @@ rather than assumed.
 **Absolute ROM.** Lockout height above the resting bar, per rep, in metres.
 
 **The horizontal spec, given a number.** `metrics.vs_truth` (A3) uses this
-module to measure the reconstruction against the bar: 4.6, 7.8 and 13.4 cm rms
+module to measure the reconstruction against the bar: 5.1, 9.2 and 15.4 cm rms
 per rep on the three deadlifts, against a 1 cm spec, and 5.2/6.8/4.9 cm
 vertical against ±2–3 cm. It also showed the horizontal error is a smooth arch
 at rep frequency rather than noise. See `analysis/19`.
 
 Note what that leans on. Drawback 1 below — `PLATE_DIAMETER_M` assumed at
 450 mm — scales every one of those numbers proportionally. At 2% error that is
-about 0.2 cm on a 10 cm fore-aft measurement, small against a 5–13 cm error but
+about 0.2 cm on a 10 cm fore-aft measurement, small against a 5–15 cm error but
 not against the 1 cm spec those numbers are being compared to. Measuring a
 plate matters more now that something depends on the scale.
 

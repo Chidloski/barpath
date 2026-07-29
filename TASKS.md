@@ -85,12 +85,12 @@ normalised-time grid. `vs_truth(result, video)` measures against A2, deadlift
 only, and raises on squat and bench rather than returning a number from footage
 that is not truth.
 
-**Horizontal, as the pipeline ships it: 4.6, 7.8 and 13.4 cm rms per rep**
+**Horizontal, as the pipeline ships it: 5.1, 9.2 and 15.4 cm rms per rep**
 against a 1 cm spec. **Vertical: 6.8, 8.7 and 3.2 cm rms** against ±2–3 cm.
 
 Three findings that change the work, not just the record:
 
-- **It is 5–13×, not two orders of magnitude.** The older figure came from
+- **It is 5–15×, not two orders of magnitude.** The older figure came from
   whole-set excursion, which counts between-rep divergence that per-rep error
   does not. Excursion itself is now 3.4–35.9 cm across the ten captures; the
   "66–253 cm" in the A4 note below predates the acceleration sign fix.
@@ -166,7 +166,7 @@ and it lost. `analysis/22`.
 
 | variant | horizontal, per capture | vertical |
 |---|---|---|
-| shipping | **4.6 / 7.8 / 13.4** | **6.8 / 8.7 / 3.2** |
+| shipping | **5.1 / 9.2 / 15.4** | **6.8 / 8.7 / 3.2** |
 | anchor + all-axis closure | 10.4 / 7.4 / 10.2 | 15.3 / 18.0 / 4.5 |
 | anchor + vertical-only closure | 19.2 / 29.2 / 46.9 | 15.3 / 18.0 / 4.5 |
 | vertical-only closure, no anchor | 495 / 522 / 337 | — |
@@ -190,10 +190,13 @@ rejects are the final impact of a set, where the lifter releases the bar; the
 `max_accel` gate drops them rather than returning them wrong. B6 will want
 this.
 
-**Also kept, and it is the only win of the session:** `detrend_rep` now fits
-its line through a 5-sample median at each end instead of the two extreme
-samples. That alone took horizontal from **5.1 / 9.2 / 15.4 → 4.6 / 7.8 / 13.4**,
-better on 3 of 3. Half of B3, done.
+**A claimed win, since retracted.** This entry originally recorded that fitting
+`detrend_rep`'s line through a 5-sample median took horizontal from 5.1/9.2/15.4
+to 4.6/7.8/13.4. B2 found that was an artefact: the drift was measured between
+the two medians, which sit at t[edge/2] rather than at the ends, then applied
+across the full window — a 1.7% under-correction. The gain was that accidental
+shrinkage, not the median. With the baseline fixed, `edge=5` gives 10.08 cm mean
+against 10.01 at `edge=1`; the median is worth nothing and now defaults off.
 
 **Reverted:** `correct.anchor` and the pipeline wiring, deleted rather than
 left behind a flag.
@@ -215,7 +218,7 @@ worth 2–4 cm, not 15.
 
 ### B6 — attack the acceleration error itself  ← next
 A3 puts the error upstream of the detrend and gives it a shape: a smooth arch
-at rep frequency, 5–13 cm of horizontal per rep. The metric B6 was waiting on
+at rep frequency, 5–15 cm of horizontal per rep. The metric B6 was waiting on
 now exists, so this is unblocked.
 
 Order from the original entry still stands: per-rep zero-mean-acceleration
@@ -237,21 +240,60 @@ having little signal at all. Rejected bench reps carry 13–18k absolute HF
 energy against 0.9–2.9M in accepted deadlift reps — 50–200× **less**. Its own
 docstring intends absolute energy.
 
-### B2 — implement step 6, the wrist-to-bar offset
-`correct.apply_offset` raises. `R(t)·d` varies by **8–13 cm horizontally on
-every lift including deadlift**, contradicting the docstring's claim that
-deadlift is exempt — now corrected there. That is the same size as A3's
-measured 5–13 cm error, which makes it the largest single unmodelled term and
-the best-understood one. Needs A2 to establish `d` against video rather than a
-guess, and A3 now says whether it helped.
+### B2 — step 6 implemented; the term is 3× smaller than we thought
+`correct.apply_offset` works and step 6 is no longer a blocked stage. It is
+**off by default** because `d` is unmeasured, and B2's main finding is that it
+cannot be measured from what we have.
 
-### B3 — rework the per-rep detrend  (half done)
-**Done:** the endpoint-median fix. `detrend_rep` fit its line through the two
-extreme samples, maximally noise-sensitive at exactly the indices it depends
-on; it now uses a 5-sample median at each end. Horizontal **5.1 / 9.2 / 15.4 →
-4.6 / 7.8 / 13.4**, better on 3 of 3.
+**The 8–13 cm figure was wrong.** This entry and `pipeline.py` both claimed
+`R(t)·d` varies by 8–13 cm horizontally on every lift, and called it the largest
+unmodelled term in the system. Measured properly — within a rep, after step 7,
+swept over every possible direction of `d` at |d| = 14 cm:
 
-**Left, and harder than it looked.** The horizontal closure is false — the bar
+| lift | worst direction | typical |
+|---|---|---|
+| bench | 4.2 cm | 1.2 cm |
+| squat | 4.4 cm | 1.3 cm |
+| deadlift | 6.4 cm | 2.4 cm |
+
+The rotation premise is fine — the watch turns 18–22° through a rep, so the ~16°
+assumed in `correct.py` is right. Two things shrink it at the output: only the
+arc component perpendicular to the rotation axis sweeps at all, and step 7 runs
+afterwards and removes the linear part of what is left. Deadlift is the
+*largest* of the three, which is the opposite of the old "deadlift is exempt".
+
+**`d` is not identifiable from the video.** Fitting it against `vs_truth` is
+ill-conditioned — joint optimum at |d| = 31 cm, per-capture fits at 21, 64 and
+60 cm, against a real wrist-to-bar distance of 10–15 cm. Those are the optimiser
+absorbing P3, which is also a body-frame constant swept by the same rotating
+forearm and so nearly degenerate with `d`. Leave-one-out confirms it: one fold
+returns |d| = 129 cm and makes the held-out capture worse, 5.1 → 16.2 cm.
+
+**So `d` wants a tape measure**, watch centre to bar centre in watch axes, once.
+Same class of thirty-second fix as measuring a plate. Expected payoff, from the
+table above: ~1 cm on bench and squat, ~2 cm on deadlift.
+
+### B3 — rework the per-rep detrend
+**The endpoint-median fix was tried and is worth nothing.** `edge=5` gives
+10.08 cm mean horizontal against 10.01 at `edge=1`. The reasoning behind it is
+still sound — a line through two samples is maximally noise-sensitive at
+exactly the indices it depends on — but on these captures it does not show, so
+it defaults off with the measurement recorded next to it.
+
+**A lead worth following, found by accident.** A buggy version of that change
+under-corrected the drift line by 1.7%, and *that* improved horizontal by ~15%.
+Sweeping the shrinkage deliberately: λ=0.99 gives 4.8/7.5/13.1 against
+5.1/9.2/15.4 at λ=1. So **the closure over-corrects**, which is exactly what A3
+predicted — the bar misses closing by 1.9–4.3 cm and step 7 forces that to
+zero, so leaving ~1% of a ~2 m drift in puts back about the right amount.
+
+Not usable as it stands: the optimum is sharp and inconsistent (capture 1 wants
+0.99, capture 3 wants 0.97, λ=0.90 costs 39 cm), so a global λ is a fudge factor
+tuned on the validation set. The principled version estimates the true
+non-closure per rep and leaves that in — which needs a source for it other than
+the video being validated against. That is the real B3.
+
+**And harder than it looked.** The horizontal closure is false — the bar
 misses closing by 1.9–4.3 cm — but B7's ablation showed it is also carrying
 **metres**: drop it with nothing in its place and error goes to 3–5 m. So the
 task is not "remove a false assumption", it is "find a constraint that can

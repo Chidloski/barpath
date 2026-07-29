@@ -76,9 +76,11 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None,
         video: str | Path | None = None) -> dict:
     """Run every stage that can run. Never raises on an unimplemented stage.
 
-    `wrist_offset` is `d` from step 6, in body coordinates. Leave it None until
-    it has been established against video — a guessed lever arm is worth
-    8-13 cm of horizontal on real captures, which is the whole error budget.
+    `wrist_offset` is `d` from step 6, in body coordinates, and it is off by
+    default because nobody has measured it. B2 established that it cannot be
+    fitted from the video either — the objective is flat and the fit absorbs
+    P3 instead. A tape measure from watch centre to bar centre would switch it
+    on; a guess makes things slightly worse.
 
     `video` turns on A3's metrics. Both are computed outside the nine steps
     because they judge the pipeline rather than being part of it, and both are
@@ -113,8 +115,8 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None,
     result["position"] = position
 
     # B7 tried anchoring velocity and vertical position to the floor impacts
-    # here, and it lost: horizontal 4.6/7.8/13.4 -> 10.4/7.4/10.2 cm and
-    # vertical 6.8/8.7/3.2 -> 15.3/18.0/4.5. `segment.rest_instants` survives
+    # here, and it lost: horizontal 5.1/9.2/15.4 -> 10.4/7.4/10.2 cm and
+    # vertical 5.2/6.8/4.9 -> 15.3/18.0/4.5. `segment.rest_instants` survives
     # because it is validated and B6 will want it; the correction does not.
     # See TASKS.md B7 and analysis/22.
 
@@ -131,17 +133,12 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None,
 
     # 6 --- wrist-to-bar offset ---------------------------------------------
     if wrist_offset is None:
-        result["blocked"].append(
-            "step 6 apply_offset: no wrist offset supplied. R(t).d varies by "
-            "8-13 cm horizontally on real captures, including deadlift, so "
-            "omitting it is not a small approximation")
+        result["notes"].append(
+            "step 6 off: wrist offset d unmeasured. Worth ~1-2 cm typical, "
+            "4-6 cm worst case (B2). Needs a tape measure, not a fit")
         bar = position
     else:
-        try:
-            bar = correct.apply_offset(position, quat, wrist_offset)
-        except NotImplementedError:
-            result["blocked"].append("step 6 apply_offset: not implemented")
-            bar = position
+        bar = correct.apply_offset(position, quat, wrist_offset)
     result["bar_position"] = bar
 
     # 7 --- per-rep detrend --------------------------------------------------

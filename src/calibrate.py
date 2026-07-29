@@ -185,7 +185,7 @@ def accel_bias(world_accel: np.ndarray, log: dict,
     residual bow dropping under the 1 cm target — came from synthetic data,
     where the injected bias IS a world-frame constant and so this correction is
     exact by construction. Measured against video by metrics.vs_truth, the
-    horizontal error remaining after this stage is 4.6-13.4 cm rms per rep.
+    horizontal error remaining after this stage is 5.1-15.4 cm rms per rep.
 
     The correction removes the constant PART of a body-frame bias; the part
     that rotates with the forearm survives it, and that part is the problem.

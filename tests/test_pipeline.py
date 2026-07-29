@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -254,3 +255,52 @@ def test_principal_axis_finds_the_sagittal_plane():
     assert ratio > 3.0
     assert abs(abs(float(axis[0])) - 1.0) < 0.2   # world x is fore-aft
     assert 0.08 < excursion < 0.13                # ~10 cm of fore-aft travel
+
+
+def test_wrist_offset_is_a_rigid_rotation_of_a_constant():
+    """Step 6's algebra: p_bar = p_watch - R(t).d, and what that implies.
+
+    Three properties that hold regardless of how lifting behaves, which is what
+    this file is for:
+
+    d = 0 changes nothing. A CONSTANT attitude moves the whole path by one
+    fixed vector, so it vanishes under the start-point alignment in
+    detrend_set — that is the reason only the VARIATION of R(t).d matters, and
+    it is worth pinning rather than asserting in prose. And the correction is
+    exactly invertible, because a rotation is.
+    """
+    rng = np.random.default_rng(0)
+    n = 500
+    position = np.cumsum(rng.normal(0, 0.01, (n, 3)), axis=0)
+    d = np.array([0.03, -0.14, 0.02])
+
+    # 1. no lever arm, no change
+    still = Rotation.random(n, random_state=1).as_quat(scalar_first=True)
+    assert np.allclose(correct.apply_offset(position, still, np.zeros(3)), position)
+
+    # 2. constant attitude -> a constant shift, so shape is untouched
+    fixed = np.tile(Rotation.random(1, random_state=2).as_quat(scalar_first=True), (n, 1))
+    bar = correct.apply_offset(position, fixed, d)
+    shift = bar - position
+    assert np.allclose(shift, shift[0]), "constant attitude must give a constant offset"
+    assert np.allclose(bar - bar[0], position - position[0], atol=1e-12)
+
+    # 3. invertible: applying -d undoes it
+    there = correct.apply_offset(position, still, d)
+    assert np.allclose(correct.apply_offset(there, still, -d), position)
+
+
+def test_detrend_closes_only_the_axes_it_is_given():
+    """B3 made the closure axes explicit. They must actually be respected."""
+    rng = np.random.default_rng(3)
+    n = 300
+    t = np.linspace(0, 2.0, n)
+    ramp = np.column_stack([0.5 * t, -0.3 * t, 0.2 * t])       # pure drift
+    out = correct.detrend_rep(ramp, 0, n, t, axes=(2,))
+
+    assert abs(out[-1, 2] - out[0, 2]) < 1e-9, "vertical must close"
+    assert abs(out[-1, 0] - out[0, 0]) > 0.5, "x was not asked for and must not close"
+    assert abs(out[-1, 1] - out[0, 1]) > 0.3, "y was not asked for and must not close"
+
+    both = correct.detrend_rep(ramp, 0, n, t)
+    assert np.allclose(both[-1], both[0], atol=1e-9), "default closes all three"

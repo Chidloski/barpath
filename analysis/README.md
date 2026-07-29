@@ -91,7 +91,7 @@ per-run diagnostics (gitignored). Two things it made visible on its first run:
   is 3.4-35.9 cm now.** Excursion is also a whole-set quantity that counts
   between-rep divergence, so it overstates per-rep error; use `metrics.vs_truth`
   for error and read excursion as "how much fore-aft travel the pipeline
-  claims" (18-36 cm on deadlift, where the video says 8.5-13 cm).
+  claims" (18-36 cm on deadlift, where the video says 8.5-15 cm).
 
 `io.check_log` and `segment.quality_flags` were both dead code before this —
 written, sound, and called by nothing but a test.
@@ -147,7 +147,7 @@ and the tests it rested on could not have distinguished the two.
   aspect. Middle row: horizontal error against the video across each rep, with
   the ±1 cm spec band. Bottom row: the three numbers side by side.
 
-**Horizontal error as the pipeline ships it: 4.6, 7.8 and 13.4 cm rms per rep**
+**Horizontal error as the pipeline ships it: 5.1, 9.2 and 15.4 cm rms per rep**
 against a 1 cm spec. **Vertical: 6.8, 8.7 and 3.2 cm rms** against ±2–3 cm.
 
 The middle row is the one to look at. The error is not noise and not a ramp —
@@ -159,7 +159,7 @@ correlation before; here it is the plot.
 
 Three things this changed:
 
-- **The scale of the failure was overstated.** 5–13×, not two orders of
+- **The scale of the failure was overstated.** 5–15×, not two orders of
   magnitude. The older figure was whole-set excursion, which includes
   between-rep divergence that per-rep error does not.
 - **Vertical is out of spec too**, on all three captures. "Vertical timing and
@@ -216,7 +216,7 @@ fixed in advance, and rejected.
 
 | variant | horizontal, per capture (cm) |
 |---|---|
-| shipping | **4.6 / 7.8 / 13.4** |
+| shipping | **5.1 / 9.2 / 15.4** |
 | anchor + all-axis closure | 10.4 / 7.4 / 10.2 |
 | anchor + vertical-only closure | 19.2 / 29.2 / 46.9 |
 | vertical-only closure, no anchor | 495 / 522 / 337 |
@@ -235,9 +235,14 @@ horizontal closure that A3 called false is carrying **metres**. Remove it with
 nothing in its place and error goes to 3–5 m. It is wrong *and* essential, so
 B3 cannot simply drop it — the task is finding a replacement, not a deletion.
 
-One real win came out of it: fitting the detrend line through a 5-sample median
-at each end instead of the two extreme samples took horizontal from
-5.1 / 9.2 / 15.4 to **4.6 / 7.8 / 13.4**, better on 3 of 3.
+A win was claimed here and has been retracted. Fitting the detrend line through
+a 5-sample median appeared to take horizontal from 5.1/9.2/15.4 to 4.6/7.8/13.4;
+B2 found the gain came from a 1.7% scale error in how the drift baseline was
+measured, not from the median. With the baseline fixed the median is worth
+nothing. What the accident did reveal is that the closure OVER-corrects — a
+deliberate 1% shrinkage gives 4.8/7.5/13.1 — which matches A3's 1.9-4.3 cm of
+true non-closure. Sharp and inconsistent across captures, so not usable as a
+global constant, but it is a lead for B3.
 
 ## B5 — no saturation, and a correction (2026-07-29)
 - `20_b5_impact_impulse.png` — the floor impact examined four ways.
