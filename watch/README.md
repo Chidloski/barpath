@@ -55,7 +55,7 @@ timestamp** and let the pipeline use `dt = diff(t)`. Do not resample.
 Then, on the Python side: drop the CSV into `data/raw/`, and
 `io.load_log(path)` gives you the same dict the synthetic tests use. Run
 `io.check_log(log)` first — it flags irregular sampling, non-unit quaternions,
-and saturation.
+genuine clipping, and high-g transients at the limit of what 100 Hz represents.
 
 ## Xcode setup (once)
 

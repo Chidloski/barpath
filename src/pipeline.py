@@ -10,7 +10,7 @@ Two consequences of that, both fixed here:
 
 `io.check_log` and `segment.quality_flags` were dead code. Both were written,
 both were sound, and neither was called by anything but a test — so the
-sampling-irregularity, quaternion-norm and saturation warnings never reached a
+sampling-irregularity, quaternion-norm and high-g warnings never reached a
 human. `check_log` fires on `deadlift_180x3` and nobody had ever been told.
 
 Stages that are not implemented used to be invisible. `correct.apply_offset`,

@@ -384,8 +384,10 @@ def test_pipeline_runs_end_to_end_without_raising(path):
 def test_pipeline_surfaces_log_warnings():
     """io.check_log was dead code. The driver must actually report it.
 
-    deadlift_180x3 peaks at 21.8 g and trips the saturation check. Before the
-    driver existed that warning was computed by nothing and seen by nobody.
+    deadlift_180x3 peaks at 21.8 g and trips the brief-transient check. (It
+    used to trip a saturation check; B5 established that nothing clips, and
+    replaced the magnitude threshold with a real rail test.) Before the driver
+    existed that warning was computed by nothing and seen by nobody.
     """
     from src import pipeline
 
@@ -394,7 +396,7 @@ def test_pipeline_surfaces_log_warnings():
         pytest.skip("deadlift_180x3 not present")
 
     result = pipeline.run(path)
-    assert result["warnings"], "expected a saturation warning on deadlift_180x3"
+    assert result["warnings"], "expected a high-g transient warning on deadlift_180x3"
     assert "WARNING" in pipeline.summary(result)
 
 
@@ -665,6 +667,104 @@ def test_video_truth_is_physically_sane(video, csv, reps):
     assert 2.0 < m["video_fore_aft_cm"] < 25.0, (
         "real fore-aft travel is 10-20 cm; outside that the tracker or the "
         "plate scale is wrong")
+
+
+# ------------------------------------------------------------------- B5 --
+@needs_data
+@pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
+def test_no_capture_is_actually_clipped(path):
+    """Nothing in data/raw/ saturates, including the 21.8 g one.
+
+    `check_log` used to warn on `deadlift_180x3` for exceeding a 16 g threshold
+    that was an assumption about a sensor nobody had checked. It is not
+    clipped: every per-axis extreme is reached by exactly one sample and none
+    is a round number, which is what a genuine transient looks like. A railed
+    sensor repeats one value for consecutive samples.
+    """
+    log = io.load_log(path)
+    assert io.clipped_runs(log["accel"]) == 0
+
+
+@needs_data
+def test_the_high_g_capture_is_a_real_measurement():
+    """deadlift_180x3 peaks at 21.8 g and that is a reading, not a rail."""
+    path = next((p for p in CAPTURES if p.stem.startswith("deadlift_180x3")), None)
+    if path is None:
+        pytest.skip("deadlift_180x3 not present")
+
+    log = io.load_log(path)
+    accel = log["accel"] / io.G
+    assert 20.0 < np.linalg.norm(accel, axis=1).max() < 32.0
+    for k in range(3):
+        col = accel[:, k]
+        assert (col == col.max()).sum() == 1, "a rail repeats; a transient does not"
+        assert (col == col.min()).sum() == 1
+
+
+IMPACT_STEP_RATIO = {               # IMU velocity step / video's, per capture
+    "deadlift_155x6_1": (0.90, 1.30),
+    "deadlift_155x6_2": (0.70, 1.25),
+    "deadlift_180x3": (1.40, 1.90),          # over-reads; see the docstring
+}
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_impact_velocity_step_matches_the_video(video, csv, reps):
+    """The impulse IS captured at 100 Hz — except on the heaviest capture.
+
+    Measured as min-to-max velocity within +/-0.3 s of the impact, identically
+    on both sources. The 155 kg captures land at 0.77-1.19, median 1.04 overall.
+
+    Two ways to get this wrong, both of which the first version of this test
+    did, and both of which made the impulse look 80% missing:
+
+    Do not predict arrival velocity as sqrt(2*g*h). A touch-and-go deadlift is
+    lowered under control with the hands on the bar; it arrives at about 2 m/s,
+    not the 3.3 a free fall from lockout gives. Only the video knows.
+
+    Do not measure the step as a net change across a fixed window. The window
+    spans the rise and then the fall into the next descent, so the net is small
+    while the step is not.
+
+    deadlift_180x3 genuinely over-reads by 58-72%, alone among the three, and
+    is also the worst capture by horizontal error. That is pinned separately
+    rather than averaged away, because it is the anomaly worth explaining.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from scipy.signal import savgol_filter
+    from src import truth
+
+    log = io.load_log(RAW / f"{csv}.csv")
+    accel = orient.to_world(log["accel"], log["quat"],
+                            orient.correct_attitude(log, np.zeros(3)))
+    accel = accel - calibrate.accel_bias(accel, log)
+    vel = integrate.integrate(accel, log["dt"])[0]
+
+    path = truth.bar_path(VIDEO / f"{video}.mov")
+    impacts = segment.impact_anchors(log)
+    fit = truth.sync(truth.landings(path),
+                     np.array([float(log["t"][k]) for k in impacts]))
+    t_video = truth.to_imu_time(path, fit)
+    v_video = np.gradient(savgol_filter(path["height"], 9, 3), t_video)
+
+    ratios = []
+    for k in impacts:
+        tk = float(log["t"][k])
+        a = int(np.searchsorted(log["t"], tk - 0.30))
+        b = int(np.searchsorted(log["t"], tk + 0.30))
+        m = (t_video > tk - 0.30) & (t_video < tk + 0.30)
+        if not m.any():
+            continue
+        vid = float(np.nanmax(v_video[m]) - np.nanmin(v_video[m]))
+        ratios.append(float(vel[a:b, 2].max() - vel[a:b, 2].min()) / vid)
+
+    stem = next(k for k in IMPACT_STEP_RATIO if csv.startswith(k))
+    lo, hi = IMPACT_STEP_RATIO[stem]
+    mean = float(np.mean(ratios))
+    assert lo < mean < hi, (
+        f"{stem}: impact velocity step is {mean:.2f}x the video's, outside the "
+        f"{lo}-{hi} measured for this capture at B5")
 
 
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])

@@ -206,6 +206,30 @@ will not by itself bring the pipeline near spec. The bulk of the error is
 upstream, in the acceleration that reaches the integrator. Fix the error, not
 the thing that was supposed to hide it.
 
+**P6 — The floor impact is trustworthy, and unused.** Closed as a worry and
+opened as an opportunity, by B5.
+
+The worries were saturation and lost impulse, and neither survived measurement.
+Nothing in `data/raw/` clips — `deadlift_180x3`'s 21.78 g peak is a genuine
+reading, hit by one sample, not a rail. And the impulse survives 100 Hz despite
+the event spanning 2–3 samples: the IMU/video velocity-step ratio is median
+**1.04** over 15 impacts. `analysis/20`.
+
+So the impact is the one place in this pipeline where the IMU demonstrably
+agrees with external truth — 13.5 ms on timing, ~1.0 on the velocity step — and
+the pipeline spends it entirely on segmentation. The bar's state there is
+*known*: velocity zero, height at plate radius. Using it as an anchor is B7,
+and it is the only externally true constraint available; step 7's closure is an
+assumption by comparison.
+
+One capture dissents. `deadlift_180x3` over-reads its impact step by 58–72%,
+alone among the three, and is also the worst by horizontal error. Heaviest bar,
+hardest landing — probably strap ring, which is #14.
+
+*Caution, from getting this wrong once:* the bar is **lowered under control** on
+a touch-and-go deadlift and arrives at ~2 m/s. Do not predict its arrival from
+`sqrt(2gh)`, which gives 3.3 and makes the impulse look 80% missing.
+
 **P4 — Calibration is below its own noise floor.** The "stillest" window
 carries 7.2 °/s peak-to-peak of ~6.5 Hz physiological tremor; the bias being
 extracted from it is 0.1–0.9 °/s. Block-resampled standard error of the mean
@@ -219,6 +243,10 @@ records the residual after an opaque, time-varying internal estimate. Logging
 raw `CMGyroData` alongside would expose that estimate directly by difference.
 Raw accelerometer adds nothing — `userAccel + R⁻¹·g` already reconstructs it
 exactly (9.8065 m/s² measured at rest against 9.80665 expected).
+
+B5 checked whether a higher accelerometer rate would add anything either, and
+it would not: the impulse across a floor impact is already captured at 100 Hz
+to a median ratio of 1.04 against video. Sample rate is not a limit here.
 
 Validate on **deadlift** first — not because the pipeline differs by lift
 (it does not) but because it is the only lift with external ground truth:

@@ -125,6 +125,39 @@ executable and visible on every run.
 because error that repeats every rep lands in the mean rep and cancels. Never
 quote it alone.
 
+### B5 — accelerometer saturation: there isn't any
+**Nothing in `data/raw/` clips.** `deadlift_180x3` peaks at 21.78 g and used to
+trip `check_log`'s 16 g threshold, which was an assumption about a sensor
+nobody had checked. It is a genuine reading: every per-axis extreme is reached
+by exactly one sample and none is a round number. A railed sensor repeats one
+value across consecutive samples. `io.clipped_runs` now tests for that instead
+of for magnitude, and `check_log`'s warning went with the threshold.
+
+**The impact impulse survives 100 Hz too**, which was the follow-up question
+and the more interesting one. A 20–30 ms impact is 2–3 samples and looks
+unrecoverable, but measured against video the integrated velocity step comes
+out at ratio 0.77–1.19 on both 155 kg captures, median **1.04** over all 15
+impacts. See `analysis/20`.
+
+**I got that wrong first and the plot caught it.** The first measurement said
+16–27% of the impulse was lost, from two mistakes: predicting arrival velocity
+as `sqrt(2gh)` when a touch-and-go deadlift is *lowered under control* and
+arrives at ~2 m/s rather than 3.3; and measuring the step as a net change
+across a window that spans the rise and the fall into the next descent. Both
+are recorded in `io.py` and in the test, because they are easy to repeat.
+
+**What is real: `deadlift_180x3` over-reads the impact step by 58–72%**, alone
+among the three, and it is also the worst capture by horizontal error (15.4 cm
+against 5.1 and 9.2). Heaviest bar, hardest landing. That is the first specific
+hypothesis anyone has had for why that capture is an outlier, and it points at
+strap ring — which is what #14's `strap_resonance` was written to detect and
+currently detects backwards. Pinned per-capture in the gates rather than
+averaged away.
+
+Also killed on the way past: per-rep peak g does **not** predict per-rep error.
+Correlation +0.17 across all 15 deadlift reps. A 3-rep pattern in `180x3`
+suggested otherwise and did not survive the other 12.
+
 ### A4 — end-to-end driver `91ed978`
 `src/pipeline.py` + `run.py`. The pipeline had never been executed end to end
 against a gym capture; every prior real-data result came from scripts outside
@@ -153,7 +186,29 @@ directly against the error recovers only ~30% of the residual, so nothing
 constant-bias gets to 1 cm. Every attempt is now measurable against
 `metrics.vs_truth`, which is the whole point of having built it.
 
+### B7 — use the floor impact as a state anchor
+New, and it follows directly from B5 proving the impact is measured correctly.
+
+At the moment the bar is down and settled, its state is *known*: vertical
+velocity zero, height at plate radius (22.5 cm to bar centre). The pipeline
+currently spends that information on segmentation alone — `impact_anchors`
+picks rep boundaries and nothing else uses it.
+
+Using it as a ZUPT plus a position anchor would reset the integration once per
+rep against a physical fact, rather than against step 7's assumption that the
+bar returns to where it started. The "no closure" error is 199–322 cm on these
+captures, which is what the per-rep detrend is currently papering over; an
+anchor removes the cause rather than the symptom. It is also the one constraint
+in this project that is externally true rather than inferred.
+
+Deadlift only — bench and squat never set the bar down. Worth trying before
+B6's solver, because it is simpler and it constrains the same quantity.
+
 ### #14 — fix `quality_flags` strap resonance
+**Promoted by B5**, which found `deadlift_180x3` over-reading its impact
+velocity step by 58–72% — the signature of the strap ringing on a hard landing,
+which is exactly what this flag is supposed to catch and currently cannot.
+
 Rejects 12 of 44 real reps, all on quieter lifts, and is backwards: it
 thresholds the *fraction* of accel energy above 10 Hz, so a quiet rep fails for
 having little signal at all. Rejected bench reps carry 13–18k absolute HF
@@ -194,19 +249,6 @@ the pause gives one answer per set, which cannot be right for a set whose reps
 point different ways. Whether that is a step-8 problem or just P2 showing
 through is open — fix the acceleration first (B6) and re-measure before
 designing around it.
-
-### B5 — resolve accelerometer saturation
-`deadlift_180x3` peaks at 21.8 g and trips `check_log`, whose 16 g threshold is
-an assumption. Establish the watch's true full-scale range and make clipped
-reps a hard reject.
-
-**A3 gave this a possible motive.** `deadlift_180x3` is also the worst capture
-by a distance — 15.4 cm horizontal rms against 5.1 and 9.2 for the other two
-deadlifts. Clipped samples would corrupt the integration exactly the way this
-looks. One capture is not evidence and the two facts may be unrelated (it is
-also the heaviest pull, so it differs in more ways than one), but it is cheap
-to check and it is the first specific hypothesis anyone has had for why that
-capture is an outlier.
 
 ### C1+C2 — watch logger protocol
 Three-second stillness hold *after* the last rep — no capture has any

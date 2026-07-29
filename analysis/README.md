@@ -176,9 +176,40 @@ Three things this changed:
   forward. New evidence for B4, and a reason to doubt that a per-set axis is
   the right object.
 
-And the trap the metric is built to expose: **dispersion reports 0.7–1.3 cm on
+And the trap this metric is built to expose: **dispersion reports 0.7–1.3 cm on
 bench and squat**, comfortably inside spec, where nothing whatsoever has been
 verified. Error that repeats every rep lands in the mean rep and cancels out of
 every deviation from it, so a pipeline dominated by P3 scores well on
 rep-to-rep spread. On deadlift, where there is truth to check against,
 dispersion says 4.3 cm and the video says 5.1 cm.
+
+## B5 — no saturation, and a correction (2026-07-29)
+- `20_b5_impact_impulse.png` — the floor impact examined four ways.
+
+**The accelerometer does not clip.** `deadlift_180x3` peaks at 21.78 g and used
+to trip a 16 g threshold that was an assumption about a sensor nobody had
+checked. Bottom-right panel: the magnitude tail thins out smoothly and the peak
+is hit by exactly one sample. A rail piles up at one value. `check_log` now
+tests for an actual rail (`io.clipped_runs`) rather than for a large number.
+
+**The impact impulse survives 100 Hz.** Top-left shows the whole event spanning
+2–3 samples, which looks unrecoverable. It isn't: the IMU/video velocity-step
+ratio is 0.77–1.19 on both 155 kg captures, median 1.04 over all 15 impacts.
+
+**This corrects a wrong result recorded earlier in the same session.** The
+first measurement claimed 16–27% of the impulse was lost, from two mistakes:
+predicting arrival velocity as `sqrt(2gh)` — a touch-and-go deadlift is lowered
+under control and arrives at ~2 m/s, not 3.3 — and measuring the step as a net
+change across a window spanning the rise *and* the fall into the next descent.
+The top-right panel is what refuted it: the IMU tracks the video straight
+through the impact. Drawing the thing settled in seconds what the table of
+ratios had got confidently backwards.
+
+**What is real: `deadlift_180x3` over-reads its impact step by 58–72%**, alone
+among the three, and it is also the worst capture by horizontal error. Bottom
+left: its impacts sit well above the agreement line while the other two scatter
+around it. Heaviest bar, hardest landing, and the first specific hypothesis for
+why that capture is an outlier — pointing at strap ring, i.e. #14.
+
+Also checked and rejected: per-rep peak g does not predict per-rep error
+(correlation +0.17 across all 15 deadlift reps).
