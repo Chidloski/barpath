@@ -134,6 +134,13 @@ class SetConfig:
     rep_duration: float = 2.2  # s, one full down-up cycle
     rest_between: float = 0.8  # s, stationary at the top between reps
     calib_pause: float = 3.0  # s, the pre-set stillness window
+    # s, the POST-set stillness window. C1: the watch logger holds still after
+    # the last rep as well as before the first, so that gyro bias can be
+    # measured as drift over a ~40 s baseline instead of from one short window
+    # where it is smaller than the tremor it sits in. synth models the capture
+    # protocol as well as the sensors, so it emits this too — otherwise
+    # io.check_log correctly complains about every synthetic log.
+    settle_pause: float = 3.0
 
     rom: float = 0.55  # m, vertical range of motion
     forward_amp: float = 0.035  # m, fore-aft excursion at full depth
@@ -209,7 +216,8 @@ def _trajectory(cfg: SetConfig, fs: float):
     grind_reps = set(cfg.grind_reps)
     rep_durs = [cfg.rep_duration + (cfg.grind_duration if r in grind_reps else 0.0)
                 for r in range(cfg.n_reps)]
-    total = cfg.calib_pause + sum(d + cfg.rest_between for d in rep_durs)
+    total = (cfg.calib_pause + sum(d + cfg.rest_between for d in rep_durs)
+             + cfg.settle_pause)
     n = int(round(total * fs))
     t = np.arange(n) * dt
 

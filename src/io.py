@@ -70,6 +70,11 @@ import numpy as np
 
 COLUMNS = ["t", "qw", "qx", "qy", "qz", "ax", "ay", "az", "gx", "gy", "gz"]
 
+# C2, and OPTIONAL. The watch logger appends these; the ten captures recorded
+# before it did not have them, and synth.py does not emit them. Absent means
+# `raw_gyro` is None rather than an error.
+RAW_GYRO_COLUMNS = ["rgt", "rgx", "rgy", "rgz"]
+
 G = 9.80665
 
 
@@ -96,12 +101,25 @@ def load_log(path: str | Path) -> dict:
         quat   (N,4)  w, x, y, z
         accel  (N,3)  m/s^2, PHYSICS sign (converted from g and negated on
                       load — see the module docstring)
-        gyro   (N,3)  rad/s
+        gyro   (N,3)  rad/s, as reported — Core Motion has ALREADY removed its
+                      own bias estimate from this
         fs     float  median sample rate, for reference only
+
+    And, only when the log carries them (C2, watch logger from 2026-07-29 on):
+
+        raw_gyro      (N,3)  rad/s, NOT bias-corrected
+        raw_gyro_lag  (N,)   seconds between the paired raw and device-motion
+                             samples. The two streams arrive on separate
+                             callbacks, so `gyro - raw_gyro` is only Core
+                             Motion's bias estimate to the extent this is small
+                             — check it before trusting the difference.
+
+    Both are None on the ten captures recorded before that and on synth output.
     """
     raw = np.genfromtxt(path, delimiter=",", names=True)
     t = np.asarray(raw["t"], dtype=float)
-    t = t - t[0]
+    t0 = t[0]
+    t = t - t0
 
     dt = np.empty_like(t)
     dt[1:] = np.diff(t)
@@ -113,14 +131,43 @@ def load_log(path: str | Path) -> dict:
     accel = -np.column_stack([raw["ax"], raw["ay"], raw["az"]]) * G
     gyro = np.column_stack([raw["gx"], raw["gy"], raw["gz"]])
 
+    have_raw = all(c in (raw.dtype.names or ()) for c in RAW_GYRO_COLUMNS)
+    raw_gyro = raw_lag = None
+    if have_raw:
+        raw_gyro = np.column_stack([raw["rgx"], raw["rgy"], raw["rgz"]])
+        raw_lag = np.asarray(raw["rgt"], dtype=float) - t0 - t
+        if np.isnan(raw_gyro).all():
+            raw_gyro = raw_lag = None      # column present, never populated
+
     return {
         "t": t,
         "dt": dt,
         "quat": quat,
         "accel": accel,
         "gyro": gyro,
+        "raw_gyro": raw_gyro,
+        "raw_gyro_lag": raw_lag,
         "fs": float(1.0 / np.median(dt[1:])) if len(t) > 1 else 100.0,
     }
+
+
+def core_motion_gyro_bias(log: dict) -> np.ndarray | None:
+    """Core Motion's own gyro bias estimate, by difference. C2, needs raw gyro.
+
+    `dm.rotationRate` is already bias-corrected and `CMGyroData.rotationRate` is
+    not, so their difference is the estimate Core Motion applied — the opaque,
+    time-varying quantity P5 says we cannot otherwise see. Returns None when the
+    log predates C2.
+
+    **The sign convention is unverified.** If Core Motion computes
+    `corrected = raw - bias` then bias is `raw - corrected`, which is what this
+    returns. Nobody has confirmed that against a capture yet, so check it on the
+    first C2 log before building anything on the sign: a stationary watch should
+    give a bias of the right ORDER (0.1-0.9 deg/s) and a consistent direction.
+    """
+    if log.get("raw_gyro") is None:
+        return None
+    return log["raw_gyro"] - log["gyro"]
 
 
 def clipped_runs(accel: np.ndarray, min_run: int = 2) -> int:
@@ -168,6 +215,25 @@ def check_log(log: dict) -> list[str]:
     n = clipped_runs(log["accel"])
     if n:
         warn.append(f"accelerometer CLIPPED: {n} samples railed at full scale")
+
+    # C2 pairing quality. `gyro - raw_gyro` is only Core Motion's bias estimate
+    # if the two samples are close in time; at 100 Hz a lag over ~15 ms means the
+    # difference is dominated by real rotation instead.
+    lag = log.get("raw_gyro_lag")
+    if lag is not None:
+        worst = float(np.nanmax(np.abs(lag)))
+        if worst > 0.015:
+            warn.append(f"raw gyro pairing lag up to {worst*1000:.0f} ms — "
+                        f"gyro minus raw_gyro is not a clean bias estimate")
+
+    # C1. No closing stillness means only one gravity anchor, which is the
+    # limitation P4 is about: a single 1-3 s window cannot separate bias from
+    # tremor. Cheap to check here rather than discovering it during analysis.
+    if len(log["t"]) > 1 and log["t"][-1] > 5.0:
+        tail = log["t"] > log["t"][-1] - 2.0
+        if np.linalg.norm(log["gyro"][tail], axis=1).mean() > 0.05:
+            warn.append("no closing stillness hold — single-anchor capture, so "
+                        "gyro bias cannot be measured over a long baseline (C1)")
 
     n_brief, peak = brief_transients(log["accel"], log["fs"])
     if n_brief:

@@ -181,37 +181,55 @@ def test_to_world_removes_gravity_leak():
 
 
 # ------------------------------------------- gate 4c: accel-bias removal --
-def test_accel_bias_removal_meets_horizontal_spec():
-    """Realistic bias, pipeline through integration WITH coarse accel-bias
-    removal: the endpoint-CHORD detrend (what correct.detrend_rep will do) must
-    recover each rep's horizontal path to under 1 cm — compared against zeroed
-    truth, exactly as the full-pipeline gate does.
+def test_accel_bias_removal_helps_on_every_seed():
+    """calibrate.accel_bias must reduce the horizontal residual. A COMPARISON.
 
-    Isolates the accel-bias step from segmentation (true bounds) and from the
-    reserved detrend (chord subtracted inline). Without calibrate.accel_bias the
-    residual is ~1.3 cm: the body-fixed accel bias rotates with the forearm, so
-    it is not the removable ramp a linear detrend assumes. Removing it in the
-    world frame from the pause drops the residual well under spec.
+    This was written as an absolute threshold — "must recover each rep to under
+    1 cm" — and it was not a gate. Measured across twelve noise seeds the
+    residual spans 0.29-1.86 cm, so **it failed on 5 of 12 and passed only
+    because seed=0 happened to land at 0.39**. Adding C1's closing hold to
+    synth lengthened the record, moved the noise draw, and exposed it.
+
+    That is the same mistake as gates 5 and 6 in miniature: a behavioural spec
+    claim refereed by synth.py, which cannot referee one. A threshold sitting
+    inside the generator's own seed-to-seed spread constrains nothing.
+
+    What synth CAN settle is whether the mechanism works, so this now asserts
+    the comparison: removing the world-frame pause bias must beat not removing
+    it, on every seed. It does, 12 of 12, median 1.93 -> 1.58 cm. Same pattern
+    as the B1 gate in test_real_data — if this ever fails, the step is wrong,
+    and no threshold needs retuning to find that out.
+
+    Note what the numbers say even here: ~1.6 cm residual on SYNTHETIC data
+    with a constant world-frame bias injected, which is the shape this
+    correction removes exactly. Real captures are 5-15 cm. Do not read this
+    test as evidence about the gym.
     """
-    s = synth.generate()
-    log = as_log(s)
-    b, _ = calibrate.gyro_bias(log, apply=True)
-    q = orient.correct_attitude(log, b)
-    a = orient.to_world(log["accel"], log["quat"], q)
-    a = a - calibrate.accel_bias(a, log)
-    _, p = integrate.integrate(a, log["dt"])
+    def residual(seed: int, remove: bool) -> float:
+        s = synth.generate(sensor_cfg=SensorConfig(seed=seed))
+        log = as_log(s)
+        b, _ = calibrate.gyro_bias(log, apply=True)
+        q = orient.correct_attitude(log, b)
+        a = orient.to_world(log["accel"], log["quat"], q)
+        if remove:
+            a = a - calibrate.accel_bias(a, log)
+        _, p = integrate.integrate(a, log["dt"])
 
-    def chord_detrend(seg):
-        n = len(seg)
-        u = (np.arange(n) / (n - 1))[:, None]
-        return seg - (seg[0] + (seg[-1] - seg[0]) * u)  # line through the endpoints
+        worst = 0.0
+        for a0, b0 in s.rep_bounds:
+            seg = p[a0:b0]
+            u = (np.arange(len(seg)) / (len(seg) - 1))[:, None]
+            rep = seg - (seg[0] + (seg[-1] - seg[0]) * u)   # endpoint chord
+            truth = s.pos_true[a0:b0] - s.pos_true[a0]
+            worst = max(worst, np.abs(rep[:, :2] - truth[:, :2]).max())
+        return worst
 
-    worst = 0.0
-    for a0, b0 in s.rep_bounds:
-        rep = chord_detrend(p[a0:b0])
-        truth = s.pos_true[a0:b0] - s.pos_true[a0]
-        worst = max(worst, np.abs(rep[:, :2] - truth[:, :2]).max())
-    assert worst < 0.01, f"horizontal off by {worst * 100:.1f} cm — accel bias not removed"
+    off = [residual(sd, False) for sd in range(12)]
+    on = [residual(sd, True) for sd in range(12)]
+
+    losses = [(sd, o, f) for sd, o, f in zip(range(12), on, off) if o >= f]
+    assert not losses, f"accel-bias removal made it worse on seeds {losses}"
+    assert np.median(on) < np.median(off)
 
 
 # ------------------------------------------------------------- deleted --
@@ -304,3 +322,56 @@ def test_detrend_closes_only_the_axes_it_is_given():
 
     both = correct.detrend_rep(ramp, 0, n, t)
     assert np.allclose(both[-1], both[0], atol=1e-9), "default closes all three"
+
+
+def test_raw_gyro_columns_are_optional(tmp_path):
+    """C2's columns must be readable when present and absent without error.
+
+    The ten captures in data/raw/ predate the watch logger's raw-gyro columns
+    and synth.py does not emit them, so `raw_gyro` being None has to be a
+    supported state rather than a crash. That is the whole reason the columns
+    are appended rather than interleaved.
+    """
+    s = synth.generate()
+    plain = io.save_log(tmp_path / "plain.csv", synth.to_log_dict(s))
+    log = io.load_log(plain)
+    assert log["raw_gyro"] is None and log["raw_gyro_lag"] is None
+    assert io.core_motion_gyro_bias(log) is None
+
+    # Now the same log with C2 columns bolted on, as the watch writes them.
+    text = plain.read_text().splitlines()
+    n = len(text) - 1
+    rng = np.random.default_rng(0)
+    bias = np.array([0.004, -0.002, 0.006])          # rad/s, plausible
+    extra = log["gyro"] + bias + rng.normal(0, 1e-4, (n, 3))
+    rows = [text[0] + ",rgt,rgx,rgy,rgz"]
+    for i, line in enumerate(text[1:]):
+        rows.append(f"{line},{s.t[i]:.9g},"
+                    f"{extra[i, 0]:.9g},{extra[i, 1]:.9g},{extra[i, 2]:.9g}")
+    full = tmp_path / "c2.csv"
+    full.write_text("\n".join(rows) + "\n")
+
+    log2 = io.load_log(full)
+    assert log2["raw_gyro"].shape == (n, 3)
+    assert np.abs(log2["raw_gyro_lag"]).max() < 1e-6      # written in step
+    # raw - corrected recovers the injected bias, which is the point of C2.
+    assert np.abs(io.core_motion_gyro_bias(log2).mean(axis=0) - bias).max() < 1e-4
+
+
+def test_synth_emits_a_closing_stillness_hold():
+    """C1: synth models the capture protocol, not just the sensors.
+
+    Without this every synthetic log trips check_log's single-anchor warning,
+    which would be correct — and would also make the warning useless by firing
+    everywhere. The generator emits what the watch now records.
+    """
+    s = synth.generate()
+    log = as_log(s)
+    assert io.check_log(log) == []
+
+    tail = log["t"] > log["t"][-1] - 2.0
+    assert np.linalg.norm(log["gyro"][tail], axis=1).mean() < 0.05
+
+    from src.synth import SetConfig
+    none = as_log(synth.generate(set_cfg=SetConfig(settle_pause=0.0)))
+    assert any("closing stillness" in w for w in io.check_log(none))

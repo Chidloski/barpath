@@ -30,18 +30,32 @@ struct ContentView: View {
 
                 case .calibrating:
                     Text("HOLD STILL").font(.headline).foregroundStyle(.yellow)
+                    Text("opening anchor").font(.caption2).foregroundStyle(.secondary)
                     Text("\(rec.sampleCount) samples").font(.caption).foregroundStyle(.secondary)
                     Button("Start Set") { rec.startSet() }
                         .frame(maxWidth: .infinity).tint(.green)
-                    Button("Discard") { rec.finish() }
+                    // Discard used to call finish(), which WROTE the CSV.
+                    Button("Discard") { rec.discard() }
                         .frame(maxWidth: .infinity).tint(.red)
 
                 case .recording:
                     Text("RECORDING").font(.headline).foregroundStyle(.green)
                     Text(String(format: "%.0f s · %d", rec.elapsed, rec.sampleCount))
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Finish Set") { rec.finish() }
-                        .frame(maxWidth: .infinity).tint(.red)
+                    Button("Finish Set") { rec.endSet() }
+                        .frame(maxWidth: .infinity).tint(.orange)
+
+                case .settling:
+                    // C1. Saves itself when the countdown reaches zero, so the
+                    // lifter can rack the bar and leave the wrist alone rather
+                    // than reaching for the watch — which would ruin the anchor.
+                    Text("HOLD STILL").font(.headline).foregroundStyle(.yellow)
+                    Text("closing anchor").font(.caption2).foregroundStyle(.secondary)
+                    Text(String(format: "%.1f s", rec.settleRemaining))
+                        .font(.system(.title2, design: .rounded)).monospacedDigit()
+                    Text("saves itself").font(.caption2).foregroundStyle(.secondary)
+                    Button("Save now") { rec.save() }
+                        .frame(maxWidth: .infinity).tint(.gray)
                 }
             }
             .padding()
