@@ -48,6 +48,12 @@ Nine steps, one module each, numbered to match.
 8. `project.py` — PCA on horizontal displacement picks the display axis.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
 
+`metrics.py` is not one of the steps. It judges them: `dispersion` for
+rep-to-rep spread, `vs_truth` for absolute error against the video. Read its
+module docstring before quoting a number from it — `dispersion` needs no truth
+and is blind to exactly the error that dominates, so the two are not
+interchangeable.
+
 `synth.py` generates logs from a known bar path with injected bias. It was
 the keystone and is no longer. Its model of lifting is wrong in ways real
 captures have now measured — it emits stationary windows between reps, which
@@ -156,20 +162,49 @@ stay that way until P3 is fixed. This is not a segmentation problem.
 *Evidence:* `analysis/04`–`07`, `12` for the old failure; `15`–`18` for A1;
 `17` and `src/README.md` for the phase bug.
 
-**P2 — Horizontal is drift-dominated by two orders of magnitude.** Paused
-bench reconstructs to ~1 m fore-aft against a real 0.1–0.2 m. The spec is
-1 cm. Vertical timing and structure come out fine; the side-on view is not
-trustworthy at all. Since A4 the same failure is measured through the pipeline
-itself rather than off-pipeline: horizontal excursion comes out at **66–253 cm**
-where real is 10–20 cm. *Evidence:* `analysis/13`, and the A4 section of
-`analysis/README.md`.
+**P2 — Horizontal is 5–15× outside spec, and vertical is out too.** Measured
+against video by A3, per rep, on the three deadlifts: horizontal **5.1, 9.2 and
+15.4 cm rms** against a 1 cm spec, and vertical **5.2, 6.8 and 4.9 cm rms**
+against ±2–3 cm.
 
-**P3 — The per-rep linear detrend's premise is violated.** It was justified on
-errors being smooth and monotonic while true motion is periodic and closes.
-But the accel bias is fixed in the *body* frame and the forearm rotates
-through the rep, so in the world frame that error is periodic **at rep
-frequency** — the one shape a per-rep line cannot separate from real motion.
-`calibrate.accel_bias`'s own docstring says so. P2 most likely lives here.
+Two corrections to what this problem used to say. It is 5–15×, not the two
+orders of magnitude claimed from off-pipeline reconstructions and from
+whole-set excursion — excursion counts between-rep divergence, which per-rep
+error does not. And **"vertical comes out fine" is false**; vertical was never
+measured per rep before A3 and it misses its own looser spec on all three
+captures.
+
+Still true, and now with a number on it: the reconstruction invents fore-aft
+travel. Excursion is 18–36 cm on deadlift where the video says the bar moved
+8.5–13 cm.
+
+Worse than magnitude, though — **the direction is not stable across a set.**
+`vs_truth` picks one fore-aft sign per set, as step 8 would, then counts the
+reps that individually prefer the other: **4 of 6, 2 of 6, 1 of 3.** On the
+first capture that is nearly a coin flip. The horizontal reconstruction is not
+a good path with a scale error; rep to rep it does not agree with itself about
+which way forward is.
+
+*Evidence:* `analysis/19`, `metrics.vs_truth`. `analysis/13` is the older
+off-pipeline version. Note the "66–253 cm" figure in the A4 section of
+`analysis/README.md` predates the acceleration sign fix; it is 3.4–35.9 cm now.
+
+**P3 — The error sits at rep frequency, where no filter or line can reach it.**
+The accel bias is fixed in the *body* frame and the forearm rotates through the
+rep, so in the world frame that error is periodic **at rep frequency** — the
+one shape a per-rep line cannot separate from real motion.
+`calibrate.accel_bias`'s own docstring says so. A3 shows it directly: the
+horizontal error against video is a single smooth arch across each rep, peaking
+around 0.5–0.7 through it, not noise and not a ramp (`analysis/19`, middle row).
+
+**What A3 changed here.** The detrend's *premise* is violated — the real
+deadlift bar misses closing horizontally by 1.9–4.3 cm, so forcing closure does
+destroy real motion. But the detrend is **not** where P2 lives. Removing the
+closure from both sides of the comparison moves the error by only 0.2–0.9 cm,
+against a 5–15 cm total. So B3 is a real correctness fix worth ~2–4 cm and it
+will not by itself bring the pipeline near spec. The bulk of the error is
+upstream, in the acceleration that reaches the integrator. Fix the error, not
+the thing that was supposed to hide it.
 
 **P4 — Calibration is below its own noise floor.** The "stillest" window
 carries 7.2 °/s peak-to-peak of ~6.5 Hz physiological tremor; the bias being

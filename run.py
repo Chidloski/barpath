@@ -4,6 +4,10 @@
     python run.py                      # every capture in data/raw
     python run.py data/raw/foo.csv     # one
     python run.py --plot               # also write diagnostics to analysis/
+    python run.py --truth              # also measure against the video (A3)
+
+--truth is slow: it decodes each clip. It only produces numbers on deadlift,
+which is the only lift with trustworthy video truth — the others report why.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from src import pipeline  # noqa: E402
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
+    want_truth = "--truth" in argv
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:
@@ -28,7 +33,8 @@ def main(argv: list[str]) -> int:
 
     blocked: set[str] = set()
     for path in paths:
-        result = pipeline.run(path)
+        video = pipeline.find_video(path, ROOT / "data" / "video") if want_truth else None
+        result = pipeline.run(path, video=video)
         print(pipeline.summary(result))
         print()
         blocked.update(result["blocked"])

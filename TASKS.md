@@ -76,6 +76,55 @@ all 9 impacts where a floor decelerating a falling bar demands positive. Both
 are gates now. Segmentation needed cadence selection afterwards to stay at
 44/44.
 
+### A3 — real-data error metrics
+`src/metrics.py`. The first measurement of error in this project. Absence of
+this is why every stage could pass while the product failed.
+
+`dispersion(reps)` needs no truth and measures rep-to-rep spread on the
+normalised-time grid. `vs_truth(result, video)` measures against A2, deadlift
+only, and raises on squat and bench rather than returning a number from footage
+that is not truth.
+
+**Horizontal, as the pipeline ships it: 5.1, 9.2 and 15.4 cm rms per rep**
+against a 1 cm spec. **Vertical: 5.2, 6.8 and 4.9 cm rms** against ±2–3 cm.
+
+Three findings that change the work, not just the record:
+
+- **It is 5–15×, not two orders of magnitude.** The older figure came from
+  whole-set excursion, which counts between-rep divergence that per-rep error
+  does not. Excursion itself is now 3.4–35.9 cm across the ten captures; the
+  "66–253 cm" in the A4 note below predates the acceleration sign fix.
+- **Vertical is out of spec too.** "Vertical timing and structure come out
+  fine" has been repeated since the first analysis and had never been measured
+  per rep. It misses ±2–3 cm on all three deadlifts.
+- **The per-rep detrend is not where P2 lives.** `vs_truth` reports the error
+  with step 7's closure applied to the *video* as well: it moves the number by
+  0.2–0.9 cm. B3 is still a real fix — the tracked bar misses closing by
+  1.9–4.3 cm horizontally, which step 7 forces to zero — but it is worth a few
+  centimetres, not the fifteen that matter. **This demotes B3 and promotes
+  B6.** The error is upstream, in the acceleration reaching the integrator.
+
+A fourth finding, unlooked for. `vs_truth` resolves the fore-aft sign **once
+per set**, because that is what step 8 can do — resolving it per rep would let
+a mirrored rep be corrected for free and flatter the metric. Doing it properly
+then exposes that **4 of 6, 2 of 6 and 1 of 3 reps individually prefer the
+opposite sign**. The horizontal reconstruction does not agree with itself about
+which way forward is, within a single set. That is B4 evidence nobody had, and
+it raises the question of whether a per-set axis is the right object at all.
+
+`analysis/19` shows the shape: horizontal error is a single smooth arch across
+each rep, peaking 0.5–0.7 through it. That is P3 seen directly rather than
+inferred.
+
+Two gates in `tests/test_real_data.py`: ceilings pinned at today's numbers so
+they can only improve, and an `xfail` carrying the actual 1 cm spec so it is
+executable and visible on every run.
+
+**dispersion flatters a broken pipeline and the tests say so.** It reports
+0.7–1.3 cm on bench and squat, inside spec, where nothing is verified at all —
+because error that repeats every rep lands in the mean rep and cancels. Never
+quote it alone.
+
 ### A4 — end-to-end driver `91ed978`
 `src/pipeline.py` + `run.py`. The pipeline had never been executed end to end
 against a gym capture; every prior real-data result came from scripts outside
@@ -87,13 +136,22 @@ previously dead code.
 
 ## To do
 
-Ordered by what unblocks the most.
+Ordered by what unblocks the most. **Re-ordered by A3's measurements:** B6 and
+B2 are where the error actually is; B3 dropped because measurement showed it
+worth 2–4 cm, not 15.
 
-### A3 — real-data error metrics  ← next
-`src/metrics.py`: `dispersion(reps)` for rep-to-rep spread after start
-alignment, and `vs_truth(reps, video)` against A2. **The absence of this is why
-every stage could pass while the product failed.** Nothing in B is trustworthy
-until it exists. Blocked on #13 for meaningful windows.
+### B6 — attack the acceleration error itself  ← next
+A3 puts the error upstream of the detrend and gives it a shape: a smooth arch
+at rep frequency, 5–15 cm of horizontal per rep. The metric B6 was waiting on
+now exists, so this is unblocked.
+
+Order from the original entry still stands: per-rep zero-mean-acceleration
+constraints first (they hold during motion and need no stillness), then the
+two-anchor estimate C1 unlocks, then time-varying correction if those fail.
+The cap also still stands — an oracle fitting constant gyro *and* accel bias
+directly against the error recovers only ~30% of the residual, so nothing
+constant-bias gets to 1 cm. Every attempt is now measurable against
+`metrics.vs_truth`, which is the whole point of having built it.
 
 ### #14 — fix `quality_flags` strap resonance
 Rejects 12 of 44 real reps, all on quieter lifts, and is backwards: it
@@ -105,15 +163,22 @@ docstring intends absolute energy.
 ### B2 — implement step 6, the wrist-to-bar offset
 `correct.apply_offset` raises. `R(t)·d` varies by **8–13 cm horizontally on
 every lift including deadlift**, contradicting the docstring's claim that
-deadlift is exempt. Largest single unmodelled term in the system. Needs A2 to
-establish `d` against video rather than a guess.
+deadlift is exempt — now corrected there. That is the same size as A3's
+measured 5–15 cm error, which makes it the largest single unmodelled term and
+the best-understood one. Needs A2 to establish `d` against video rather than a
+guess, and A3 now says whether it helped.
 
 ### B3 — rework the per-rep detrend
-`detrend_rep` fits a line through two endpoint samples, so it is maximally
-noise-sensitive at exactly those indices. Its premise — "the bar starts and
-ends each rep in the same place" — is false horizontally: the owner confirms
-the deadlift bar lands off where it was pulled. Make closure axes explicit;
-keep vertical.
+**Demoted by A3, from "P2 most likely lives here" to worth 2–4 cm.** Applying
+step 7's closure to the video as well moves the error by 0.2–0.9 cm against a
+5–15 cm total, so this is a correctness fix rather than the fix.
+
+Still worth doing, and its premise is now measured rather than argued: the
+tracked deadlift bar misses closing horizontally by **1.9–4.3 cm**, which step
+7 forces to zero, so the constraint destroys that much real motion. Make the
+closure axes explicit and keep vertical, where the bar genuinely does return.
+`detrend_rep` also fits its line through two endpoint samples, making it
+maximally noise-sensitive at exactly those indices.
 
 ### B4 — fix step 8
 `project_to_plane` and `confidence` raise. `principal_axis` uses `np.linalg.eig`
@@ -121,14 +186,31 @@ on a symmetric matrix instead of `eigh`, and the docstring's sign resolution is
 unimplemented — so the path can silently mirror, which the docstring itself
 calls worse than no path.
 
+A3 confirmed the mirror is not hypothetical — on `deadlift_155x6_2` the axis
+came out backwards and had to be flipped against the video. It also found
+something the planned fix does not address: **4 of 6, 2 of 6 and 1 of 3 reps
+disagree with their own set's sign.** Resolving the sign from wrist attitude at
+the pause gives one answer per set, which cannot be right for a set whose reps
+point different ways. Whether that is a step-8 problem or just P2 showing
+through is open — fix the acceleration first (B6) and re-measure before
+designing around it.
+
 ### B5 — resolve accelerometer saturation
 `deadlift_180x3` peaks at 21.8 g and trips `check_log`, whose 16 g threshold is
 an assumption. Establish the watch's true full-scale range and make clipped
 reps a hard reject.
 
+**A3 gave this a possible motive.** `deadlift_180x3` is also the worst capture
+by a distance — 15.4 cm horizontal rms against 5.1 and 9.2 for the other two
+deadlifts. Clipped samples would corrupt the integration exactly the way this
+looks. One capture is not evidence and the two facts may be unrelated (it is
+also the heaviest pull, so it differs in more ways than one), but it is cheap
+to check and it is the first specific hypothesis anyone has had for why that
+capture is an outlier.
+
 ### C1+C2 — watch logger protocol
-Three-second stillness hold *after* the last rep (zero of 13 captures have any
-end-of-record stillness) giving a second gravity anchor over a ~40 s baseline
+Three-second stillness hold *after* the last rep — no capture has any
+end-of-record stillness — giving a second gravity anchor over a ~40 s baseline
 where accel-bias tilt error cancels in the difference. Log raw `CMGyroData`
 alongside, which exposes Core Motion's internal bias estimate by difference.
 
@@ -136,14 +218,6 @@ alongside, which exposes Core Motion's internal bias estimate by difference.
 Gates 5 and 6 are already deleted. Keep the algebraic-identity tests; replace
 the rest with real-data gates. Largely done incidentally — worth a pass to
 confirm nothing behavioural survives.
-
-### B6 — revisit attitude with a working metric
-**Only after A3.** Per-rep zero-mean-acceleration constraints first (they hold
-during motion and need no stillness), then the two-anchor estimate C1 unlocks,
-then time-varying correction if those fail. Do not build a solver before the
-metric exists — an oracle fitting constant gyro *and* accel bias directly
-against the error recovers only ~30% of the residual, so constant-bias
-estimation is capped well short of 1 cm.
 
 ---
 

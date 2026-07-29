@@ -23,6 +23,11 @@ is worth more than an exception.
 The result dict is deliberately fat. Every intermediate stays in it, because
 the recurring failure in this project has been a stage that looked fine from
 its output and was wrong in the middle.
+
+A3's metrics run here too, after the nine steps, though they are not steps —
+they judge the steps. `dispersion` always; `vs_truth` when a video is supplied.
+Both land in the same dict and both are printed by `summary`, because a number
+nobody sees is how this pipeline came to fail while every stage passed.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import calibrate, correct, integrate, io, orient, project, segment
+from . import calibrate, correct, integrate, io, metrics, orient, project, segment
 
 REP_LABEL = re.compile(r"^(bench|squat|deadlift)_[\d.]+x(\d+)")
 
@@ -48,12 +53,37 @@ def expected_reps(path: str | Path) -> int | None:
     return int(m.group(2)) if m else None
 
 
-def run(path: str | Path, wrist_offset: np.ndarray | None = None) -> dict:
+def find_video(path: str | Path, video_dir: str | Path | None = None) -> Path | None:
+    """The clip filmed alongside a capture, or None.
+
+    Paired by name: the video's stem is a prefix of the CSV's, because the CSV
+    carries a capture timestamp the video does not
+    (deadlift_155x6_1_20260728.mov -> deadlift_155x6_1_20260728_122828.csv).
+    Nothing enforces that convention, so a miss returns None rather than
+    guessing at a pairing — comparing a capture against the wrong set's video
+    would produce a confident, meaningless number.
+    """
+    path = Path(path)
+    root = Path(video_dir) if video_dir else path.resolve().parents[2] / "data" / "video"
+    if not root.is_dir():
+        return None
+    hits = sorted((v for v in root.glob("*.mov") if path.stem.startswith(v.stem)),
+                  key=lambda v: len(v.stem), reverse=True)
+    return hits[0] if hits else None
+
+
+def run(path: str | Path, wrist_offset: np.ndarray | None = None,
+        video: str | Path | None = None) -> dict:
     """Run every stage that can run. Never raises on an unimplemented stage.
 
     `wrist_offset` is `d` from step 6, in body coordinates. Leave it None until
     it has been established against video — a guessed lever arm is worth
     8-13 cm of horizontal on real captures, which is the whole error budget.
+
+    `video` turns on A3's metrics. Both are computed outside the nine steps
+    because they judge the pipeline rather than being part of it, and both are
+    recorded as blocked with a reason rather than raising, on the same
+    principle as the stages: a partial result you can see beats an exception.
     """
     result: dict = {"path": str(path), "blocked": [], "notes": []}
 
@@ -131,6 +161,18 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None) -> dict:
     if "planar" not in result:
         result["blocked"].append("step 9 plot: needs step 8")
 
+    # A3 --- metrics. Not a pipeline step; the thing that judges the steps. ---
+    if len(reps) >= 2:
+        result["dispersion"] = metrics.dispersion(reps, log["t"], bounds)
+    elif reps:
+        result["notes"].append("dispersion needs >=2 reps")
+
+    if video is not None:
+        try:
+            result["vs_truth"] = metrics.vs_truth(result, video)
+        except (ValueError, FileNotFoundError) as e:
+            result["blocked"].append(f"A3 vs_truth: {e}")
+
     return result
 
 
@@ -175,6 +217,10 @@ def summary(result: dict) -> str:
     if "axis_ratio" in result:
         lines.append(f"  display axis ratio {result['axis_ratio']:.1f}, "
                      f"excursion {result['excursion'] * 100:.1f} cm")
+
+    report = metrics.summary(result.get("dispersion"), result.get("vs_truth"))
+    if report:
+        lines.append(report)
 
     for note in result["notes"]:
         lines.append(f"  NOTE  {note}")

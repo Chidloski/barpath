@@ -86,6 +86,12 @@ per-run diagnostics (gitignored). Two things it made visible on its first run:
   LESS. Its own docstring intends absolute energy.
 - **Horizontal excursion is 66-253 cm** where real is 10-20 cm, quantifying the
   drift problem through the actual pipeline rather than a proxy.
+  **Superseded — this number predates the acceleration sign fix (`3c2cbed`),
+  which changed segmentation and so changed the reps this is measured over. It
+  is 3.4-35.9 cm now.** Excursion is also a whole-set quantity that counts
+  between-rep divergence, so it overstates per-rep error; use `metrics.vs_truth`
+  for error and read excursion as "how much fore-aft travel the pipeline
+  claims" (18-36 cm on deadlift, where the video says 8.5-13 cm).
 
 `io.check_log` and `segment.quality_flags` were both dead code before this —
 written, sound, and called by nothing but a test.
@@ -134,3 +140,45 @@ and the tests it rested on could not have distinguished the two.
   begin POSITIVE (the pull), each closing on a floor impact. Under the old
   inverted sign every one of these was the wrong way round, which is what the
   owner spotted from plot 16. 44/44 on all ten captures.
+
+## A3 — error, measured at last (2026-07-29)
+- `19_a3_metrics.png` — `metrics.vs_truth` on all three deadlifts. Top row:
+  reconstructed rep paths (grey) against the video (red), same axes, equal
+  aspect. Middle row: horizontal error against the video across each rep, with
+  the ±1 cm spec band. Bottom row: the three numbers side by side.
+
+**Horizontal error as the pipeline ships it: 5.1, 9.2 and 15.4 cm rms per rep**
+against a 1 cm spec. **Vertical: 5.2, 6.8 and 4.9 cm rms** against ±2–3 cm.
+
+The middle row is the one to look at. The error is not noise and not a ramp —
+it is a **single smooth arch across each rep, peaking 0.5–0.7 of the way
+through**. That is P3 made visible: a body-frame accel bias projected through a
+rotating forearm arrives at rep frequency, which is the one shape a per-rep
+line cannot subtract and no filter can reach. It had been inferred from a
+correlation before; here it is the plot.
+
+Three things this changed:
+
+- **The scale of the failure was overstated.** 5–15×, not two orders of
+  magnitude. The older figure was whole-set excursion, which includes
+  between-rep divergence that per-rep error does not.
+- **Vertical is out of spec too**, on all three captures. "Vertical timing and
+  structure come out fine" had been repeated since plot 13 and had never been
+  measured per rep.
+- **The per-rep detrend is not the problem.** Applying step 7's closure to the
+  *video* as well moves the error by 0.2–0.9 cm. Its premise really is violated
+  — the tracked bar misses closing horizontally by 1.9–4.3 cm — but fixing that
+  buys a few centimetres out of fifteen. B3 demoted, B6 promoted.
+- **The fore-aft direction is not stable within a set.** `vs_truth` picks one
+  axis sign per set, as step 8 would, then counts reps preferring the other:
+  **4 of 6, 2 of 6, 1 of 3**. Near a coin flip on the first. This is not a path
+  with a scale error; rep to rep it disagrees with itself about which way is
+  forward. New evidence for B4, and a reason to doubt that a per-set axis is
+  the right object.
+
+And the trap the metric is built to expose: **dispersion reports 0.7–1.3 cm on
+bench and squat**, comfortably inside spec, where nothing whatsoever has been
+verified. Error that repeats every rep lands in the mean rep and cancels out of
+every deviation from it, so a pipeline dominated by P3 scores well on
+rep-to-rep spread. On deadlift, where there is truth to check against,
+dispersion says 4.3 cm and the video says 5.1 cm.

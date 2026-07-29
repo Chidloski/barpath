@@ -180,15 +180,17 @@ def accel_bias(world_accel: np.ndarray, log: dict,
     removable ramp a per-rep line can subtract. That is P3, and this docstring
     is what CLAUDE.md cites for it.
 
-    What subtracting this constant actually buys is unmeasured and smaller than
-    it was once claimed. The previous claim — that it "brings the horizontal
-    within spec", ~1.3 cm of residual bow dropping under the 1 cm target — came
-    from synthetic data, where the injected bias IS a world-frame constant and
-    so this correction is exact by construction. On real captures horizontal
-    excursion after this stage is 66-253 cm against a real 10-20 cm. The
-    correction removes the constant PART of a body-frame bias; the part that
-    rotates with the forearm survives it, and that part is the problem.
-    metrics.vs_truth (A3) is what will put a number on the difference.
+    What subtracting this constant buys is far less than was once claimed. The
+    previous claim — that it "brings the horizontal within spec", ~1.3 cm of
+    residual bow dropping under the 1 cm target — came from synthetic data,
+    where the injected bias IS a world-frame constant and so this correction is
+    exact by construction. Measured against video by metrics.vs_truth, the
+    horizontal error remaining after this stage is 5.1-15.4 cm rms per rep.
+
+    The correction removes the constant PART of a body-frame bias; the part
+    that rotates with the forearm survives it, and that part is the problem.
+    A3 shows the survivor's shape directly — a single smooth arch across each
+    rep rather than a ramp or noise (analysis/19).
     """
     i, j = stillest_window(log, search_s, window_s)
     return world_accel[i:j].mean(axis=0)

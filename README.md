@@ -29,15 +29,21 @@ plots and numbers.
 
 Two things work well and are verified against video: rep segmentation (44/44
 reps across 10 captures, zero false positives) and the video ground truth itself
-(IMU and video agree on floor-impact timing to 11–16 ms). The horizontal axis —
-the one the spec is actually about — is still drift-dominated by an order of
-magnitude.
+(IMU and video agree on floor-impact timing to 11–16 ms).
+
+Since A3 the failure has a measurement rather than an adjective. Against the
+video, per rep, on the three deadlifts: **horizontal 5.1, 9.2 and 15.4 cm rms
+against a 1 cm spec, and vertical 5.2, 6.8 and 4.9 cm against ±2–3 cm.** So
+5–15× out horizontally, and out on vertical too — which is new, because
+"vertical comes out fine" had been repeated for a while without anyone
+measuring it per rep.
 
 ## Quick start
 
     pip install -r requirements.txt      # plus ffmpeg on PATH for video
     python run.py                        # run every capture, print a report
     python run.py --plot                 # and write diagnostics to analysis/
+    python run.py --truth                # and measure against the video (A3)
     pytest tests/ -q
 
 `tests/test_pipeline.py` holds algebraic identities against the synthetic
@@ -56,6 +62,7 @@ cleanly when `data/raw/` is absent.
     src/project.py     step 8  PCA display axis
     src/plot.py        step 9  rendering
     src/pipeline.py            the driver; run.py is the CLI
+    src/metrics.py             error, measured — not a step; it judges them
     src/truth.py               video ground truth — see src/README.md
     src/synth.py               synthetic generator
     watch/                     Xcode project
@@ -66,7 +73,8 @@ rather than throwing, so the eight stages that do work still produce output.
 
 ## What this project has learned the hard way
 
-Both of these cost real time, and both are the same mistake:
+All three cost real time, and all three are the same mistake — checking a claim
+somewhere it cannot fail:
 
 **Synthetic gates cannot catch an assumption the generator shares.** Milestones
 1–6 all passed while the pipeline was unusable. `synth.py` encoded Core Motion's
@@ -79,6 +87,15 @@ zero, so its sign is invisible. Every check that had been run — gravity at the
 calibration pause, `to_world` returning ~0 while still, the synthetic round trip
 — was evaluated exactly where the term vanishes. It took video, and a 0.2 s
 integration window during a moving pull, to see it.
+
+**A metric that needs no ground truth will flatter you.** `metrics.dispersion`
+measures rep-to-rep spread, which is close to what the product is about and
+requires nothing external. It reports 0.7–1.3 cm on bench and squat — inside
+spec, on lifts where nothing has ever been verified. The reason is structural:
+the dominant error repeats every rep, so it lands in the mean rep and cancels
+out of every deviation from it. Where truth exists to check against, the same
+pipeline is 5–15× out. Self-consistency is not accuracy, and this is the third
+time that has cost this project time.
 
 ## Validation order
 

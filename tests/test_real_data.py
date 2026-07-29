@@ -50,12 +50,15 @@ def world(log: dict):
 def horizontal_residual(log: dict, bias: np.ndarray) -> float:
     """Median per-rep-scale horizontal residual, cm. A PROXY, not the metric.
 
-    Tiles 2 s windows across the set and linearly detrends each, standing in
-    for real reps until segmentation works (A1) and metrics.dispersion exists
-    (A3). It conflates genuine bar movement with error, so the absolute number
-    means little — but real motion is common to both arms of a comparison, so
-    it ranks two pipelines against each other reliably, which is all it is
-    used for here.
+    SUPERSEDED by src/metrics.py for measuring error — A3 exists and reports
+    real centimetres against video. This survives for one job only: the B1
+    gates below, which compare the SAME pipeline with and without the gyro-bias
+    correction applied. Real bar movement is common to both arms there, so it
+    cancels out of the ranking even though it pollutes the absolute number.
+
+    Do not use it for anything else, and do not read its output as error. It
+    tiles 2 s windows across the set and linearly detrends each, so it
+    conflates genuine bar movement with error and its windows are not reps.
     """
     t = log["t"]
     q = orient.correct_attitude(log, bias)
@@ -518,3 +521,171 @@ def test_floor_impact_decelerates_the_bar(stem):
     assert sum(s > 0 for s in steps) >= len(steps) - 1, (
         f"{path.stem}: {sum(s <= 0 for s in steps)} of {len(steps)} impacts give a "
         f"downward velocity step — the acceleration sign is inverted")
+
+
+# ------------------------------------------------------------------- A3 --
+# Measured 2026-07-29, first run of metrics.vs_truth. Ceilings, not targets:
+# the spec is 1 cm horizontal and 2-3 cm vertical, and the pipeline meets
+# neither. These pin what it does TODAY so B2/B3/B6 can only improve it, and
+# they should be tightened whenever one of those lands. The xfail below carries
+# the actual spec.
+AS_SHIPPED_H_CM = {                 # median per-rep horizontal rms vs video
+    "deadlift_155x6_1": 5.1,
+    "deadlift_155x6_2": 9.2,
+    "deadlift_180x3": 15.4,
+}
+CEILING = 1.25                      # 25% headroom, so noise does not flap it
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_error_against_video_does_not_regress(video, csv, reps):
+    """Horizontal error against the video must not get worse than measured.
+
+    This is the gate whose absence let milestones 1-6 pass while the pipeline
+    failed by two orders of magnitude. Nothing here asserts the pipeline is
+    good — it is not, by 5-15x — only that a change cannot quietly make it
+    worse, which is the guarantee B2, B3 and B6 need in order to be evaluated
+    at all.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import metrics, pipeline
+
+    stem = next(k for k in AS_SHIPPED_H_CM if csv.startswith(k))
+    result = pipeline.run(RAW / f"{csv}.csv")
+    m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
+
+    assert m["n_compared"] == reps
+    assert m["pipeline_h_rms"] < AS_SHIPPED_H_CM[stem] * CEILING, (
+        f"{stem}: horizontal error {m['pipeline_h_rms']:.1f} cm against "
+        f"{AS_SHIPPED_H_CM[stem]:.1f} cm when A3 was written")
+
+
+@pytest.mark.xfail(reason="P2/P3 — the whole point of the project, 5-15x out",
+                   strict=False)
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_horizontal_meets_the_spec(video, csv, reps):
+    """~1 cm horizontal. The spec, in the suite, failing honestly.
+
+    Written as xfail rather than left out so that the number the project exists
+    to hit is executable and visible on every run. When B2, B3 or B6 makes it
+    pass, pytest reports XPASS and the ceilings above should be tightened.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import metrics, pipeline
+
+    result = pipeline.run(RAW / f"{csv}.csv")
+    m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
+    assert m["pipeline_h_rms"] < 1.0
+    assert m["pipeline_v_rms"] < 3.0
+
+
+@needs_data
+@pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
+def test_dispersion_is_finite_and_reported(path):
+    """dispersion must run on every capture and produce usable numbers."""
+    from src import metrics, pipeline
+
+    result = pipeline.run(path)
+    d = result["dispersion"]
+    assert d["n_reps"] == truth_reps(path)
+    for key in ("horizontal_rms", "horizontal_p95", "vertical_rms"):
+        assert np.isfinite(d[key]) and d[key] >= 0
+    assert d["horizontal_p95"] >= d["horizontal_rms"] * 0.5
+    assert np.isfinite(d["per_axis_rms"]).all()
+
+
+@needs_data
+def test_dispersion_flatters_a_broken_pipeline():
+    """The caveat in dispersion's docstring, asserted rather than promised.
+
+    On deadlift_155x6_1 dispersion reports ~4 cm of rep-to-rep spread while the
+    video says the path is ~5 cm from truth and the reconstruction invents
+    18 cm of fore-aft travel where the bar moved 13 cm. Dispersion is blind to
+    P3 by construction — a body-frame bias through a rotating forearm repeats
+    every rep, so it lands in the mean rep and cancels out of every deviation
+    from it.
+
+    If this test ever fails because dispersion got WORSE than vs_truth, that is
+    interesting and the docstring's reasoning needs revisiting. It is here so
+    nobody reads a good dispersion number as a working pipeline.
+    """
+    from src import metrics, pipeline
+
+    csv = next((p for p in CAPTURES if p.stem.startswith("deadlift_155x6_1")), None)
+    video = VIDEO / "deadlift_155x6_1_20260728.mov"
+    if csv is None or not video.exists():
+        pytest.skip("deadlift_155x6_1 not present")
+
+    result = pipeline.run(csv, video=video)
+    assert result["dispersion"]["horizontal_rms"] <= result["vs_truth"]["pipeline_h_rms"]
+
+
+@needs_data
+@pytest.mark.parametrize("stem", ["bench_90x4_1", "squat_130x5"])
+def test_vs_truth_refuses_lifts_without_usable_video(stem):
+    """Squat and bench are not truth, so vs_truth must raise rather than guess.
+
+    Squat tracks at median NCC ~0.40 with the plate leaving frame at lockout;
+    bench does not seed automatically at all. Returning a number from either
+    would invent the ground truth this module exists to supply — the exact
+    move that let a broken pipeline look validated for months.
+    """
+    from src import metrics, pipeline
+
+    path = next((p for p in CAPTURES if p.stem.startswith(stem)), None)
+    if path is None:
+        pytest.skip(f"{stem} not present")
+
+    result = pipeline.run(path)
+    with pytest.raises(ValueError, match="deadlift-only"):
+        metrics.vs_truth(result, VIDEO / "deadlift_155x6_1_20260728.mov")
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_video_truth_is_physically_sane(video, csv, reps):
+    """Guard the metric itself: if these drift, distrust the number, not the pipeline.
+
+    A metric is only as good as the truth behind it, and this one leans on the
+    video scale (PLATE_DIAMETER_M, still assumed) and on the IMU-video sync.
+    These are the quantities that would make vs_truth confidently wrong, so
+    they are asserted alongside it rather than taken on faith.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import metrics, pipeline
+
+    result = pipeline.run(RAW / f"{csv}.csv")
+    m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
+
+    assert m["sync_rms_ms"] < 50.0, "rep timing is specified at +/-50 ms"
+    assert abs(m["sync_drift_pct"]) < 1.0
+    assert 40.0 < m["video_rom_cm"] < 85.0, "not a deadlift ROM"
+    assert 2.0 < m["video_fore_aft_cm"] < 25.0, (
+        "real fore-aft travel is 10-20 cm; outside that the tracker or the "
+        "plate scale is wrong")
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_fore_aft_direction_is_not_self_consistent(video, csv, reps):
+    """B4, measured: reps within one set disagree about which way is forward.
+
+    vs_truth picks ONE axis sign per set, because that is what step 8 can do,
+    and then counts how many reps would individually have preferred the other.
+    The answer is 4 of 6, 2 of 6 and 1 of 3 — near a coin flip on the first.
+    The horizontal reconstruction is not merely noisy in magnitude, it is
+    inconsistent in DIRECTION from rep to rep, so no per-set sign convention
+    can be right for all of a set.
+
+    Pinned as a characterisation, not a target: this asserts the disagreement
+    is real and bounded, so that a fix to B2/B4/B6 shows up here as the count
+    falling. If it reaches zero, delete this test and say so.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import metrics, pipeline
+
+    result = pipeline.run(RAW / f"{csv}.csv")
+    m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
+    assert 0 <= m["reps_disagreeing_on_sign"] <= m["n_compared"] // 2 + 1

@@ -65,13 +65,20 @@ bar, with 145 cm of in-band error against a 69 cm signal, and it is already
 present at the ACCELERATION stage (-0.16), so it is not something integration
 or filtering introduced. The claim that the residual is "the within-rep bow,
 around 1 cm, which is the spec" came from synthetic data, which injected a
-constant world-frame bias — the assumption in question. Real horizontal
-excursion through this pipeline is 66-253 cm.
+constant world-frame bias — the assumption in question. Measured against video,
+the horizontal error after this stage is 5.1-15.4 cm rms per rep.
 
 The closure constraint is also only true VERTICALLY. Horizontally the owner
-confirms the deadlift bar does not land where it was pulled from, so forcing
-each rep to close horizontally destroys real signal rather than removing error.
-Making the closure axes explicit is B3.
+confirms the deadlift bar does not land where it was pulled from, and A3 puts a
+number on it: the tracked bar misses closing by 1.9-4.3 cm horizontally, so
+forcing each rep to close destroys that much real signal. Making the closure
+axes explicit is B3.
+
+**But do not expect B3 to fix P2.** metrics.vs_truth reports the error with the
+closure applied to the video as well, and it moves the number by only 0.2-0.9
+cm against a 5-15 cm total. This stage is doing something wrong and worth
+fixing; it is not where the horizontal failure lives. Most of the error is
+already in the acceleration that reaches the integrator.
 
 Kalman filters, factor graphs, batch smoothers and spline fits were previously
 rejected here by reference to NON_GOALS.md. That table was deleted on
