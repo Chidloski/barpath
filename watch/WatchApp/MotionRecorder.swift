@@ -31,13 +31,18 @@ final class MotionRecorder: NSObject, ObservableObject {
     @Published var sampleCount = 0
     @Published var elapsed: TimeInterval = 0
     @Published var settleRemaining: TimeInterval = 0
-    /// True once a raw-gyro sample has actually arrived (C2). Surfaced on screen
-    /// during recording, because the alternative is finding out that the C2
-    /// columns are empty tomorrow evening after the session — the same class of
-    /// mistake as the acceleration sign, which stayed invisible for months by
-    /// only ever being checked where it could not be seen.
-    @Published var rawGyroOK = false
+    /// C2 diagnostics, all surfaced on screen. The first version published a
+    /// single "OK" bool and set `status` on failure — but `transfer()` overwrites
+    /// `status` on save, so the one message that mattered could never be read.
+    /// These three distinguish the cases that need distinguishing: no gyro
+    /// hardware, hardware present but silent, and working.
+    @Published var gyroAvailable = false
+    @Published var rawGyroSamples = 0
+    @Published var gyroError = ""
     @Published var status = ""
+
+    /// Incremented on the gyro queue; mirrored to `rawGyroSamples` every 100.
+    private var rawGyroCount = 0
     @Published var workoutActive = false   // keep-alive session is running
     var logName = "log"
 
@@ -50,6 +55,19 @@ final class MotionRecorder: NSObject, ObservableObject {
 
     private let motion = CMMotionManager()
     private let queue: OperationQueue = {
+        let q = OperationQueue(); q.maxConcurrentOperationCount = 1; return q
+    }()
+
+    /// A SECOND manager, for raw gyro only (C2). The first attempt started both
+    /// device-motion and raw gyro on one `CMMotionManager` and the gyro handler
+    /// never fired once — 1945 of 1945 rows in the stationary test capture had
+    /// empty C2 columns. Apple's documentation discourages using the
+    /// device-motion service and the raw services together on one manager, and
+    /// on watchOS it appears not to work at all. Separate instances, separate
+    /// queues, so neither service's internal state or serial queue can starve
+    /// the other.
+    private let gyroMotion = CMMotionManager()
+    private let gyroQueue: OperationQueue = {
         let q = OperationQueue(); q.maxConcurrentOperationCount = 1; return q
     }()
 
@@ -92,7 +110,8 @@ final class MotionRecorder: NSObject, ObservableObject {
         guard phase == .idle else { return }
         rows.removeAll(); sampleCount = 0; elapsed = 0; t0 = 0
         settleDeadline = nil; settleRemaining = settleDuration
-        lastRawGyro = nil; rawGyroOK = false
+        lastRawGyro = nil; rawGyroCount = 0
+        rawGyroSamples = 0; gyroError = ""
         status = ""
         startWorkout()
         startMotion()
@@ -145,20 +164,30 @@ final class MotionRecorder: NSObject, ObservableObject {
     private func startMotion() {
         guard motion.isDeviceMotionAvailable else { status = "no device motion"; return }
 
-        // C2: raw gyro, started first so a sample is already waiting when the
-        // first device-motion callback lands. Unavailable is not fatal — the
-        // extra columns are optional in io.load_log and the capture is still
-        // usable without them.
-        if motion.isGyroAvailable {
-            motion.gyroUpdateInterval = 1.0 / sampleRate
-            motion.startGyroUpdates(to: queue) { [weak self] data, _ in
-                guard let self, let d = data else { return }
+        // C2: raw gyro, on its OWN manager and queue — see gyroMotion. Started
+        // first so a sample is already waiting when the first device-motion
+        // callback lands. Unavailable is not fatal: the extra columns are
+        // optional in io.load_log and the capture is still usable without them.
+        let available = gyroMotion.isGyroAvailable
+        DispatchQueue.main.async { self.gyroAvailable = available }
+        if available {
+            gyroMotion.gyroUpdateInterval = 1.0 / sampleRate
+            gyroMotion.startGyroUpdates(to: gyroQueue) { [weak self] data, err in
+                guard let self else { return }
+                guard let d = data else {
+                    if let e = err {
+                        DispatchQueue.main.async { self.gyroError = e.localizedDescription }
+                    }
+                    return
+                }
                 let r = d.rotationRate
                 self.lastRawGyro = (d.timestamp, r.x, r.y, r.z)
-                if !self.rawGyroOK { DispatchQueue.main.async { self.rawGyroOK = true } }
+                self.rawGyroCount += 1
+                let n = self.rawGyroCount
+                if n == 1 || n % 100 == 0 {
+                    DispatchQueue.main.async { self.rawGyroSamples = n }
+                }
             }
-        } else {
-            status = "no raw gyro — capture is still fine, C2 columns will be blank"
         }
 
         motion.deviceMotionUpdateInterval = 1.0 / sampleRate
@@ -210,7 +239,8 @@ final class MotionRecorder: NSObject, ObservableObject {
 
     private func stopMotion() {
         motion.stopDeviceMotionUpdates()
-        motion.stopGyroUpdates()
+        gyroMotion.stopGyroUpdates()
+        rawGyroSamples = rawGyroCount        // final count, not the last multiple of 100
     }
 
     // MARK: - HealthKit workout (keep-alive only)

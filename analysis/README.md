@@ -206,6 +206,44 @@ Read top to bottom. Four things it makes obvious that no table does:
   why the pipeline looked fine for months: this row is convincing and the
   horizontal error is still 5× the spec.
 
+## The stationary table capture (2026-07-30)
+`data/raw/stationary_table_20260730_000757.csv` — a watch on a table for 19 s,
+recorded to verify the new logger. C2 failed on it (see TASKS.md), and it turned
+out to be the most informative capture in the project anyway, because it is the
+first measurement of the sensor's own noise floor with no wrist involved.
+
+Quiet window 6–16 s, away from the button presses at each end:
+
+| quantity | on a table | on a wrist, calibration pause |
+|---|---|---|
+| gyro \|mean\| | **0.002 °/s** | 0.93–1.05 °/s |
+| gyro p-p | 0.18 °/s | 4.2–6.0 °/s |
+| block SEM | 0.0012–0.0015 °/s | 0.07–0.32 °/s |
+| \|mean\|/SEM | 0.28–1.33 | — |
+| body-frame accel bias | **0.0025 g** | ~0.035 g (press posture) |
+| attitude drift | 0.018° / 10 s | — |
+
+**Two conclusions, and they reframe P3, P4 and P5.**
+
+The residual gyro bias is ~500× smaller than the on-wrist figure this project
+has been treating as bias. It is not resolvable above its own noise. So the
+0.1–0.9 °/s in P4 is the lifter's own rotation, and B1's "never apply it" is
+right for a stronger reason than B1 recorded.
+
+The 0.035 g on-wrist "accel bias" equals g·sin(2.0°). It is the size of a **two
+degree attitude error**, not of an accelerometer bias measured at 0.0025 g. That
+points the dominant error at attitude, which no constant-bias estimator can fix
+— consistent with B6's oracle recovering only ~30%.
+
+**A near miss worth recording.** `calibrate.stillest_window` searches the first
+3 s, which is exactly when a finger is on the Calibrate button. It picked
+1.55–2.54 s here, with 1.8× the motion of the genuinely quiet part, and the
+resulting ~0.002 m/s² bias error produced **38 cm of horizontal drift over 19 s
+on a watch that never moved** (0.48 m → 0.07 m with a clean window). On the real
+deadlifts, though, it changes nothing: 5.1/9.2/15.4 → 5.1/9.1/15.1, because
+step 7's per-rep detrend already absorbs exactly that quadratic. Left alone —
+one capture improving is not evidence.
+
 ## B7 — the floor-impact anchor, rejected (2026-07-29)
 - `22_b7_anchor_rejected.png` — the detector, the ablation, and the reason.
 

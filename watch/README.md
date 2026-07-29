@@ -133,11 +133,16 @@ update path, not first-time setup.
    rather than red, and pressing it shows a `HOLD STILL / closing anchor`
    countdown instead of saving immediately. If you still get an instant save,
    the old build is running.
-5. **Check C2 is live.** While calibrating or recording the screen shows a green
-   `✓ raw gyro` badge. If it reads orange `NO raw gyro`, the C2 columns will be
-   empty and the capture is worth less — the four columns are optional on the
-   Python side, so nothing downstream will complain either. Better to see it in
-   the gym than in the CSV that evening.
+5. **Check C2 is live.** While calibrating or recording the screen shows one of
+   three badges:
+   - green **`raw gyro N`** — working, N samples so far. This is what you want.
+   - orange **`gyro SILENT`** — the hardware is there but no sample has arrived.
+     This is what the first build did on every row of the test capture.
+   - red **`no gyro HW`** — `isGyroAvailable` is false.
+
+   The columns are optional on the Python side, so nothing downstream will
+   complain if they are empty. Better to see it in the gym than in the CSV that
+   evening.
 
 If the install fails, in this order — this is what cost time last time:
 

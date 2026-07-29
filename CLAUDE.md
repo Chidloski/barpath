@@ -230,7 +230,32 @@ hardest landing — probably strap ring, which is #14.
 a touch-and-go deadlift and arrives at ~2 m/s. Do not predict its arrival from
 `sqrt(2gh)`, which gives 3.3 and makes the impulse look 80% missing.
 
-**P4 — Calibration is below its own noise floor.** The "stillest" window
+**P4 — There is almost no gyro bias to calibrate.** Rewritten 2026-07-30, after
+a stationary capture measured what no on-wrist capture could.
+
+On a watch lying on a table — same sensor, same Core Motion — the residual gyro
+bias is **0.002 °/s**, and it is not resolvable above its own noise (|mean|/SEM
+of 0.28–1.33 per axis). Core Motion's attitude holds to **0.018° over 10 s**
+(~6.6 °/hour). Body-frame accel bias is **0.0025 g**.
+
+Against the on-wrist calibration-pause figures this problem was built on —
+0.93–1.05 °/s — that is a factor of ~500. **The on-wrist number is not bias. It
+is the lifter's own slow wrist rotation**, which a 1–3 s hold cannot separate
+from anything. B1's default (never apply the pause estimate) is right for a
+better reason than B1 recorded: there is essentially nothing there to remove.
+
+Likewise the ~0.035 g "residual accel bias" seen on-wrist in the press posture:
+0.035 g is g·sin(2.0°), so that is the size an **attitude error of two degrees**
+would leak, not the size of the accelerometer's bias. That redirects P3 at
+attitude rather than at sensor bias — and attitude error is precisely what a
+constant-bias estimator cannot fix, which is why B6's oracle recovers only ~30%.
+
+*What this does not settle:* whether the residual stays that small THROUGH a set,
+with 20 g impacts and fast rotation perturbing Core Motion's estimator. That is
+now the open question, and it is what C1's two anchors are for. *Evidence:*
+`stationary_table_20260730`, gated in `tests/test_real_data.py`.
+
+The original framing, still true as far as it goes: the "stillest" window
 carries 7.2 °/s peak-to-peak of ~6.5 Hz physiological tremor; the bias being
 extracted from it is 0.1–0.9 °/s. Block-resampled standard error of the mean
 is 0.16–0.36 °/s, and the observed spread was 0.33–0.47 °/s across the 13
@@ -247,6 +272,13 @@ exactly (9.8065 m/s² measured at rest against 9.80665 expected).
 B5 checked whether a higher accelerometer rate would add anything either, and
 it would not: the impulse across a floor impact is already captured at 100 Hz
 to a median ratio of 1.04 against video. Sample rate is not a limit here.
+
+**And P4's stationary measurement has undercut the premise.** If Core Motion's
+residual gyro bias is 0.002 °/s at rest, then knowing its internal estimate by
+difference buys little — there is no meaningful residual for it to explain. C2
+is built and worth having, because it answers whether that holds up DURING a
+set, but "expose the estimate" is no longer the point. "Find out whether a set
+breaks it" is.
 
 Validate on **deadlift** first — not because the pipeline differs by lift
 (it does not) but because it is the only lift with external ground truth:

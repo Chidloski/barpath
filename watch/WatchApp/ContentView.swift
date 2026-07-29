@@ -32,7 +32,7 @@ struct ContentView: View {
                     Text("HOLD STILL").font(.headline).foregroundStyle(.yellow)
                     Text("opening anchor").font(.caption2).foregroundStyle(.secondary)
                     Text("\(rec.sampleCount) samples").font(.caption).foregroundStyle(.secondary)
-                    RawGyroBadge(ok: rec.rawGyroOK)
+                    RawGyroBadge(rec: rec)
                     Button("Start Set") { rec.startSet() }
                         .frame(maxWidth: .infinity).tint(.green)
                     // Discard used to call finish(), which WROTE the CSV.
@@ -43,7 +43,7 @@ struct ContentView: View {
                     Text("RECORDING").font(.headline).foregroundStyle(.green)
                     Text(String(format: "%.0f s · %d", rec.elapsed, rec.sampleCount))
                         .font(.caption).foregroundStyle(.secondary)
-                    RawGyroBadge(ok: rec.rawGyroOK)
+                    RawGyroBadge(rec: rec)
                     Button("Finish Set") { rec.endSet() }
                         .frame(maxWidth: .infinity).tint(.orange)
 
@@ -70,12 +70,19 @@ struct ContentView: View {
 /// evening — the four raw columns are optional on the Python side, so nothing
 /// downstream would complain about their absence either.
 private struct RawGyroBadge: View {
-    let ok: Bool
+    @ObservedObject var rec: MotionRecorder
     var body: some View {
-        Label(ok ? "raw gyro" : "NO raw gyro",
-              systemImage: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-            .font(.caption2)
-            .foregroundStyle(ok ? .green : .orange)
+        let n = rec.rawGyroSamples
+        let (text, icon, tint): (String, String, Color) =
+            !rec.gyroAvailable ? ("no gyro HW", "xmark.octagon.fill", .red)
+            : n == 0           ? ("gyro SILENT", "exclamationmark.triangle.fill", .orange)
+            :                    ("raw gyro \(n)", "checkmark.circle.fill", .green)
+        VStack(spacing: 1) {
+            Label(text, systemImage: icon).font(.caption2).foregroundStyle(tint)
+            if !rec.gyroError.isEmpty {
+                Text(rec.gyroError).font(.system(size: 9)).foregroundStyle(.orange)
+            }
+        }
     }
 }
 

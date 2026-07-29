@@ -24,11 +24,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src import calibrate, integrate, io, orient, segment  # noqa: E402
 
 RAW = Path(__file__).resolve().parents[1] / "data" / "raw"
-CAPTURES = sorted(RAW.glob("*.csv")) if RAW.is_dir() else []
-
-needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
 
 REP_COUNT = re.compile(r"^(bench|squat|deadlift)_[\d.]+x(\d+)")
+
+# Every log, including non-lifts. Use for format-level checks — clipping,
+# sampling, quaternion norms — which are about the FILE, not about lifting.
+ALL_LOGS = sorted(RAW.glob("*.csv")) if RAW.is_dir() else []
+
+# Rep-labelled lifts only. Nearly every gate here means "a set of reps", and
+# data/raw/ now also holds diagnostic captures — a stationary watch on a table,
+# for instance — where asking how many reps were found is meaningless.
+CAPTURES = [p for p in ALL_LOGS if REP_COUNT.match(p.name)]
+
+needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
 
 
 def truth_reps(path: Path) -> int:
@@ -726,7 +734,7 @@ def test_rest_instants_land_where_the_bar_is_actually_still(video, csv, reps):
 
 # ------------------------------------------------------------------- B5 --
 @needs_data
-@pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
+@pytest.mark.parametrize("path", ALL_LOGS, ids=lambda p: p.stem)
 def test_no_capture_is_actually_clipped(path):
     """Nothing in data/raw/ saturates, including the 21.8 g one.
 
@@ -908,3 +916,77 @@ def test_step_six_runs_and_is_off_by_default(path):
     offset = pipeline.run(path, wrist_offset=np.array([0.0, -0.14, 0.0]))
     assert not offset["blocked"] or all("step 6" not in b for b in offset["blocked"])
     assert not np.allclose(offset["bar_position"], plain["bar_position"])
+
+
+# --------------------------------------------------- the noise-floor log --
+STATIONARY = next((p for p in ALL_LOGS if p.stem.startswith("stationary_table")), None)
+
+
+@pytest.mark.skipif(STATIONARY is None, reason="no stationary capture")
+def test_core_motion_residual_gyro_bias_is_negligible():
+    """A watch on a table, and the number that reframes P4, P5, B1 and C1.
+
+    Every one of those is built on "residual gyro bias is 0.1-0.9 deg/s", taken
+    from the calibration pause of on-wrist captures. On a table — same sensor,
+    same Core Motion, no wrist — the residual is **0.002 deg/s**, and it is not
+    resolvable above its own noise (|mean|/SEM of 0.28-1.33 per axis).
+
+    So Core Motion's gyro correction is essentially perfect at rest, and the
+    0.93-1.05 deg/s measured on-wrist is the lifter's own slow rotation, not
+    bias. There is almost nothing there to remove, which is a stronger reason
+    for `calibrate.gyro_bias` defaulting to off than the one B1 recorded.
+
+    What this does NOT show: that the residual stays this small THROUGH a set,
+    with 20 g impacts and fast rotation perturbing Core Motion's estimator.
+    That is the open question, and the two-anchor protocol (C1) is what would
+    answer it. Do not read this test as closing P5.
+    """
+    log = io.load_log(STATIONARY)
+    t = log["t"]
+    quiet = (t >= 6.0) & (t < 16.0)          # away from the button presses
+    g = log["gyro"][quiet]
+
+    deg = 180.0 / np.pi
+    assert np.linalg.norm(g.mean(axis=0)) * deg < 0.02, "expected ~0.002 deg/s at rest"
+
+    sem = calibrate.bias_sem(g, log["fs"])
+    snr = np.abs(g.mean(axis=0)) / sem
+    assert snr.max() < 3.0, (
+        f"the at-rest bias is now resolvable (SNR {snr.max():.1f}) — if that is "
+        f"real, there IS a bias to remove and B1's default should be revisited")
+
+
+@pytest.mark.skipif(STATIONARY is None, reason="no stationary capture")
+def test_body_frame_accel_bias_at_rest_is_small():
+    """0.0025 g on a table, against ~0.035 g seen on-wrist in the press posture.
+
+    The gap matters: 0.035 g is g*sin(2.0 deg), so the on-wrist figure is the
+    size an attitude error of about two degrees would leak, not the size of the
+    accelerometer's own bias. That points P3 at ATTITUDE rather than at sensor
+    bias — and attitude error is exactly what a constant-bias estimator cannot
+    fix, which is consistent with B6's oracle recovering only ~30%.
+    """
+    log = io.load_log(STATIONARY)
+    t = log["t"]
+    quiet = (t >= 6.0) & (t < 16.0)
+    bias_g = np.linalg.norm(log["accel"][quiet].mean(axis=0)) / io.G
+    assert bias_g < 0.01, f"body-frame accel bias at rest is {bias_g:.4f} g"
+
+
+@pytest.mark.skipif(STATIONARY is None, reason="no stationary capture")
+def test_core_motion_attitude_is_stable_at_rest():
+    """0.018 deg over 10 s — about 6.6 deg/hour. Core Motion's attitude is good.
+
+    Worth pinning because the whole pipeline hangs off this quantity: a 1 deg
+    attitude error injects 0.17 m/s^2 and integrates to ~34 cm over a 2 s rep.
+    At rest there is no such error. Whatever goes wrong in the gym is not Core
+    Motion failing to hold attitude when nothing is happening.
+    """
+    from scipy.spatial.transform import Rotation
+
+    log = io.load_log(STATIONARY)
+    t = log["t"]
+    quiet = np.flatnonzero((t >= 6.0) & (t < 16.0))
+    R = Rotation.from_quat(log["quat"][quiet], scalar_first=True)
+    drift = np.degrees((R[-1] * R[0].inv()).magnitude())
+    assert drift < 0.1, f"attitude drifted {drift:.3f} deg over 10 s at rest"
