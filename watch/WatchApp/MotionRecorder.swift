@@ -31,6 +31,12 @@ final class MotionRecorder: NSObject, ObservableObject {
     @Published var sampleCount = 0
     @Published var elapsed: TimeInterval = 0
     @Published var settleRemaining: TimeInterval = 0
+    /// True once a raw-gyro sample has actually arrived (C2). Surfaced on screen
+    /// during recording, because the alternative is finding out that the C2
+    /// columns are empty tomorrow evening after the session — the same class of
+    /// mistake as the acceleration sign, which stayed invisible for months by
+    /// only ever being checked where it could not be seen.
+    @Published var rawGyroOK = false
     @Published var status = ""
     @Published var workoutActive = false   // keep-alive session is running
     var logName = "log"
@@ -86,7 +92,7 @@ final class MotionRecorder: NSObject, ObservableObject {
         guard phase == .idle else { return }
         rows.removeAll(); sampleCount = 0; elapsed = 0; t0 = 0
         settleDeadline = nil; settleRemaining = settleDuration
-        lastRawGyro = nil
+        lastRawGyro = nil; rawGyroOK = false
         status = ""
         startWorkout()
         startMotion()
@@ -149,6 +155,7 @@ final class MotionRecorder: NSObject, ObservableObject {
                 guard let self, let d = data else { return }
                 let r = d.rotationRate
                 self.lastRawGyro = (d.timestamp, r.x, r.y, r.z)
+                if !self.rawGyroOK { DispatchQueue.main.async { self.rawGyroOK = true } }
             }
         } else {
             status = "no raw gyro — capture is still fine, C2 columns will be blank"

@@ -32,6 +32,7 @@ struct ContentView: View {
                     Text("HOLD STILL").font(.headline).foregroundStyle(.yellow)
                     Text("opening anchor").font(.caption2).foregroundStyle(.secondary)
                     Text("\(rec.sampleCount) samples").font(.caption).foregroundStyle(.secondary)
+                    RawGyroBadge(ok: rec.rawGyroOK)
                     Button("Start Set") { rec.startSet() }
                         .frame(maxWidth: .infinity).tint(.green)
                     // Discard used to call finish(), which WROTE the CSV.
@@ -42,6 +43,7 @@ struct ContentView: View {
                     Text("RECORDING").font(.headline).foregroundStyle(.green)
                     Text(String(format: "%.0f s · %d", rec.elapsed, rec.sampleCount))
                         .font(.caption).foregroundStyle(.secondary)
+                    RawGyroBadge(ok: rec.rawGyroOK)
                     Button("Finish Set") { rec.endSet() }
                         .frame(maxWidth: .infinity).tint(.orange)
 
@@ -60,6 +62,20 @@ struct ContentView: View {
             }
             .padding()
         }
+    }
+}
+
+/// Whether C2's raw-gyro stream is actually delivering. Shown while recording so
+/// a silent failure is visible in the gym rather than discovered in the CSV that
+/// evening — the four raw columns are optional on the Python side, so nothing
+/// downstream would complain about their absence either.
+private struct RawGyroBadge: View {
+    let ok: Bool
+    var body: some View {
+        Label(ok ? "raw gyro" : "NO raw gyro",
+              systemImage: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            .font(.caption2)
+            .foregroundStyle(ok ? .green : .orange)
     }
 }
 
