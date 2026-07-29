@@ -1,10 +1,11 @@
 """
 Step 4 — acceleration to velocity to position.
 
-=========================================================================
-RESERVED MODULE. The owner writes this. Claude Code reviews and explains,
-but does not implement. See CLAUDE.md.
-=========================================================================
+This module was reserved for the owner until 2026-07-28. It is not any more —
+every file is collaborative now. What the lockout was protecting survived it:
+this is where the physics lives, so a change here explains the mechanism
+alongside the diff and names what would falsify it. See CLAUDE.md, "Learning
+contract".
 
 Background
 ----------
@@ -46,9 +47,11 @@ Zero-noise, zero-bias synthetic set: position should match synth.pos_true to
 well under a millimetre. If it does not, the fault is in the integration
 scheme, not the data.
 
-Then inject 1 deg/s of gyro bias with the correction in step 2 switched off
-and confirm the horizontal blow-up of roughly 20-25 cm. Seeing that failure
-deliberately is worth more than reading about it.
+That is an algebraic identity — integrating a known acceleration — and it is
+the kind of claim synth.py can still settle, because it holds regardless of how
+lifting behaves. Do not read it as evidence that the pipeline works. The
+quantities this module is fed on a real capture are wrong by two orders of
+magnitude and a correct integrator propagates them faithfully.
 """
 
 from __future__ import annotations

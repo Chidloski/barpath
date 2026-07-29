@@ -1,10 +1,11 @@
 """
 Steps 2-3 — attitude correction and rotation into the world frame.
 
-=========================================================================
-RESERVED MODULE. The owner writes this. Claude Code reviews and explains,
-but does not implement. See CLAUDE.md.
-=========================================================================
+This module was reserved for the owner until 2026-07-28. It is not any more —
+every file is collaborative now. What the lockout was protecting survived it:
+this is where the physics lives, so a change here explains the mechanism
+alongside the diff and names what would falsify it. See CLAUDE.md, "Learning
+contract".
 
 Background
 ----------
@@ -52,8 +53,15 @@ to_world(accel_body, reported_quat, corrected_quat) -> (N, 3) world-frame accele
 Suggested check
 ---------------
 Generate a synthetic set with zero noise and zero bias. to_world should
-return synth.acc_true to machine precision. It did when this scaffold was
-built, so if it does not, the bug is yours and not the generator's.
+return synth.acc_true to machine precision.
+
+This is an algebraic identity — a round trip through the rotations — so it is
+worth keeping and it is the kind of thing synth.py is still good for. It is
+also not evidence that this stage works. It cannot be: synth.py encoded Core
+Motion's acceleration sign backwards and to_world was built to match, so this
+check passed for months while both were wrong together. A shared convention is
+invisible to a round trip. Real captures are the referee for behaviour; see
+tests/test_real_data.py.
 """
 
 from __future__ import annotations

@@ -88,8 +88,14 @@ def plot_diagnostics(log: dict, position=None, mask=None, bounds=None):
 
 
 def plot_truth_comparison(recovered, truth, title=""):
-    """Recovered against known truth. Only possible on synthetic data —
-    which is exactly why the synthetic generator comes first."""
+    """Recovered against known truth, per axis.
+
+    This used to say truth was "only possible on synthetic data". Not since
+    A2 — src/truth.py tracks the plate from footage and gives an external
+    horizontal reference on deadlift, which is what src/metrics.py compares
+    against. Both sources work here: pass a synthetic pos_true, or a video path
+    resampled onto the IMU clock.
+    """
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
     names = ["forward", "lateral", "vertical"]
     for k in range(3):

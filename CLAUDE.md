@@ -112,29 +112,57 @@ The learning goal survives the lockout that used to enforce it, and it changes
   a stage — routinely makes clear in seconds what a table of numbers hides. The
   owner is learning the domain, so reach for a plot at troublesome spots rather
   than only explaining in prose. Render to the scratchpad and view it.
+- **A change is not finished until every document it falsifies is fixed, in the
+  same commit.** The docstring is part of the diff, not a follow-up. This is not
+  tidiness: the failure that costs time here is a claim that outlives its
+  evidence, and the claim is usually in prose. Milestones 1–6 passed on gates
+  that no longer tested anything; `NON_GOALS.md` kept rejections whose evidence
+  had expired; the reserved-module banners survived the lockout being lifted by
+  a day and the disproved `correct.py` premises by longer. When you change
+  behaviour or learn a fact, grep for what now reads false — module docstrings
+  first, then `CLAUDE.md`, `TASKS.md`, `README.md`, `analysis/README.md`,
+  `src/README.md`, `watch/README.md`, test docstrings. Correct the old reasoning
+  rather than deleting it; what was believed and why it was wrong is the record
+  this project runs on.
 
 ## Open problems
 
 The milestone table is gone. Milestones 1–6 all passed and the project does
 not work; a schedule that reports success while the artefact fails is worse
 than no schedule. What survived it is real: the watch logger works, and
-`data/raw/` holds 13 captures, 11 of them labelled with rep counts (14 bench,
-15 squat, 15 deadlift).
+`data/raw/` holds 10 captures, all labelled with rep counts and totalling 44
+reps (4 bench, 3 squat, 3 deadlift). The room and warm-up captures were
+removed in `7004c32` because no video exists for them; measurements made
+before that commit say 13 captures and are correct as of when they were taken.
 
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
 
-**P1 — Segmentation does not find reps under load.** Benches: 0 of 14. Squats:
-1 of 15, in the wrong place. The stationary detector assumes a quiet window
-between reps and loaded lifting has none — only 13.5% of a deadlift capture is
-quiet enough to qualify, essentially all of it the pre-set pause. The reps are
-plainly visible as velocity oscillations the segmenter ignores.
-*Evidence:* `analysis/04`–`07`, `12`.
+**P1 — Rep counting is solved; boundary phase is verified only on deadlift.**
+*Counting:* closed by A1. 44/44 reps across all 10 captures with zero false
+positives, against the old stationary detector's 0 of 14 bench and 1 of 15
+squat. That detector assumed a quiet window between reps and loaded lifting has
+none — only 13.5% of a deadlift capture qualifies, essentially all of it the
+pre-set pause.
+
+*What is still open:* where each window sits, not how many there are. Counts
+cannot see phase — the segmenter scored a perfect 44/44 while every window ran
+lockout-to-lockout, half a rep out of step. Deadlift boundaries now come from
+floor impacts, which use raw acceleration alone and match video to 13.5 ms, and
+all 15 deadlift windows contain exactly one video lockout. **Bench and squat
+have no such anchor.** They still segment on integrated velocity carrying 145 cm
+of in-band error against a 69 cm signal, so their phase is unverified and will
+stay that way until P3 is fixed. This is not a segmentation problem.
+*Evidence:* `analysis/04`–`07`, `12` for the old failure; `15`–`18` for A1;
+`17` and `src/README.md` for the phase bug.
 
 **P2 — Horizontal is drift-dominated by two orders of magnitude.** Paused
 bench reconstructs to ~1 m fore-aft against a real 0.1–0.2 m. The spec is
 1 cm. Vertical timing and structure come out fine; the side-on view is not
-trustworthy at all. *Evidence:* `analysis/13`.
+trustworthy at all. Since A4 the same failure is measured through the pipeline
+itself rather than off-pipeline: horizontal excursion comes out at **66–253 cm**
+where real is 10–20 cm. *Evidence:* `analysis/13`, and the A4 section of
+`analysis/README.md`.
 
 **P3 — The per-rep linear detrend's premise is violated.** It was justified on
 errors being smooth and monotonic while true motion is periodic and closes.
@@ -146,9 +174,9 @@ frequency** — the one shape a per-rep line cannot separate from real motion.
 **P4 — Calibration is below its own noise floor.** The "stillest" window
 carries 7.2 °/s peak-to-peak of ~6.5 Hz physiological tremor; the bias being
 extracted from it is 0.1–0.9 °/s. Block-resampled standard error of the mean
-is 0.16–0.36 °/s, and the observed spread across all 13 captures is 0.33–0.47
-°/s — meaning the capture-to-capture variation is tremor, not bias. More
-captures will not help; the estimator is the limit.
+is 0.16–0.36 °/s, and the observed spread was 0.33–0.47 °/s across the 13
+captures held when this was measured — meaning the capture-to-capture variation
+is tremor, not bias. More captures will not help; the estimator is the limit.
 
 **P5 — Apple's residual gyro bias is unobservable with what we log.**
 `dm.rotationRate` is already bias-corrected by Core Motion, so the logger

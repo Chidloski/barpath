@@ -1,20 +1,32 @@
-# barpath watch logger (Milestone 7)
+# barpath watch logger
 
 Records Apple Watch IMU at 100 Hz and gets it off the device as a CSV the
 pipeline reads directly — same format as `synth.py`, defined once in
 `src/io.py` (`COLUMNS`).
 
+(This was "Milestone 7" under a schedule that no longer exists. Milestones 1–6
+all passed while the pipeline failed in the gym, so the table was replaced by
+the open problems in `CLAUDE.md` and the work list in `TASKS.md`. The logger
+itself is one of the few parts that plainly works.)
+
 ## What it captures
 
 Core Motion `deviceMotion`, `.xArbitraryZVertical` reference frame (z up,
-heading arbitrary — PCA resolves heading later, per `NON_GOALS.md`):
+heading arbitrary — `src/project.py` resolves heading by PCA at step 8):
 
 | CSV column | source | units |
 |---|---|---|
 | `t` | `deviceMotion.timestamp` | s since boot (rebased on load) |
 | `qw qx qy qz` | `attitude.quaternion` | body→world, w first |
-| `ax ay az` | `userAcceleration` | **g** (gravity already removed) |
+| `ax ay az` | `userAcceleration` | **g**, and **Core Motion's sign** |
 | `gx gy gz` | `rotationRate` | rad/s |
+
+**The CSV stores exactly what the watch reported — do not convert here.**
+Core Motion's `userAcceleration` is the *negative* of the device's physical
+acceleration: move the watch up and the reported z goes negative. `io.load_log`
+converts units and sign together, once, at the boundary. That inversion went
+unnoticed for months because at rest `userAcceleration` is zero, so its sign is
+invisible in every still-hold check. See the `src/io.py` docstring.
 
 The watch does not perfectly honour 100 Hz, so we log the **real per-sample
 timestamp** and let the pipeline use `dt = diff(t)`. Do not resample.

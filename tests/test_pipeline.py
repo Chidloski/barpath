@@ -1,10 +1,17 @@
 """
-Milestone gates.
+Algebraic identities against the synthetic generator.
 
-Tests 1-2 pass now. Tests 3-6 fail with NotImplementedError until the
-reserved modules are written, and they are ordered so that each one becomes
-passable as you work through the pipeline. That is the intended loop: pick
-the first failing test, make it pass, commit.
+This was "Milestone gates", a numbered ladder you climbed by making the next
+test pass. That framing is gone with the milestones: gates 5 and 6 passed for
+months while the pipeline failed in the gym by two orders of magnitude, because
+they asked synth.py whether the pipeline handled lifting and synth.py's model
+of lifting is wrong in the ways that mattered.
+
+What belongs here now is only what is true REGARDLESS of how lifting behaves —
+round trips, frame and sign conventions, integration schemes, eigendecomposition
+properties. Those catch real bugs that no gym capture can see, and they are
+cheap. What does not belong here is any claim about whether a stage works;
+tests/test_real_data.py asks the captures, and the captures are the referee.
 
 Run:  pytest tests/ -v
 """

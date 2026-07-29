@@ -19,9 +19,10 @@ across captures is 0.33-0.47 deg/s — the same number. The capture-to-capture
 variation IS the tremor.
 
 Subtracting a noise sample as though it were a bias injects the error it was
-meant to remove. Measured on 13 captures, applying this estimate was worse than
-doing nothing in 13 of 13, taking the median per-rep horizontal residual from
-4.3 cm to 55.0 cm.
+meant to remove. Applying this estimate was worse than doing nothing on 13 of
+the 13 captures held when it was measured, taking the median per-rep horizontal
+residual from 4.3 cm to 55.0 cm. (`data/raw/` holds 10 captures now; the room
+and warm-up ones were dropped in 7004c32 for having no video.)
 
 A significance gate was tried first — correct an axis only where the estimate
 stands clear of the standard error of its own mean — and it failed. It passed
@@ -176,9 +177,18 @@ def accel_bias(world_accel: np.ndarray, log: dict,
     Unlike gyro bias, this is NOT cleaned up by the per-rep detrend. The bias
     is fixed in the body frame and the forearm rotates through the rep, so in
     the world frame it varies with the motion rather than appearing as the
-    removable ramp NON_GOALS assumes. Subtracting this constant before
-    integration removes the dominant part and brings the horizontal within spec
-    (~1.3 cm of residual bow drops to well under the 1 cm target).
+    removable ramp a per-rep line can subtract. That is P3, and this docstring
+    is what CLAUDE.md cites for it.
+
+    What subtracting this constant actually buys is unmeasured and smaller than
+    it was once claimed. The previous claim — that it "brings the horizontal
+    within spec", ~1.3 cm of residual bow dropping under the 1 cm target — came
+    from synthetic data, where the injected bias IS a world-frame constant and
+    so this correction is exact by construction. On real captures horizontal
+    excursion after this stage is 66-253 cm against a real 10-20 cm. The
+    correction removes the constant PART of a body-frame bias; the part that
+    rotates with the forearm survives it, and that part is the problem.
+    metrics.vs_truth (A3) is what will put a number on the difference.
     """
     i, j = stillest_window(log, search_s, window_s)
     return world_accel[i:j].mean(axis=0)
