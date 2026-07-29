@@ -159,15 +159,21 @@ def _video_on_imu_clock(log: dict, video: str | Path) -> tuple[np.ndarray, np.nd
     return t_imu[ok], path["x"][ok], path["height"][ok], fit
 
 
-def _close(arr: np.ndarray, t: np.ndarray) -> np.ndarray:
+def _close(arr: np.ndarray, t: np.ndarray,
+           axes: tuple[int, ...] = (0, 1)) -> np.ndarray:
     """Subtract the endpoint-to-endpoint line, per column. Step 7's operation.
 
     Routed through correct.detrend_rep rather than reimplemented, so that when
     B3 changes what closure means this follows automatically — the point of
     applying it to the truth as well is to measure what step 7 does, and a
     private copy here would quietly stop measuring the real thing.
+
+    `arr` is the 2-column video path (along-axis, vertical), so vertical is
+    column 1 here where it is column 2 in the pipeline. If detrend_set is ever
+    called with restricted axes, map them onto that layout here or this stops
+    measuring the same operation.
     """
-    return correct.detrend_rep(arr, 0, len(arr), t)
+    return correct.detrend_rep(arr, 0, len(arr), t, axes=axes)
 
 
 def vs_truth(result: dict, video: str | Path) -> dict:

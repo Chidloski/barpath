@@ -66,17 +66,22 @@ present at the ACCELERATION stage (-0.16), so it is not something integration
 or filtering introduced. The claim that the residual is "the within-rep bow,
 around 1 cm, which is the spec" came from synthetic data, which injected a
 constant world-frame bias — the assumption in question. Measured against video,
-the horizontal error after this stage is 5.1-15.4 cm rms per rep.
+the horizontal error after this stage is 4.6-13.4 cm rms per rep.
 
 The closure constraint is also only true VERTICALLY. Horizontally the owner
 confirms the deadlift bar does not land where it was pulled from, and A3 puts a
 number on it: the tracked bar misses closing by 1.9-4.3 cm horizontally, so
-forcing each rep to close destroys that much real signal. Making the closure
-axes explicit is B3.
+forcing each rep to close destroys that much real signal.
+
+**And yet it must stay, which B7 established the hard way.** Close vertical only
+and the horizontal error goes to 495 / 522 / 337 cm — the false constraint is
+carrying metres. B7's floor-impact anchor was built to replace it and lost;
+`analysis/22` has the ablation. So this assumption is wrong and load-bearing at
+the same time, and B3 is now "find a replacement", not "delete it".
 
 **But do not expect B3 to fix P2.** metrics.vs_truth reports the error with the
 closure applied to the video as well, and it moves the number by only 0.2-0.9
-cm against a 5-15 cm total. This stage is doing something wrong and worth
+cm against a 5-13 cm total. This stage is doing something wrong and worth
 fixing; it is not where the horizontal failure lives. Most of the error is
 already in the acceleration that reaches the integrator.
 
@@ -100,12 +105,14 @@ apply_offset(position, quat, d) -> (N, 3)
     NOT IMPLEMENTED — B2. Needs the video ground truth (A2) to establish d as
     a measurement rather than a guess.
 
-detrend_rep(position, start, stop, t) -> (M, 3)
-    Line subtracted so the rep starts and ends at the same point. Note it fits
-    that line through the two ENDPOINT samples only, which makes it maximally
-    sensitive to noise at exactly those indices — also B3.
+detrend_rep(position, start, stop, t, axes=(0,1,2), edge=5) -> (M, 3)
+    Line subtracted so the rep starts and ends at the same point. `edge` is
+    half of B3, done: fitting through the two extreme samples made this
+    maximally noise-sensitive at exactly the indices it depends on, and a
+    5-sample median at each end took horizontal error from 5.1/9.2/15.4 to
+    4.6/7.8/13.4 cm, better on 3 of 3 captures.
 
-detrend_set(position, bounds, t) -> list of (M, 3) arrays
+detrend_set(position, bounds, t, axes=(0,1,2)) -> list of (M, 3) arrays
     One detrended path per rep, each translated so its start sits at the
     common origin. Alignment is by START POINT ONLY. Do not align whole
     paths — between-rep divergence is the signal, not the error.
@@ -135,25 +142,59 @@ def apply_offset(position: np.ndarray, quat: np.ndarray,
     raise NotImplementedError("step 6 — see TASKS.md B2 and this module's docstring")
 
 
-def detrend_rep(position: np.ndarray, start: int, stop: int, t: np.ndarray) -> np.ndarray:
-    rep = position[start:stop]
-    drift = rep[-1] - rep[0]
+def detrend_rep(position: np.ndarray, start: int, stop: int, t: np.ndarray,
+                axes: tuple[int, ...] = (0, 1, 2), edge: int = 5) -> np.ndarray:
+    """Subtract the endpoint-to-endpoint line, on `axes` only. Step 7. B3.
 
-    times = (t - t[0]) / (t[-1] - t[0])
+    `axes` used to be all three implicitly. It is a parameter now because the
+    closure premise is true vertically and false horizontally: the bar does
+    return to the floor, and it does not return to the same spot on it. See
+    `detrend_set`, which decides which axes a given capture can close.
 
-    drift_line = times[:, None] * drift
+    `edge` medians a few samples at each end instead of using the two extreme
+    ones. Fitting a line through exactly two samples makes it maximally
+    noise-sensitive at exactly the indices it depends on, which TASKS.md has
+    listed under B3 since the detrend was written.
+    """
+    rep = position[start:stop].copy()
+    if len(rep) < 2:
+        return rep
 
-    return rep - drift_line
+    e = max(min(edge, len(rep) // 2), 1)
+    drift = np.median(rep[-e:], axis=0) - np.median(rep[:e], axis=0)
+
+    # Sized to the input, not to 3: metrics._close applies this same closure to
+    # the 2-column video path, where "vertical" is column 1 rather than 2.
+    keep = np.zeros(rep.shape[1])
+    keep[[a for a in axes if a < rep.shape[1]]] = 1.0
+    span = t[-1] - t[0]
+    times = (t - t[0]) / span if span > 0 else np.zeros(len(rep))
+
+    return rep - times[:, None] * (drift * keep)
 
 
-def detrend_set(position: np.ndarray,
-                bounds: list[tuple[int, int]], t: np.ndarray) -> list[np.ndarray]:
+def detrend_set(position: np.ndarray, bounds: list[tuple[int, int]],
+                t: np.ndarray, axes: tuple[int, ...] = (0, 1, 2)) -> list[np.ndarray]:
+    """One detrended path per rep, each translated so its start is the origin.
 
+    Alignment is by START POINT ONLY. Do not align whole paths — between-rep
+    divergence is the signal, not the error.
+
+    All three axes by default, and that includes the horizontal closure B3
+    identified as false. It stays because **removing it is far worse**, which
+    B7 measured: closing vertical only, without something to control horizontal
+    drift, gives 495 / 522 / 337 cm against 4.6 / 7.8 / 13.4. The bar genuinely
+    does not land where it was pulled from — A3 puts that at 1.9-4.3 cm — so
+    this constraint is knowingly wrong and costs a few centimetres to avoid
+    losing several metres. That is a trade, not a justification.
+
+    The floor-impact anchor was the intended replacement and it lost; see
+    TASKS.md B7. `axes` is kept so the next attempt can pass `(2,)` and be
+    measured against the same numbers rather than re-deriving them.
+    """
     reps = []
-
     for start, end in bounds:
-        rep = detrend_rep(position, start, end, t[start:end])
+        rep = detrend_rep(position, start, end, t[start:end], axes=axes)
         rep -= rep[0]
         reps.append(rep)
-
     return reps

@@ -532,9 +532,9 @@ def test_floor_impact_decelerates_the_bar(stem):
 # they should be tightened whenever one of those lands. The xfail below carries
 # the actual spec.
 AS_SHIPPED_H_CM = {                 # median per-rep horizontal rms vs video
-    "deadlift_155x6_1": 5.1,
-    "deadlift_155x6_2": 9.2,
-    "deadlift_180x3": 15.4,
+    "deadlift_155x6_1": 4.6,        # was 5.1 before B3's endpoint median
+    "deadlift_155x6_2": 7.8,        # was 9.2
+    "deadlift_180x3": 13.4,         # was 15.4
 }
 CEILING = 1.25                      # 25% headroom, so noise does not flap it
 
@@ -545,7 +545,7 @@ def test_error_against_video_does_not_regress(video, csv, reps):
 
     This is the gate whose absence let milestones 1-6 pass while the pipeline
     failed by two orders of magnitude. Nothing here asserts the pipeline is
-    good — it is not, by 5-15x — only that a change cannot quietly make it
+    good — it is not, by 5-13x — only that a change cannot quietly make it
     worse, which is the guarantee B2, B3 and B6 need in order to be evaluated
     at all.
     """
@@ -563,7 +563,7 @@ def test_error_against_video_does_not_regress(video, csv, reps):
         f"{AS_SHIPPED_H_CM[stem]:.1f} cm when A3 was written")
 
 
-@pytest.mark.xfail(reason="P2/P3 — the whole point of the project, 5-15x out",
+@pytest.mark.xfail(reason="P2/P3 — the whole point of the project, 5-13x out",
                    strict=False)
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
 def test_horizontal_meets_the_spec(video, csv, reps):
@@ -599,29 +599,38 @@ def test_dispersion_is_finite_and_reported(path):
 
 
 @needs_data
-def test_dispersion_flatters_a_broken_pipeline():
+@pytest.mark.parametrize("stem", ["bench_90x4_1", "squat_130x5"])
+def test_dispersion_flatters_a_broken_pipeline(stem):
     """The caveat in dispersion's docstring, asserted rather than promised.
 
-    On deadlift_155x6_1 dispersion reports ~4 cm of rep-to-rep spread while the
-    video says the path is ~5 cm from truth and the reconstruction invents
-    18 cm of fore-aft travel where the bar moved 13 cm. Dispersion is blind to
-    P3 by construction — a body-frame bias through a rotating forearm repeats
-    every rep, so it lands in the mean rep and cancels out of every deviation
-    from it.
+    On bench and squat dispersion reports well under 2 cm of rep-to-rep spread
+    — comfortably inside the 1 cm-ish spec band — on lifts where NOTHING has
+    ever been verified, and where `vs_truth` refuses to produce a number at all
+    because the video is not trustworthy there. Both halves are asserted here,
+    because together they are the whole point: a good dispersion number and no
+    truth is exactly the state in which this project has twice convinced itself
+    a broken pipeline worked.
 
-    If this test ever fails because dispersion got WORSE than vs_truth, that is
-    interesting and the docstring's reasoning needs revisiting. It is here so
-    nobody reads a good dispersion number as a working pipeline.
+    The reason is structural. Error that repeats every rep lands in the mean
+    rep and cancels out of every deviation from it, so a pipeline dominated by
+    P3 scores well here by construction.
+
+    This used to assert `dispersion <= vs_truth` on a deadlift, on the reasoning
+    that dispersion must be the optimistic one. That was stronger than the
+    argument supports — the two measure different things and their ordering is
+    not guaranteed — and B3's endpoint median duly broke it by pulling the
+    truth error to 4.6 cm against 5.2 cm of spread.
     """
     from src import metrics, pipeline
 
-    csv = next((p for p in CAPTURES if p.stem.startswith("deadlift_155x6_1")), None)
-    video = VIDEO / "deadlift_155x6_1_20260728.mov"
-    if csv is None or not video.exists():
-        pytest.skip("deadlift_155x6_1 not present")
+    path = next((p for p in CAPTURES if p.stem.startswith(stem)), None)
+    if path is None:
+        pytest.skip(f"{stem} not present")
 
-    result = pipeline.run(csv, video=video)
-    assert result["dispersion"]["horizontal_rms"] <= result["vs_truth"]["pipeline_h_rms"]
+    result = pipeline.run(path)
+    assert result["dispersion"]["horizontal_rms"] < 2.0
+    with pytest.raises(ValueError, match="deadlift-only"):
+        metrics.vs_truth(result, VIDEO / "deadlift_155x6_1_20260728.mov")
 
 
 @needs_data
@@ -667,6 +676,52 @@ def test_video_truth_is_physically_sane(video, csv, reps):
     assert 2.0 < m["video_fore_aft_cm"] < 25.0, (
         "real fore-aft travel is 10-20 cm; outside that the tracker or the "
         "plate scale is wrong")
+
+
+# ------------------------------------------------------------------- B7 --
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_rest_instants_land_where_the_bar_is_actually_still(video, csv, reps):
+    """`segment.rest_instants` must find rest, not just the impact.
+
+    This is the one piece of B7 that survived the experiment. The anchor
+    correction built on it lost and was reverted (see TASKS.md B7), but the
+    detector itself is validated and B6 will want it, so it is gated rather
+    than deleted.
+
+    The distinction it exists for: `impact_anchors` marks the ONSET of the
+    spike, and video says the bar is still moving at 0.4-1.0 m/s there. True
+    rest follows 400-850 ms later. Scoring on acceleration alone lands at
+    0.50 m/s; adding gyro variance and widening the search gets 13 of 15
+    impacts under 0.05 m/s.
+
+    The two it cannot do are the final impact of a set, where the lifter
+    releases the bar and walks away — those are rejected by the `max_accel`
+    gate rather than returned wrong, which is why this asserts on every
+    instant returned rather than on a mean.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from scipy.signal import savgol_filter
+    from src import truth
+
+    log = io.load_log(RAW / f"{csv}.csv")
+    impacts = segment.impact_anchors(log)
+    rest = segment.rest_instants(log, impacts)
+
+    path = truth.bar_path(VIDEO / f"{video}.mov")
+    fit = truth.sync(truth.landings(path),
+                     np.array([float(log["t"][k]) for k in impacts]))
+    t_video = truth.to_imu_time(path, fit)
+    v_video = np.gradient(savgol_filter(path["height"], 9, 3), t_video)
+
+    assert rest, "no rest instants accepted on a deadlift"
+    assert len(rest) <= len(impacts)
+    for k in rest:
+        v = abs(float(np.interp(float(log["t"][k]), t_video, v_video)))
+        assert v < 0.10, (
+            f"{csv}: rest instant at {log['t'][k]:.2f}s has the bar moving at "
+            f"{v:.2f} m/s — that is not rest, and anchoring to it would inject "
+            f"error rather than remove it")
 
 
 # ------------------------------------------------------------------- B5 --

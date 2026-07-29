@@ -162,12 +162,12 @@ stay that way until P3 is fixed. This is not a segmentation problem.
 *Evidence:* `analysis/04`–`07`, `12` for the old failure; `15`–`18` for A1;
 `17` and `src/README.md` for the phase bug.
 
-**P2 — Horizontal is 5–15× outside spec, and vertical is out too.** Measured
-against video by A3, per rep, on the three deadlifts: horizontal **5.1, 9.2 and
-15.4 cm rms** against a 1 cm spec, and vertical **5.2, 6.8 and 4.9 cm rms**
+**P2 — Horizontal is 5–13× outside spec, and vertical is out too.** Measured
+against video by A3, per rep, on the three deadlifts: horizontal **4.6, 7.8 and
+13.4 cm rms** against a 1 cm spec, and vertical **6.8, 8.7 and 3.2 cm rms**
 against ±2–3 cm.
 
-Two corrections to what this problem used to say. It is 5–15×, not the two
+Two corrections to what this problem used to say. It is 5–13×, not the two
 orders of magnitude claimed from off-pipeline reconstructions and from
 whole-set excursion — excursion counts between-rep divergence, which per-rep
 error does not. And **"vertical comes out fine" is false**; vertical was never
@@ -201,7 +201,7 @@ around 0.5–0.7 through it, not noise and not a ramp (`analysis/19`, middle row
 deadlift bar misses closing horizontally by 1.9–4.3 cm, so forcing closure does
 destroy real motion. But the detrend is **not** where P2 lives. Removing the
 closure from both sides of the comparison moves the error by only 0.2–0.9 cm,
-against a 5–15 cm total. So B3 is a real correctness fix worth ~2–4 cm and it
+against a 5–13 cm total. So B3 is a real correctness fix worth ~2–4 cm and it
 will not by itself bring the pipeline near spec. The bulk of the error is
 upstream, in the acceleration that reaches the integrator. Fix the error, not
 the thing that was supposed to hide it.

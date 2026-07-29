@@ -147,8 +147,8 @@ and the tests it rested on could not have distinguished the two.
   aspect. Middle row: horizontal error against the video across each rep, with
   the ±1 cm spec band. Bottom row: the three numbers side by side.
 
-**Horizontal error as the pipeline ships it: 5.1, 9.2 and 15.4 cm rms per rep**
-against a 1 cm spec. **Vertical: 5.2, 6.8 and 4.9 cm rms** against ±2–3 cm.
+**Horizontal error as the pipeline ships it: 4.6, 7.8 and 13.4 cm rms per rep**
+against a 1 cm spec. **Vertical: 6.8, 8.7 and 3.2 cm rms** against ±2–3 cm.
 
 The middle row is the one to look at. The error is not noise and not a ramp —
 it is a **single smooth arch across each rep, peaking 0.5–0.7 of the way
@@ -159,7 +159,7 @@ correlation before; here it is the plot.
 
 Three things this changed:
 
-- **The scale of the failure was overstated.** 5–15×, not two orders of
+- **The scale of the failure was overstated.** 5–13×, not two orders of
   magnitude. The older figure was whole-set excursion, which includes
   between-rep divergence that per-rep error does not.
 - **Vertical is out of spec too**, on all three captures. "Vertical timing and
@@ -205,6 +205,39 @@ Read top to bottom. Four things it makes obvious that no table does:
   recognisable lifts again. That is the detrend doing real work, and it is also
   why the pipeline looked fine for months: this row is convincing and the
   horizontal error is still 5× the spec.
+
+## B7 — the floor-impact anchor, rejected (2026-07-29)
+- `22_b7_anchor_rejected.png` — the detector, the ablation, and the reason.
+
+The idea: the bar's state at the floor is *known* (velocity zero, same height
+every rep), so anchor the integration to it instead of to step 7's assumption
+that the bar returns where it started. Built, measured against a decision rule
+fixed in advance, and rejected.
+
+| variant | horizontal, per capture (cm) |
+|---|---|
+| shipping | **4.6 / 7.8 / 13.4** |
+| anchor + all-axis closure | 10.4 / 7.4 / 10.2 |
+| anchor + vertical-only closure | 19.2 / 29.2 / 46.9 |
+| vertical-only closure, no anchor | 495 / 522 / 337 |
+
+**The detector is fine** (left panel). `rest_instants` puts 13 of 15 anchors
+within 0.05 m/s of true rest, against 0.4–1.0 m/s at `impact_anchors` — which
+marks the spike *onset*, not rest, a distinction worth 500 ms.
+
+**The constraint is in the wrong place** (right panel). The A3 error is a
+smooth arch peaking mid-rep; an impact anchor acts only at the rep boundaries,
+where the error is already ~0 by construction. No amount of tuning fixes a
+constraint that is true but does not reach the error.
+
+**And the ablation found something worth more than the feature.** Row 4: the
+horizontal closure that A3 called false is carrying **metres**. Remove it with
+nothing in its place and error goes to 3–5 m. It is wrong *and* essential, so
+B3 cannot simply drop it — the task is finding a replacement, not a deletion.
+
+One real win came out of it: fitting the detrend line through a 5-sample median
+at each end instead of the two extreme samples took horizontal from
+5.1 / 9.2 / 15.4 to **4.6 / 7.8 / 13.4**, better on 3 of 3.
 
 ## B5 — no saturation, and a correction (2026-07-29)
 - `20_b5_impact_impulse.png` — the floor impact examined four ways.

@@ -32,9 +32,9 @@ reps across 10 captures, zero false positives) and the video ground truth itself
 (IMU and video agree on floor-impact timing to 11–16 ms).
 
 Since A3 the failure has a measurement rather than an adjective. Against the
-video, per rep, on the three deadlifts: **horizontal 5.1, 9.2 and 15.4 cm rms
-against a 1 cm spec, and vertical 5.2, 6.8 and 4.9 cm against ±2–3 cm.** So
-5–15× out horizontally, and out on vertical too — which is new, because
+video, per rep, on the three deadlifts: **horizontal 4.6, 7.8 and 13.4 cm rms
+against a 1 cm spec, and vertical 6.8, 8.7 and 3.2 cm against ±2–3 cm.** So
+5–13× out horizontally, and out on vertical too — which is new, because
 "vertical comes out fine" had been repeated for a while without anyone
 measuring it per rep.
 
@@ -99,7 +99,7 @@ requires nothing external. It reports 0.7–1.3 cm on bench and squat — inside
 spec, on lifts where nothing has ever been verified. The reason is structural:
 the dominant error repeats every rep, so it lands in the mean rep and cancels
 out of every deviation from it. Where truth exists to check against, the same
-pipeline is 5–15× out. Self-consistency is not accuracy, and this is the third
+pipeline is 5–13× out. Self-consistency is not accuracy, and this is the third
 time that has cost this project time.
 
 ## Validation order

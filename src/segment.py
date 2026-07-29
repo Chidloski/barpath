@@ -178,6 +178,69 @@ def impact_anchors(log: dict, threshold_g: float = 6.0,
     return peaks
 
 
+def rest_instants(log: dict, impacts: list[int] | None = None,
+                  look_s: float = 1.00, window_s: float = 0.05,
+                  max_accel: float = 8.0) -> list[int]:
+    """The moment the bar is at REST after each floor impact. B7.
+
+    Not the impact index. `impact_anchors` marks the onset of the spike, and
+    against video the bar is still moving at 0.4-1.0 m/s there — it has hit the
+    floor but not finished stopping. A near-zero crossing follows within
+    ~150 ms of every impact.
+
+    Found from raw acceleration and gyro only: no attitude, no integration, no
+    filtering. That is the whole point. This exists to correct the drift, so it
+    must not be derived from anything carrying it.
+
+    Both channels matter. A wrist at rest has stopped rotating as well as
+    translating, and an early version of this scored on acceleration alone and
+    landed where the bar was still moving at 0.50 m/s with 0.02 available in the
+    same window. Gyro variance is what distinguishes "the accelerometer is
+    briefly quiet mid-bounce" from "the arm has stopped".
+
+    `max_accel` REJECTS an instant rather than returning a bad one. A false
+    anchor asserts a velocity the bar did not have and injects the error it
+    exists to remove, so silence is the safer failure — the same argument
+    `rep_bounds` makes about false positives. Against video the two rejected
+    cases are both the FINAL impact of a set, where the lifter releases the bar
+    and walks away: mean |accel| there is 12.2 and 16.7 m/s² against 1.3-6.3
+    for the thirteen good ones, so the gate separates them cleanly.
+
+    Be suspicious of that threshold. It is set from two bad points across three
+    captures and is the weakest part of B7. Note also that the "good" anchors
+    average 2.6 m/s², so this is not stillness in any absolute sense — a wrist
+    under a loaded bar never is. It is a rejection rule, not a claim.
+
+    Returns [] when there are no impacts, which is the right answer for bench
+    and squat and lets the caller apply this unconditionally.
+    """
+    if impacts is None:
+        impacts = impact_anchors(log)
+    if not impacts:
+        return []
+
+    t, fs = log["t"], log["fs"]
+    w = max(int(round(window_s * fs)), 3)
+    mag = np.linalg.norm(log["accel"], axis=1)
+    av = _rolling_var(mag, w)
+    gv = _rolling_var(np.linalg.norm(log["gyro"], axis=1), w)
+
+    # Scale the two channels by their own spread over the record so neither
+    # dominates the sum by unit choice alone.
+    score = av / (np.median(av) + 1e-12) + gv / (np.median(gv) + 1e-12)
+
+    out = []
+    for k in impacts:
+        stop = int(np.searchsorted(t, t[k] + look_s))
+        seg = score[k:stop]
+        if not len(seg):
+            continue
+        j = k + int(np.argmin(seg))
+        if mag[max(j - w, 0):j + w].mean() <= max_accel:
+            out.append(j)
+    return out
+
+
 def _all_lobes(v: np.ndarray, t: np.ndarray,
                min_area: float) -> list[tuple[int, int, int, float]]:
     """Every velocity lobe carrying at least `min_area` of displacement.

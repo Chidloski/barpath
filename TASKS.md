@@ -85,12 +85,12 @@ normalised-time grid. `vs_truth(result, video)` measures against A2, deadlift
 only, and raises on squat and bench rather than returning a number from footage
 that is not truth.
 
-**Horizontal, as the pipeline ships it: 5.1, 9.2 and 15.4 cm rms per rep**
-against a 1 cm spec. **Vertical: 5.2, 6.8 and 4.9 cm rms** against ±2–3 cm.
+**Horizontal, as the pipeline ships it: 4.6, 7.8 and 13.4 cm rms per rep**
+against a 1 cm spec. **Vertical: 6.8, 8.7 and 3.2 cm rms** against ±2–3 cm.
 
 Three findings that change the work, not just the record:
 
-- **It is 5–15×, not two orders of magnitude.** The older figure came from
+- **It is 5–13×, not two orders of magnitude.** The older figure came from
   whole-set excursion, which counts between-rep divergence that per-rep error
   does not. Excursion itself is now 3.4–35.9 cm across the ten captures; the
   "66–253 cm" in the A4 note below predates the acceleration sign fix.
@@ -158,6 +158,46 @@ Also killed on the way past: per-rep peak g does **not** predict per-rep error.
 Correlation +0.17 across all 15 deadlift reps. A 3-rep pattern in `180x3`
 suggested otherwise and did not survive the other 12.
 
+### B7 — floor-impact anchor: REJECTED on measurement
+Proposed after B5, on the reasoning that the bar's state at the floor is known
+(velocity zero, same height every rep) and the pipeline spends that on
+segmentation alone. Built, measured against a decision rule stated in advance,
+and it lost. `analysis/22`.
+
+| variant | horizontal, per capture | vertical |
+|---|---|---|
+| shipping | **4.6 / 7.8 / 13.4** | **6.8 / 8.7 / 3.2** |
+| anchor + all-axis closure | 10.4 / 7.4 / 10.2 | 15.3 / 18.0 / 4.5 |
+| anchor + vertical-only closure | 19.2 / 29.2 / 46.9 | 15.3 / 18.0 / 4.5 |
+| vertical-only closure, no anchor | 495 / 522 / 337 | — |
+
+**Why it failed, and it is not the detector.** The A3 error is a smooth arch
+peaking mid-rep. An impact anchor acts only at the rep boundaries, where the
+error is already ~0 by construction — a true constraint in the wrong place. The
+third panel of `analysis/22` is the whole argument in one picture.
+
+**What the ablation settled, which is worth more than the feature.** Row 4 says
+the horizontal closure everyone (including me) has been calling false is doing
+**metres** of load-bearing work: remove it with nothing in its place and error
+goes to 3–5 m. It remains wrong — the bar really does miss closing by 1.9–4.3 cm
+— but it is wrong and *essential*, so B3 cannot simply drop it. That reframes
+B3 from "remove a false assumption" to "find something that can replace it".
+
+**Kept:** `segment.rest_instants`, which is validated and gated against video
+— 13 of 15 impacts within 0.05 m/s of true rest, against 0.4–1.0 m/s at
+`impact_anchors`, which marks the spike ONSET rather than rest. The two it
+rejects are the final impact of a set, where the lifter releases the bar; the
+`max_accel` gate drops them rather than returning them wrong. B6 will want
+this.
+
+**Also kept, and it is the only win of the session:** `detrend_rep` now fits
+its line through a 5-sample median at each end instead of the two extreme
+samples. That alone took horizontal from **5.1 / 9.2 / 15.4 → 4.6 / 7.8 / 13.4**,
+better on 3 of 3. Half of B3, done.
+
+**Reverted:** `correct.anchor` and the pipeline wiring, deleted rather than
+left behind a flag.
+
 ### A4 — end-to-end driver `91ed978`
 `src/pipeline.py` + `run.py`. The pipeline had never been executed end to end
 against a gym capture; every prior real-data result came from scripts outside
@@ -175,7 +215,7 @@ worth 2–4 cm, not 15.
 
 ### B6 — attack the acceleration error itself  ← next
 A3 puts the error upstream of the detrend and gives it a shape: a smooth arch
-at rep frequency, 5–15 cm of horizontal per rep. The metric B6 was waiting on
+at rep frequency, 5–13 cm of horizontal per rep. The metric B6 was waiting on
 now exists, so this is unblocked.
 
 Order from the original entry still stands: per-rep zero-mean-acceleration
@@ -185,24 +225,6 @@ The cap also still stands — an oracle fitting constant gyro *and* accel bias
 directly against the error recovers only ~30% of the residual, so nothing
 constant-bias gets to 1 cm. Every attempt is now measurable against
 `metrics.vs_truth`, which is the whole point of having built it.
-
-### B7 — use the floor impact as a state anchor
-New, and it follows directly from B5 proving the impact is measured correctly.
-
-At the moment the bar is down and settled, its state is *known*: vertical
-velocity zero, height at plate radius (22.5 cm to bar centre). The pipeline
-currently spends that information on segmentation alone — `impact_anchors`
-picks rep boundaries and nothing else uses it.
-
-Using it as a ZUPT plus a position anchor would reset the integration once per
-rep against a physical fact, rather than against step 7's assumption that the
-bar returns to where it started. The "no closure" error is 199–322 cm on these
-captures, which is what the per-rep detrend is currently papering over; an
-anchor removes the cause rather than the symptom. It is also the one constraint
-in this project that is externally true rather than inferred.
-
-Deadlift only — bench and squat never set the bar down. Worth trying before
-B6's solver, because it is simpler and it constrains the same quantity.
 
 ### #14 — fix `quality_flags` strap resonance
 **Promoted by B5**, which found `deadlift_180x3` over-reading its impact
@@ -219,21 +241,24 @@ docstring intends absolute energy.
 `correct.apply_offset` raises. `R(t)·d` varies by **8–13 cm horizontally on
 every lift including deadlift**, contradicting the docstring's claim that
 deadlift is exempt — now corrected there. That is the same size as A3's
-measured 5–15 cm error, which makes it the largest single unmodelled term and
+measured 5–13 cm error, which makes it the largest single unmodelled term and
 the best-understood one. Needs A2 to establish `d` against video rather than a
 guess, and A3 now says whether it helped.
 
-### B3 — rework the per-rep detrend
-**Demoted by A3, from "P2 most likely lives here" to worth 2–4 cm.** Applying
-step 7's closure to the video as well moves the error by 0.2–0.9 cm against a
-5–15 cm total, so this is a correctness fix rather than the fix.
+### B3 — rework the per-rep detrend  (half done)
+**Done:** the endpoint-median fix. `detrend_rep` fit its line through the two
+extreme samples, maximally noise-sensitive at exactly the indices it depends
+on; it now uses a 5-sample median at each end. Horizontal **5.1 / 9.2 / 15.4 →
+4.6 / 7.8 / 13.4**, better on 3 of 3.
 
-Still worth doing, and its premise is now measured rather than argued: the
-tracked deadlift bar misses closing horizontally by **1.9–4.3 cm**, which step
-7 forces to zero, so the constraint destroys that much real motion. Make the
-closure axes explicit and keep vertical, where the bar genuinely does return.
-`detrend_rep` also fits its line through two endpoint samples, making it
-maximally noise-sensitive at exactly those indices.
+**Left, and harder than it looked.** The horizontal closure is false — the bar
+misses closing by 1.9–4.3 cm — but B7's ablation showed it is also carrying
+**metres**: drop it with nothing in its place and error goes to 3–5 m. So the
+task is not "remove a false assumption", it is "find a constraint that can
+replace it". The floor-impact anchor was the obvious candidate and it lost.
+
+`axes` is now a parameter on `detrend_rep`/`detrend_set` so the next candidate
+can be measured against the same numbers rather than re-deriving them.
 
 ### B4 — fix step 8
 `project_to_plane` and `confidence` raise. `principal_axis` uses `np.linalg.eig`

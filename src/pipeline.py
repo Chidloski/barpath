@@ -112,11 +112,18 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None,
     result["velocity"] = velocity
     result["position"] = position
 
+    # B7 tried anchoring velocity and vertical position to the floor impacts
+    # here, and it lost: horizontal 4.6/7.8/13.4 -> 10.4/7.4/10.2 cm and
+    # vertical 6.8/8.7/3.2 -> 15.3/18.0/4.5. `segment.rest_instants` survives
+    # because it is validated and B6 will want it; the correction does not.
+    # See TASKS.md B7 and analysis/22.
+
     # 5 --- segment ---------------------------------------------------------
+    impacts = segment.impact_anchors(log)
     bounds = segment.rep_bounds(log, velocity[:, 2])
     result["bounds"] = bounds
     result["quality"] = segment.quality_flags(log, bounds)
-    result["impacts"] = segment.impact_anchors(log)
+    result["impacts"] = impacts
 
     if result["expected_reps"] is not None and len(bounds) != result["expected_reps"]:
         result["notes"].append(
