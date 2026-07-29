@@ -44,7 +44,12 @@ measuring it per rep.
     python run.py                        # run every capture, print a report
     python run.py --plot                 # and write diagnostics to analysis/
     python run.py --truth                # and measure against the video (A3)
+    python run.py --stages               # draw the pipeline stage by stage
     pytest tests/ -q
+
+`--stages` is the one to start with if you are new to this: `analysis/21` shows
+raw acceleration turning into a bar path, one column per lift, with what each
+module does to it.
 
 `tests/test_pipeline.py` holds algebraic identities against the synthetic
 generator — round trips, integration schemes — things true regardless of how

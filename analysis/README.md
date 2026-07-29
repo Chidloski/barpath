@@ -183,6 +183,29 @@ every deviation from it, so a pipeline dominated by P3 scores well on
 rep-to-rep spread. On deadlift, where there is truth to check against,
 dispersion says 4.3 cm and the video says 5.1 cm.
 
+## The pipeline, stage by stage (2026-07-29)
+- `21_pipeline_stages.png` — one column per lift, one row per stage, raw
+  acceleration through to the bar path. Regenerate with `python run.py
+  --stages`; it lives in `plot.plot_stages` rather than a scratch script
+  because B2/B3/B6 will all change what the middle rows look like.
+
+Read top to bottom. Four things it makes obvious that no table does:
+
+- **Row 0 — nothing is "up" yet.** The watch's axes are glued to the case and
+  tumble with the wrist, so all three body-frame traces look alike. The blue
+  band is the pre-set calibration hold, where every bias estimate is made.
+- **Row 2 — reps are unmistakable in velocity**, on all three lifts, which is
+  why A1's segmenter works at 44/44. The deadlift's trace sliding to −6 m/s
+  across the set is the drift, in plain view.
+- **Row 3 — the runaway.** Two integrations turn a ~0.02 m/s² bias into 4.6 m
+  of position on the squat, 1.5 m on the bench and **57.7 m** on the deadlift,
+  against a lift that travels 0.6 m. The video truth is on the deadlift panel
+  and looks like a flat line because the reconstruction is 82× its size.
+- **Rows 4–5 — what step 7 buys back.** After the per-rep detrend the reps are
+  recognisable lifts again. That is the detrend doing real work, and it is also
+  why the pipeline looked fine for months: this row is convincing and the
+  horizontal error is still 5× the spec.
+
 ## B5 — no saturation, and a correction (2026-07-29)
 - `20_b5_impact_impulse.png` — the floor impact examined four ways.
 

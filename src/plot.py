@@ -87,6 +87,145 @@ def plot_diagnostics(log: dict, position=None, mask=None, bounds=None):
     return fig
 
 
+def plot_stages(results: dict, truth_paths: dict | None = None):
+    """One column per lift, one row per stage. The pipeline, end to end.
+
+    `results` maps a label to a `pipeline.run` dict; `truth_paths` optionally
+    maps the same labels to `(t_imu, height)` from `truth.py`. Everything comes
+    out of the result dict rather than being recomputed — that dict is
+    deliberately fat so that a reader can see every intermediate, and this is
+    the thing it was fat for.
+
+    Written for someone learning what each stage does, so it is annotated
+    rather than left to be inferred. The rows are chosen to make three points a
+    table of numbers does not:
+
+      row 0  the watch's axes tumble with the wrist; nothing is "up" yet
+      row 2  reps are perfectly obvious in velocity, and so is the drift
+      row 3  two integrations turn a small bias into METRES on a 60 cm lift
+      row 4  what step 7 buys back, and on deadlift what it costs
+
+    Vertical throughout, because it is the axis a reader can check against
+    their own intuition about a lift. The horizontal axis — the one the spec is
+    actually about — only appears at row 5, where it is the product.
+    """
+    labels = list(results)
+    rows = [
+        ("0  io.load_log", "body accel (m/s²)"),
+        ("1-3  orient.to_world", "world vertical accel"),
+        ("4  integrate", "vertical velocity (m/s)"),
+        ("4  integrate", "vertical position (m)"),
+        ("7  correct.detrend_set", "per-rep vertical (cm)"),
+        ("8-9  project + plot", "height (cm)"),
+    ]
+    fig, axes = plt.subplots(len(rows), len(labels),
+                             figsize=(5.0 * len(labels), 2.6 * len(rows)),
+                             gridspec_kw={"height_ratios": [1, 1, 1, 1, 1, 1.7]})
+
+    for col, label in enumerate(labels):
+        r = results[label]
+        log, bounds, reps = r["log"], r["bounds"], r["reps"]
+        t = log["t"]
+        truth_t = truth_h = None
+        if truth_paths and label in truth_paths:
+            truth_t, truth_h = truth_paths[label]
+
+        # --- row 0: what the watch reports --------------------------------
+        ax = axes[0, col]
+        for k, name in enumerate("xyz"):
+            ax.plot(t, log["accel"][:, k], lw=0.6, label=f"a{name}")
+        ax.legend(fontsize=7, frameon=False, ncol=3)
+        ax.set_title(f"{label}\n", fontsize=11, fontweight="bold")
+        _pause(ax, r)
+
+        # --- row 1: world frame, and the bias that gets removed -----------
+        ax = axes[1, col]
+        ax.plot(t, r["world_accel"][:, 2], lw=0.6, color="0.3")
+        ax.axhline(0, color="0.7", lw=0.8)
+        ax.axhline(-r["accel_bias"][2], color="crimson", lw=1.2, ls="--",
+                   label=f"accel_bias {r['accel_bias'][2]:+.2f} m/s²")
+        ax.legend(fontsize=7, frameon=False)
+        _pause(ax, r)
+
+        # --- row 2: velocity, where reps are obvious ----------------------
+        ax = axes[2, col]
+        ax.plot(t, r["velocity"][:, 2], lw=0.8, color="0.2")
+        ax.axhline(0, color="0.7", lw=0.8)
+        for a, b in bounds:
+            ax.axvspan(t[a], t[min(b, len(t) - 1)], color="seagreen", alpha=0.16)
+        ax.text(0.02, 0.9, f"{len(bounds)} reps found (green)", fontsize=8,
+                transform=ax.transAxes, color="seagreen")
+
+        # --- row 3: the runaway -------------------------------------------
+        ax = axes[3, col]
+        ax.plot(t, r["position"][:, 2], lw=1.0, color="crimson",
+                label="reconstructed")
+        span = float(np.ptp(r["position"][:, 2]))
+        note = f"spans {span:.1f} m\n(the lift is ~0.6 m)"
+        if truth_t is not None:
+            ax.plot(truth_t, truth_h, lw=1.6, color="k", label="video truth")
+            note += (f"\n\nthe black line IS the real bar,\n"
+                     f"0-0.7 m. It looks flat because\n"
+                     f"the red trace is {span/0.7:.0f}x its size.")
+        ax.text(0.02, 0.96, note, fontsize=8, transform=ax.transAxes,
+                color="crimson", va="top",
+                bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.5))
+        ax.legend(fontsize=7, frameon=False, loc="lower left")
+
+        # --- row 4: what the detrend recovers ------------------------------
+        ax = axes[4, col]
+        for i, rep in enumerate(reps):
+            ax.plot(np.linspace(0, 1, len(rep)), rep[:, 2] * 100,
+                    lw=1.6 if i == 0 else 1.0, alpha=1.0 if i == 0 else 0.7)
+        ax.axhline(0, color="0.7", lw=0.8)
+        ax.set_xlabel("fraction of rep")
+        if "vs_truth" in r:
+            ax.text(0.02, 0.88,
+                    f"vs video: {r['vs_truth']['pipeline_v_rms']:.1f} cm rms",
+                    fontsize=8, transform=ax.transAxes)
+
+        # --- row 5: the product --------------------------------------------
+        ax = axes[5, col]
+        axis = np.real(r["axis"]) if "axis" in r else np.array([1.0, 0.0])
+        for i, rep in enumerate(reps):
+            along = (rep[:, :2] @ axis) * 100
+            ax.plot(along - along[0], rep[:, 2] * 100,
+                    lw=2.0 if i == 0 else 1.2, alpha=1.0 if i == 0 else 0.75)
+        ax.set_aspect(1.0 / STRETCH)
+        ax.set_xticks([])                    # deliberate: no horizontal scale
+        ax.set_xlabel("fore-aft (stretched 4x, unlabelled by design)",
+                      fontsize=8)
+        if "vs_truth" in r:
+            ax.text(0.02, 0.03,
+                    f"horizontal error {r['vs_truth']['pipeline_h_rms']:.1f} cm rms "
+                    f"— spec is 1 cm", fontsize=8, transform=ax.transAxes,
+                    color="crimson")
+
+        for row in (2, 3):
+            axes[row, col].set_xlabel("time (s)")
+        axes[4, col].set_xlabel("fraction of rep")
+
+    # Stage and quantity share one label, so the two cannot collide when the
+    # last row's aspect ratio narrows its axes.
+    for row, (stage, ylab) in enumerate(rows):
+        axes[row, 0].set_ylabel(f"step {stage}\n{ylab}", fontsize=9)
+
+    fig.suptitle("The pipeline, stage by stage — one column per lift\n"
+                 "Vertical axis throughout until the last row, because it is "
+                 "the one you can check against what a lift feels like.",
+                 fontsize=12)
+    fig.tight_layout(rect=(0.015, 0, 1, 0.965))
+    return fig
+
+
+def _pause(ax, result):
+    """Shade the pre-set calibration hold — where every bias estimate is made."""
+    win = result.get("gyro_bias_info", {}).get("window")
+    if win:
+        t = result["log"]["t"]
+        ax.axvspan(t[win[0]], t[win[1] - 1], color="steelblue", alpha=0.35)
+
+
 def plot_truth_comparison(recovered, truth, title=""):
     """Recovered against known truth, per axis.
 
