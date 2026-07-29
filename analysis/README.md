@@ -206,22 +206,29 @@ Read top to bottom. Four things it makes obvious that no table does:
   why the pipeline looked fine for months: this row is convincing and the
   horizontal error is still 5× the spec.
 
-## The stationary table capture (2026-07-30)
-`data/raw/stationary_table_20260730_000757.csv` — a watch on a table for 19 s,
-recorded to verify the new logger. C2 failed on it (see TASKS.md), and it turned
-out to be the most informative capture in the project anyway, because it is the
-first measurement of the sensor's own noise floor with no wrist involved.
+## The watch logger, second pass (2026-07-30)
+C1 (closing hold) and C3 (`phase` column) are built and typecheck clean; neither
+is validated on a lift yet. **C2 is abandoned: `isGyroAvailable` is false on
+watchOS**, so raw gyro cannot be logged at all and P5 is closed as permanently
+unobservable. Two diagnostic captures carry its four empty columns.
+
+## The stationary table captures (2026-07-30)
+`stationary_table_20260730_000757.csv` and `stable_2_20260730_003335.csv` — a
+watch on a table, recorded to verify the new logger. C2 failed on both, and they
+turned out to be the most informative captures in the project anyway: the first
+measurement of the sensor's own noise floor with no wrist involved, and it
+**replicates across the two**.
 
 Quiet window 6–16 s, away from the button presses at each end:
 
 | quantity | on a table | on a wrist, calibration pause |
 |---|---|---|
-| gyro \|mean\| | **0.002 °/s** | 0.93–1.05 °/s |
+| gyro \|mean\| | **0.002 / 0.001 °/s** | 0.93–1.05 °/s |
 | gyro p-p | 0.18 °/s | 4.2–6.0 °/s |
 | block SEM | 0.0012–0.0015 °/s | 0.07–0.32 °/s |
-| \|mean\|/SEM | 0.28–1.33 | — |
-| body-frame accel bias | **0.0025 g** | ~0.035 g (press posture) |
-| attitude drift | 0.018° / 10 s | — |
+| \|mean\|/SEM | 1.80 / 0.57 | — |
+| body-frame accel bias | **0.0025 / 0.0029 g** | ~0.035 g (press posture) |
+| attitude drift | 0.018° / 0.071° per 8 s | — |
 
 **Two conclusions, and they reframe P3, P4 and P5.**
 

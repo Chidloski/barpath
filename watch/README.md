@@ -20,20 +20,37 @@ heading arbitrary — `src/project.py` resolves heading by PCA at step 8):
 | `qw qx qy qz` | `attitude.quaternion` | body→world, w first |
 | `ax ay az` | `userAcceleration` | **g**, and **Core Motion's sign** |
 | `gx gy gz` | `rotationRate` | rad/s, **already bias-corrected** |
-| `rgt rgx rgy rgz` | `CMGyroData` | s, rad/s — **raw**, not corrected (C2) |
+| `phase` | the app's own state | `0` opening hold, `1` reps, `2` closing hold |
 
-The last four are new as of 2026-07-29 and are **optional** on the Python side,
-so the ten captures recorded before them still load. `io.load_log` exposes them
-as `log["raw_gyro"]` and `log["raw_gyro_lag"]`, or `None` when absent.
+`phase` is new as of 2026-07-30 and is **optional** on the Python side, so every
+earlier capture still loads — `io.load_log` gives `log["phase"]` or `None`.
 
-**Why log the gyro twice.** `deviceMotion.rotationRate` has already had Core
-Motion's own bias estimate subtracted, by an opaque and time-varying internal
-filter, so what we were recording is only the residual after it. `CMGyroData` is
-uncorrected, so the difference between them *is* that estimate — see
-`io.core_motion_gyro_bias`, and `CLAUDE.md` P5. The two streams arrive on
-separate callbacks, so `rgt` is logged as well and `check_log` warns if the
-pairing lag exceeds ~15 ms; beyond that the difference is real rotation rather
-than bias.
+**Why log the phase.** It tells the pipeline where the anchors are instead of
+making it guess. `calibrate.stillest_window` hunts the quietest second in the
+opening 3 s, which is exactly when a finger is on the Calibrate button: on a
+stationary test capture it picked a window with 1.8× the motion of the genuinely
+quiet part, and the ~0.002 m/s² bias error that caused produced 38 cm of drift
+over 19 s on a watch that never moved.
+
+The cleanest stillness in any capture is the **tail of phase 2**, because it is
+the only quiet window not followed by a screen tap — the closing hold saves
+itself. You cannot find that without knowing the phases. Using it is the first
+thing to try with a capture that has a real closing anchor.
+
+### C2 was abandoned — raw gyro is not available on watchOS
+
+An earlier build logged raw `CMGyroData` in four extra columns
+(`rgt rgx rgy rgz`) so that its difference from the bias-corrected
+`rotationRate` would expose Core Motion's internal estimate (`CLAUDE.md` P5).
+**`CMMotionManager.isGyroAvailable` returns false on watchOS.** The raw gyro
+service simply is not offered — tried on one motion manager and on two, and the
+badge reported no hardware. There is no public-API route to it.
+
+It costs less than it sounds. A stationary capture put the residual *after*
+Core Motion at **0.002 °/s**, so there was never much for its estimate to
+explain. Two diagnostic captures from 2026-07-30 carry those columns, always
+empty; `io.load_log` still reads them so those files load, and nothing writes
+them.
 
 **The CSV stores exactly what the watch reported — do not convert here.**
 Core Motion's `userAcceleration` is the *negative* of the device's physical
@@ -133,16 +150,9 @@ update path, not first-time setup.
    rather than red, and pressing it shows a `HOLD STILL / closing anchor`
    countdown instead of saving immediately. If you still get an instant save,
    the old build is running.
-5. **Check C2 is live.** While calibrating or recording the screen shows one of
-   three badges:
-   - green **`raw gyro N`** — working, N samples so far. This is what you want.
-   - orange **`gyro SILENT`** — the hardware is there but no sample has arrived.
-     This is what the first build did on every row of the test capture.
-   - red **`no gyro HW`** — `isGyroAvailable` is false.
-
-   The columns are optional on the Python side, so nothing downstream will
-   complain if they are empty. Better to see it in the gym than in the CSV that
-   evening.
+5. **Check the phase column arrived.** `head -1` the CSV: the header should end
+   `...,gx,gy,gz,phase`, and `io.check_log` will tell you if the closing hold ran
+   for less than 2 s.
 
 If the install fails, in this order — this is what cost time last time:
 
@@ -163,19 +173,12 @@ Set, Finish Set, and let the closing hold run out. Then:
 ```python
 from src import io
 log = io.load_log("that_file.csv")
-print(io.check_log(log))                       # expect []
-print(log["fs"])                               # expect ~100
-print(log["raw_gyro"] is not None)             # expect True — C2 is recording
-print(io.core_motion_gyro_bias(log).mean(0))   # Core Motion's own estimate
+print(io.check_log(log))          # expect []
+print(log["fs"])                  # expect ~100
+import numpy as np
+print(np.bincount(log["phase"]))  # samples in each phase — expect all three
 ```
 
-Two things to confirm beyond the old checks. `raw_gyro` must not be `None`, or
-the C2 columns are not being written. And the bias from the last line should be
-of a **plausible order** — 0.1–0.9 °/s is 0.002–0.016 rad/s — and point in a
-consistent direction while the watch is motionless.
-
-**The sign of that difference is unverified.** `io.core_motion_gyro_bias`
-returns `raw - corrected`, which is right if Core Motion computes
-`corrected = raw - bias`. Nobody has checked that against a real log. This
-still capture is how to check it, and it should be checked before anything is
-built on the sign.
+The phase counts are the thing to check: roughly 300 in phase 0, the set in
+phase 1, and ~300 in phase 2. A missing phase 2 means the closing hold did not
+run, and `check_log` will say so.

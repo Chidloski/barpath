@@ -18,10 +18,22 @@ import WatchConnectivity
 /// baseline instead, where real wrist rotation largely cancels and bias does
 /// not. See CLAUDE.md P4.
 ///
-/// C2 — raw `CMGyroData` alongside `deviceMotion.rotationRate`. Core Motion has
-/// already bias-corrected the latter using an opaque, time-varying internal
-/// estimate, so what we currently log is only the residual after it. Logging
-/// both exposes that estimate directly by difference. See CLAUDE.md P5.
+/// C3 — a `phase` column, so the Python side is TOLD where the anchors are
+/// instead of searching for stillness. `calibrate.stillest_window` currently
+/// hunts the quietest second in the opening 3 s, which is exactly when a finger
+/// is on the Calibrate button; on a stationary test capture it picked a window
+/// with 1.8x the motion of the genuinely quiet part. The cleanest window in any
+/// capture is the TAIL of the closing hold, because that one is not followed by
+/// a screen tap — the hold saves itself. You cannot find that without knowing
+/// which phase each sample belongs to.
+///
+/// C2 is ABANDONED. It logged raw `CMGyroData` next to the bias-corrected
+/// `deviceMotion.rotationRate` so their difference would expose Core Motion's
+/// internal estimate (CLAUDE.md P5). `CMMotionManager.isGyroAvailable` returns
+/// FALSE on watchOS — the raw gyro service is not offered, on one manager or
+/// two — so there is no route to it with public API. It costs little: a
+/// stationary capture measured the residual AFTER Core Motion at 0.002 deg/s,
+/// so there was never much for its estimate to explain.
 final class MotionRecorder: NSObject, ObservableObject {
 
     /// `settling` is C1: still recording, holding for the closing anchor.
@@ -31,18 +43,8 @@ final class MotionRecorder: NSObject, ObservableObject {
     @Published var sampleCount = 0
     @Published var elapsed: TimeInterval = 0
     @Published var settleRemaining: TimeInterval = 0
-    /// C2 diagnostics, all surfaced on screen. The first version published a
-    /// single "OK" bool and set `status` on failure — but `transfer()` overwrites
-    /// `status` on save, so the one message that mattered could never be read.
-    /// These three distinguish the cases that need distinguishing: no gyro
-    /// hardware, hardware present but silent, and working.
-    @Published var gyroAvailable = false
-    @Published var rawGyroSamples = 0
-    @Published var gyroError = ""
     @Published var status = ""
 
-    /// Incremented on the gyro queue; mirrored to `rawGyroSamples` every 100.
-    private var rawGyroCount = 0
     @Published var workoutActive = false   // keep-alive session is running
     var logName = "log"
 
@@ -58,30 +60,14 @@ final class MotionRecorder: NSObject, ObservableObject {
         let q = OperationQueue(); q.maxConcurrentOperationCount = 1; return q
     }()
 
-    /// A SECOND manager, for raw gyro only (C2). The first attempt started both
-    /// device-motion and raw gyro on one `CMMotionManager` and the gyro handler
-    /// never fired once — 1945 of 1945 rows in the stationary test capture had
-    /// empty C2 columns. Apple's documentation discourages using the
-    /// device-motion service and the raw services together on one manager, and
-    /// on watchOS it appears not to work at all. Separate instances, separate
-    /// queues, so neither service's internal state or serial queue can starve
-    /// the other.
-    private let gyroMotion = CMMotionManager()
-    private let gyroQueue: OperationQueue = {
-        let q = OperationQueue(); q.maxConcurrentOperationCount = 1; return q
-    }()
-
-    /// Latest raw gyro sample, paired with device-motion on arrival (C2). Both
-    /// streams run at 100 Hz but on separate callbacks, so the pairing is within
-    /// roughly one sample. Its timestamp is logged too, so the Python side can
-    /// check the lag rather than assume it: the quantity of interest is
-    /// `rotationRate - raw`, and if the two samples are far apart in time that
-    /// difference is real rotation rather than Core Motion's bias estimate.
-    private var lastRawGyro: (t: TimeInterval, x: Double, y: Double, z: Double)?
-
     /// Deadline for the closing hold, in `dm.timestamp` units. Written on the
     /// main queue before entering `.settling`, read on the motion queue.
     private var settleDeadline: TimeInterval?
+
+    /// C3. Mirrors `phase` as the integer written to the CSV, because the motion
+    /// callback runs off the main queue and `phase` is `@Published`.
+    ///   0 opening hold   1 reps   2 closing hold
+    private var phaseCode = 0
 
     // HealthKit workout session — its only job is to keep us running when the
     // wrist drops. We never save the workout.
@@ -110,10 +96,9 @@ final class MotionRecorder: NSObject, ObservableObject {
         guard phase == .idle else { return }
         rows.removeAll(); sampleCount = 0; elapsed = 0; t0 = 0
         settleDeadline = nil; settleRemaining = settleDuration
-        lastRawGyro = nil; rawGyroCount = 0
-        rawGyroSamples = 0; gyroError = ""
         status = ""
         startWorkout()
+        phaseCode = 0
         startMotion()
         phase = .calibrating
     }
@@ -122,6 +107,7 @@ final class MotionRecorder: NSObject, ObservableObject {
     /// this only flips the UI prompt.
     func startSet() {
         guard phase == .calibrating else { return }
+        phaseCode = 1
         phase = .recording
     }
 
@@ -131,6 +117,7 @@ final class MotionRecorder: NSObject, ObservableObject {
         guard phase == .recording else { return }
         settleDeadline = nil          // the next sample sets it
         settleRemaining = settleDuration
+        phaseCode = 2
         phase = .settling
     }
 
@@ -164,32 +151,6 @@ final class MotionRecorder: NSObject, ObservableObject {
     private func startMotion() {
         guard motion.isDeviceMotionAvailable else { status = "no device motion"; return }
 
-        // C2: raw gyro, on its OWN manager and queue — see gyroMotion. Started
-        // first so a sample is already waiting when the first device-motion
-        // callback lands. Unavailable is not fatal: the extra columns are
-        // optional in io.load_log and the capture is still usable without them.
-        let available = gyroMotion.isGyroAvailable
-        DispatchQueue.main.async { self.gyroAvailable = available }
-        if available {
-            gyroMotion.gyroUpdateInterval = 1.0 / sampleRate
-            gyroMotion.startGyroUpdates(to: gyroQueue) { [weak self] data, err in
-                guard let self else { return }
-                guard let d = data else {
-                    if let e = err {
-                        DispatchQueue.main.async { self.gyroError = e.localizedDescription }
-                    }
-                    return
-                }
-                let r = d.rotationRate
-                self.lastRawGyro = (d.timestamp, r.x, r.y, r.z)
-                self.rawGyroCount += 1
-                let n = self.rawGyroCount
-                if n == 1 || n % 100 == 0 {
-                    DispatchQueue.main.async { self.rawGyroSamples = n }
-                }
-            }
-        }
-
         motion.deviceMotionUpdateInterval = 1.0 / sampleRate
         motion.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: queue) { [weak self] dm, err in
             guard let self, let dm else { return }
@@ -197,27 +158,21 @@ final class MotionRecorder: NSObject, ObservableObject {
             let q = dm.attitude.quaternion   // w, x, y, z (body -> world)
             let a = dm.userAcceleration      // g, gravity already removed
             let g = dm.rotationRate          // rad/s, ALREADY bias-corrected
-            let raw = self.lastRawGyro       // rad/s, not corrected (C2)
 
             // Raw Core Motion timestamp: io.load_log rebases to zero and keeps
-            // the true spacing. %.9g matches io.save_log's precision. Empty
-            // fields where raw gyro is unavailable — genfromtxt reads those as
-            // nan, which is the honest value.
-            var row = String(
-                format: "%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g",
-                dm.timestamp, q.w, q.x, q.y, q.z, a.x, a.y, a.z, g.x, g.y, g.z)
-            if let r = raw {
-                row += String(format: ",%.9g,%.9g,%.9g,%.9g", r.t, r.x, r.y, r.z)
-            } else {
-                row += ",,,,"
-            }
-            self.rows.append(row)
+            // the true spacing. %.9g matches io.save_log's precision.
+            self.rows.append(String(
+                format: "%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%d",
+                dm.timestamp, q.w, q.x, q.y, q.z, a.x, a.y, a.z, g.x, g.y, g.z,
+                self.phaseCode))
 
             // C1: run the closing hold off the motion stream rather than a
             // Timer, because this callback keeps firing when the screen sleeps
             // and a main-run-loop timer may not.
+            // Reads phaseCode, not `phase` — `phase` is @Published and owned by
+            // the main queue, and this closure runs on the motion queue.
             var remaining: TimeInterval?
-            if self.phase == .settling {
+            if self.phaseCode == 2 {
                 if self.settleDeadline == nil {
                     self.settleDeadline = dm.timestamp + self.settleDuration
                 }
@@ -237,11 +192,7 @@ final class MotionRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func stopMotion() {
-        motion.stopDeviceMotionUpdates()
-        gyroMotion.stopGyroUpdates()
-        rawGyroSamples = rawGyroCount        // final count, not the last multiple of 100
-    }
+    private func stopMotion() { motion.stopDeviceMotionUpdates() }
 
     // MARK: - HealthKit workout (keep-alive only)
 
@@ -282,9 +233,9 @@ final class MotionRecorder: NSObject, ObservableObject {
     // MARK: - CSV
 
     private func writeCSV() -> URL? {
-        // The four trailing columns are C2 and are OPTIONAL on the Python side,
-        // so the ten captures recorded before this change still load.
-        let header = "t,qw,qx,qy,qz,ax,ay,az,gx,gy,gz,rgt,rgx,rgy,rgz"
+        // `phase` is C3 and is OPTIONAL on the Python side, so every capture
+        // recorded before it still loads. See src/io.py PHASE_COLUMN.
+        let header = "t,qw,qx,qy,qz,ax,ay,az,gx,gy,gz,phase"
         let body = ([header] + rows).joined(separator: "\n") + "\n"
         let safe = (logName.isEmpty ? "log" : logName)
             .replacingOccurrences(of: "/", with: "_")

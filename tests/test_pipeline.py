@@ -324,38 +324,32 @@ def test_detrend_closes_only_the_axes_it_is_given():
     assert np.allclose(both[-1], both[0], atol=1e-9), "default closes all three"
 
 
-def test_raw_gyro_columns_are_optional(tmp_path):
-    """C2's columns must be readable when present and absent without error.
+def test_optional_columns_are_optional(tmp_path):
+    """Appended columns must be readable when present and absent without error.
 
-    The ten captures in data/raw/ predate the watch logger's raw-gyro columns
-    and synth.py does not emit them, so `raw_gyro` being None has to be a
-    supported state rather than a crash. That is the whole reason the columns
-    are appended rather than interleaved.
+    Ten captures predate every optional column and synth.py emits none of them,
+    so None has to be a supported state rather than a crash. That is why they
+    are appended rather than interleaved — and why abandoning C2 did not
+    invalidate the two captures that carry its empty columns.
     """
     s = synth.generate()
     plain = io.save_log(tmp_path / "plain.csv", synth.to_log_dict(s))
     log = io.load_log(plain)
-    assert log["raw_gyro"] is None and log["raw_gyro_lag"] is None
-    assert io.core_motion_gyro_bias(log) is None
+    assert log["raw_gyro"] is None and log["phase"] is None
 
-    # Now the same log with C2 columns bolted on, as the watch writes them.
+    # A phase column bolted on, as the watch now writes it (C3).
     text = plain.read_text().splitlines()
     n = len(text) - 1
-    rng = np.random.default_rng(0)
-    bias = np.array([0.004, -0.002, 0.006])          # rad/s, plausible
-    extra = log["gyro"] + bias + rng.normal(0, 1e-4, (n, 3))
-    rows = [text[0] + ",rgt,rgx,rgy,rgz"]
-    for i, line in enumerate(text[1:]):
-        rows.append(f"{line},{s.t[i]:.9g},"
-                    f"{extra[i, 0]:.9g},{extra[i, 1]:.9g},{extra[i, 2]:.9g}")
-    full = tmp_path / "c2.csv"
+    ph = np.where(s.t < 3.0, 0, np.where(s.t > s.t[-1] - 3.0, 2, 1))
+    rows = [text[0] + ",phase"] + [f"{l},{ph[i]}" for i, l in enumerate(text[1:])]
+    full = tmp_path / "c3.csv"
     full.write_text("\n".join(rows) + "\n")
 
     log2 = io.load_log(full)
-    assert log2["raw_gyro"].shape == (n, 3)
-    assert np.abs(log2["raw_gyro_lag"]).max() < 1e-6      # written in step
-    # raw - corrected recovers the injected bias, which is the point of C2.
-    assert np.abs(io.core_motion_gyro_bias(log2).mean(axis=0) - bias).max() < 1e-4
+    assert log2["phase"] is not None and log2["phase"].shape == (n,)
+    assert set(np.unique(log2["phase"])) == {0, 1, 2}
+    assert log2["raw_gyro"] is None
+    assert io.check_log(log2) == [], "a capture with a real closing hold is clean"
 
 
 def test_synth_emits_a_closing_stillness_hold():

@@ -38,6 +38,8 @@ without saying which of the two you mean.
 Nine steps, one module each, numbered to match.
 
 0. `io.py` — load log. Never assume fixed dt. Core Motion reports g, not m/s².
+   Captures from 2026-07-30 on carry a `phase` column (0 opening hold, 1 reps,
+   2 closing hold) — use it rather than searching for stillness where it exists.
 1. `calibrate.py` — gyro bias from the stillest window in the pre-set pause.
 2. `orient.py` — correct attitude by that bias.
 3. `orient.py` — rotate acceleration into the world frame.
@@ -262,23 +264,31 @@ is 0.16–0.36 °/s, and the observed spread was 0.33–0.47 °/s across the 13
 captures held when this was measured — meaning the capture-to-capture variation
 is tremor, not bias. More captures will not help; the estimator is the limit.
 
-**P5 — Apple's residual gyro bias is unobservable with what we log.**
-`dm.rotationRate` is already bias-corrected by Core Motion, so the logger
-records the residual after an opaque, time-varying internal estimate. Logging
-raw `CMGyroData` alongside would expose that estimate directly by difference.
-Raw accelerometer adds nothing — `userAccel + R⁻¹·g` already reconstructs it
-exactly (9.8065 m/s² measured at rest against 9.80665 expected).
+**P5 — CLOSED 2026-07-30. Apple's residual gyro bias is unobservable, and
+also negligible.** Both halves matter, and they arrived from opposite
+directions.
 
-B5 checked whether a higher accelerometer rate would add anything either, and
-it would not: the impulse across a floor impact is already captured at 100 Hz
-to a median ratio of 1.04 against video. Sample rate is not a limit here.
+*Unobservable:* the plan was to log raw `CMGyroData` alongside the
+already-corrected `dm.rotationRate` and take the difference.
+**`CMMotionManager.isGyroAvailable` returns false on watchOS** — the raw gyro
+service is not offered. Tried on one motion manager and on two; the watch
+reported no hardware. There is no public-API route, so do not re-propose this.
 
-**And P4's stationary measurement has undercut the premise.** If Core Motion's
-residual gyro bias is 0.002 °/s at rest, then knowing its internal estimate by
-difference buys little — there is no meaningful residual for it to explain. C2
-is built and worth having, because it answers whether that holds up DURING a
-set, but "expose the estimate" is no longer the point. "Find out whether a set
-breaks it" is.
+*Negligible:* P4's stationary captures put the residual *after* Core Motion at
+**0.002 °/s**, unresolvable above its own noise. There was never much for the
+internal estimate to explain. Raw accelerometer adds nothing either —
+`userAccel + R⁻¹·g` already reconstructs it exactly (9.8065 m/s² measured at
+rest against 9.80665 expected) — and B5 showed sample rate is not a limit,
+since the floor impulse is already captured at 100 Hz to a median ratio of 1.04
+against video.
+
+**What replaced it as the open sensing question.** Everything above is measured
+AT REST. Whether Core Motion's attitude survives a working set — 20 g impacts,
+fast rotation, its gravity reference corrupted by the lift's own acceleration —
+is untested, and the ~2° error implied by P4's arithmetic says it probably does
+not. The two-anchor protocol (C1, built) is the measurement: compare the
+attitude solution before and after 40 s of lifting. That needs one capture with
+a real closing hold, which does not exist yet.
 
 Validate on **deadlift** first — not because the pipeline differs by lift
 (it does not) but because it is the only lift with external ground truth:

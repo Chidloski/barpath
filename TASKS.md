@@ -317,38 +317,48 @@ point different ways. Whether that is a step-8 problem or just P2 showing
 through is open — fix the acceleration first (B6) and re-measure before
 designing around it.
 
-### C1+C2 — watch logger: done, needs a capture to validate
-`watch/WatchApp/`. Typechecks clean against the watchOS 26.5 SDK; **not run on
-hardware yet**, so treat it as unvalidated until a capture comes back.
+### C1 done, C2 abandoned, C3 added — watch logger
+`watch/WatchApp/`. Typechecks clean against the watchOS 26.5 SDK. C1 and C3 are
+**not yet validated on a lift** — the only captures from the new logger are two
+stationary table tests.
 
-**C1 — closing stillness hold.** "Finish Set" now starts a 3 s countdown and
-saves itself. Driven off the device-motion callback rather than a Timer, because
-that callback keeps firing when the screen sleeps. Two anchors ~40 s apart
-measure gyro bias as drift over a long baseline, where the lifter's own slow
-rotation cancels and a real bias does not — the one available route under P4's
-noise floor. `io.check_log` warns when the hold is missing, and correctly flags
-all 10 existing captures.
+**C1 — closing stillness hold. Built.** "Finish Set" starts a 3 s countdown and
+saves itself, driven off the device-motion callback rather than a Timer because
+that callback keeps firing when the screen sleeps. Its *purpose* changed once P4
+was re-measured: it is no longer about estimating gyro bias over a long
+baseline, because there is barely any gyro bias. It is about answering whether a
+SET perturbs Core Motion's attitude solution — two anchors bracketing 40 s of
+lifting. That is now the live question.
 
-**C2 — raw `CMGyroData`.** Logged alongside the corrected `rotationRate` in four
-new optional columns (`rgt rgx rgy rgz`), so their difference exposes Core
-Motion's internal bias estimate — P5's opaque quantity, measured directly.
-`io.core_motion_gyro_bias` derives it. **Its sign is unverified**: the function
-returns `raw - corrected`, which is right only if Core Motion computes
-`corrected = raw - bias`. Check that on the first still capture.
+**C2 — abandoned. `CMMotionManager.isGyroAvailable` is FALSE on watchOS.** Raw
+gyro is not offered by the OS; tried on one motion manager and on two, and the
+on-screen badge reported no hardware. There is no public-API route, so **P5 is
+closed as permanently unobservable**. Two diagnostic captures carry the four
+empty columns; `io.load_log` still reads them so those files load.
+
+The loss is small, and P4's measurement is why: the residual *after* Core
+Motion is 0.002 °/s, so its internal estimate has almost nothing to explain.
+
+**C3 — a `phase` column. New, and the useful one.** `0` opening hold, `1` reps,
+`2` closing hold. It tells the pipeline where the anchors are instead of making
+`stillest_window` guess from quietness — which matters because the guess is
+contaminated: the opening 3 s it searches is exactly when a finger is on the
+Calibrate button. **The cleanest stillness in any capture is the tail of phase
+2**, the only quiet window not followed by a screen tap. Using it is the first
+thing to try on a capture that has a real closing anchor. `check_log` now
+verifies the hold exactly where the column exists.
 
 Also fixed: "Discard" used to write a CSV.
 
-`synth.py` gained `settle_pause` so it models the protocol as well as the
-sensors — otherwise every synthetic log trips the new warning, which would make
-the warning useless.
+`synth.py` gained `settle_pause` so it models the protocol, not just the
+sensors — otherwise every synthetic log trips the C1 warning.
 
 **And it exposed a fake test.** `test_accel_bias_removal_meets_horizontal_spec`
-asserted a 1 cm threshold on synthetic data and failed once the record got
-longer and the noise draw moved. Measured across 12 seeds it spans 0.29–1.86 cm
-— it was **failing on 5 of 12 and passing only because seed=0 landed at 0.39**.
-That is gates 5 and 6 in miniature: a behavioural spec claim refereed by
-synth.py, with a threshold sitting inside the generator's own spread. Rewritten
-as a comparison — bias removal must beat no bias removal, which it does 12/12.
+asserted a 1 cm threshold on synthetic data and broke once the longer record
+moved the noise draw. Across 12 seeds it spans 0.29–1.86 cm — it was **failing
+on 5 of 12 and passing only because seed=0 landed at 0.39**. A threshold sitting
+inside the generator's own spread constrains nothing; that is gates 5 and 6 in
+miniature. Rewritten as a comparison — bias removal must beat no removal, 12/12.
 
 ### D — replace the remaining synthetic tests
 Gates 5 and 6 are already deleted. Keep the algebraic-identity tests; replace

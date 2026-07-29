@@ -31,6 +31,14 @@ Two things work well and are verified against video: rep segmentation (44/44
 reps across 10 captures, zero false positives) and the video ground truth itself
 (IMU and video agree on floor-impact timing to 11–16 ms).
 
+The sensor is not the problem, which took until 2026-07-30 to establish. On a
+watch lying on a table, Core Motion's residual gyro bias is **0.002 °/s**, its
+attitude holds to **0.018° over 10 s**, and the accelerometer's own bias is
+**0.0025 g**. The 0.1–0.9 °/s this project spent months treating as residual
+bias is the lifter's wrist rotating, and the ~0.035 g "accel bias" seen on-wrist
+is the size of a **2° attitude error**, not of a sensor bias. Whatever is wrong
+is attitude, during motion — see `CLAUDE.md` P3 and P4.
+
 Since A3 the failure has a measurement rather than an adjective. Against the
 video, per rep, on the three deadlifts: **horizontal 5.1, 9.2 and 15.4 cm rms
 against a 1 cm spec, and vertical 6.8, 8.7 and 3.2 cm against ±2–3 cm.** So
