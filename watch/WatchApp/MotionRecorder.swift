@@ -59,6 +59,23 @@ final class MotionRecorder: NSObject, ObservableObject {
     @Published var workoutActive = false   // keep-alive session is running
     var logName = "log"
 
+    /// Record with NO workout session, deliberately. The whole C4 workflow
+    /// change — start your workout here, not in the Workout app — rests on one
+    /// untested assumption: that an HKWorkoutSession is what keeps Core Motion
+    /// delivering once the wrist drops. That is Apple's documented mechanism
+    /// and it is why this code exists, but nobody has ever measured what
+    /// happens WITHOUT one on this watch, this watchOS, this app.
+    ///
+    /// If a wrist-down set holds ~100 Hz with this on, the session is not
+    /// load-bearing, the collision with the Workout app never mattered, and the
+    /// right change is to stop starting one at all — deleting the workflow
+    /// change, the delegate, and most of the HealthKit section below.
+    ///
+    /// Costs one set to find out. The capture is expected to truncate; that IS
+    /// the result, so name it something you will recognise and do not use it as
+    /// lifting data.
+    @Published var sessionlessTest = false
+
     // Live workout metrics, so this app can show what the Workout app would and
     // the lifter is not giving anything up by starting the workout here. All of
     // it comes from HKLiveWorkoutBuilder's statistics; none of it touches the
@@ -133,7 +150,10 @@ final class MotionRecorder: NSObject, ObservableObject {
         // device's workout session, so this stays automatic — but startWorkout()
         // now says on screen that it took the session, rather than doing it
         // invisibly the way this line used to.
-        startWorkout()
+        //
+        // `sessionlessTest` is the one exception, and it exists to run the
+        // experiment that could delete all of this. See its declaration.
+        if !sessionlessTest { startWorkout() }
         phaseCode = 0
         startMotion()
         phase = .calibrating

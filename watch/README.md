@@ -132,6 +132,31 @@ Metrics are best-effort throughout. A HealthKit type you denied simply never
 arrives and its field stays at `--`; none of it touches the CSV, which comes
 from Core Motion and depends on none of it.
 
+### The one test that could delete all of this
+
+Everything above rests on an assumption nobody has measured: **that the workout
+session is what keeps Core Motion delivering once your wrist drops.** It is
+Apple's documented mechanism and it is why the session exists — but it has never
+been checked on this watch, this watchOS, this app.
+
+The idle screen carries a **Test: no workout session** toggle for exactly that.
+With it on, Calibrate records with no session at all. Do one wrist-down set,
+then check the capture:
+
+```bash
+python -c "from src import io; l=io.load_log('data/raw/YOURFILE.csv'); \
+print(l['fs'], l['t'][-1], len(l['t']))"
+```
+
+If it holds ~100 Hz for the whole set, **the session is not load-bearing**, the
+collision with the Workout app never mattered, and the right change is to stop
+starting one — which deletes the workflow change, the delegate, and most of this
+section. If it truncates when your wrist drops, that is the assumption
+confirmed and the section stands.
+
+Expect it to truncate. That IS the result — name the capture something you will
+recognise and do not use it as lifting data.
+
 *The tradeoff.* This is a workflow change, not a repair — the collision is still
 there, it is just no longer provoked. If you open the Workout app **during** a
 recording it preempts *us*, Core Motion stops the next time your wrist drops, and

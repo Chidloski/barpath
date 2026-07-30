@@ -162,6 +162,24 @@ struct RecordView: View {
                         Text(rec.status).font(.footnote).foregroundStyle(.secondary)
                     }
 
+                    // The experiment that could delete the whole C4 workflow
+                    // change. Off by default and last on the screen, because
+                    // switching it on is expected to ruin the capture — see
+                    // MotionRecorder.sessionlessTest.
+                    Divider()
+                    Toggle(isOn: $rec.sessionlessTest) {
+                        Text("Test: no workout session")
+                            .font(.caption2)
+                    }
+                    .tint(.orange)
+                    if rec.sessionlessTest {
+                        Text("Calibrate will NOT keep the app alive. Expect the "
+                             + "capture to truncate when your wrist drops — that "
+                             + "is the result. Do not use it as lifting data.")
+                            .font(.caption2).foregroundStyle(.orange)
+                            .multilineTextAlignment(.center)
+                    }
+
                 case .calibrating:
                     Text("HOLD STILL").font(.headline).foregroundStyle(.yellow)
                     Text("opening anchor").font(.caption2).foregroundStyle(.secondary)
