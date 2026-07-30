@@ -46,6 +46,15 @@ post-set stillness hold in the watch logger is for, since two anchors 40 s
 apart measure drift over a baseline where real rotation cancels and bias does
 not.
 
+THAT MEASUREMENT HAS NOW BEEN MADE, and it settles the question in the
+default's favour. `anchor_tilt` below propagates the logged gyro across a whole
+set and compares it with Core Motion's own attitude: the disagreement is
+0.35-1.49 deg over 39-56 s, median 0.69, which is an effective drift rate of
+about 0.014 deg/s. The pause estimate is 0.1-0.9 deg/s. It is 10-60x too large,
+measured over a baseline forty times longer than the pause, and applying it
+would inject roughly that factor of error. The default stands on evidence now
+rather than on an A/B between two bad options.
+
 Falsifiable: if `apply=True` ever scores better than the default on a real
 capture, this reasoning is wrong and the default should change.
 
@@ -56,6 +65,9 @@ then find the stillest part ourselves.
 from __future__ import annotations
 
 import numpy as np
+from scipy.spatial.transform import Rotation
+
+from .io import G
 
 
 def stillest_window(log: dict, search_s: float = 3.0,
@@ -195,3 +207,101 @@ def accel_bias(world_accel: np.ndarray, log: dict,
     """
     i, j = stillest_window(log, search_s, window_s)
     return world_accel[i:j].mean(axis=0)
+
+
+def hold_windows(log: dict, span_s: float = 1.5) -> dict:
+    """The quietest `span_s` inside each C3 hold. None where there is no hold.
+
+    Returns {"open": slice-index array or None, "close": ... }. Scored on gyro
+    magnitude rather than acceleration, because the thing being isolated is
+    stillness of the WRIST, and acceleration during a hold is already the
+    quantity under test.
+
+    Only the 2026-07-30 captures onward carry `phase`; older ones return None
+    for both and the caller must say so rather than falling back to
+    `stillest_window`, which searches the opening seconds and cannot find a
+    CLOSING hold at all.
+    """
+    phase = log.get("phase")
+    out: dict = {"open": None, "close": None}
+    if phase is None:
+        return out
+
+    n = int(span_s * log["fs"])
+    for name, label in (("open", 0), ("close", 2)):
+        idx = np.flatnonzero(phase == label)
+        if len(idx) < n + 2:
+            continue
+        mag = np.linalg.norm(log["gyro"][idx], axis=1)
+        c = np.concatenate([[0.0], np.cumsum(mag)])
+        k = int(np.argmin((c[n:] - c[:-n]) / n))
+        out[name] = idx[k:k + n]
+    return out
+
+
+def anchor_tilt(log: dict, world_accel: np.ndarray, span_s: float = 1.5) -> dict:
+    """C6 — Core Motion's attitude error at each end of a set, in degrees.
+
+    THE MEASUREMENT C1 WAS BUILT FOR. During a still hold the world-frame
+    acceleration must be zero: Core Motion removed gravity using its own
+    attitude, so a tilt error theta leaves g*sin(theta) in the world horizontal
+    (orient.py's docstring derives this). The opening and closing holds bracket
+    ~40-55 s of loaded lifting, so the difference between them is what a
+    working set does to the attitude solution.
+
+    Returns degrees at each anchor, the change, and `gyro_only` — the angle
+    between Core Motion's reported attitude at the closing anchor and one
+    obtained by integrating the logged gyro from the opening anchor. That last
+    number is how much work the fusion did: it is what the attitude WOULD have
+    drifted on gyro alone.
+
+    Measured on the seven 2026-07-30 captures: 0.05 deg at the opening anchor,
+    0.14 deg at the closing anchor, against 0.69 deg of gyro-only drift over
+    the same span. The fusion is correcting, and winning, THROUGH a set with
+    20 g impacts in it.
+
+    Read the limit as carefully as the result. The anchors sample the attitude
+    at the two moments it is most likely to be right — still, and with no
+    linear acceleration to corrupt the gravity reference. A good number here
+    does NOT say the attitude holds during a rep, and P3's error lives during
+    the rep. This measures that a set does no LASTING damage, which is a
+    different and smaller claim than the one C1 was hoped to settle.
+    """
+    holds = hold_windows(log, span_s)
+    if holds["open"] is None or holds["close"] is None:
+        raise ValueError(
+            "anchor_tilt needs a capture with both C3 holds — the `phase` "
+            "column exists only from 2026-07-30 on. Older captures have no "
+            "closing hold to anchor against.")
+
+    def tilt(win):
+        h = world_accel[win, :2].mean(axis=0)
+        return float(np.degrees(np.arcsin(np.clip(
+            np.linalg.norm(h) / G, -1.0, 1.0)))), h
+
+    open_deg, open_h = tilt(holds["open"])
+    close_deg, close_h = tilt(holds["close"])
+
+    i0 = int(holds["open"][len(holds["open"]) // 2])
+    i1 = int(holds["close"][len(holds["close"]) // 2])
+    q = _as_scipy(log["quat"][i0])
+    for k in range(i0, i1):
+        q = q * Rotation.from_rotvec(log["gyro"][k] * log["dt"][k])
+    gyro_only = float(np.atleast_1d(np.degrees(
+        (q.inv() * _as_scipy(log["quat"][i1])).magnitude()))[0])
+
+    return {
+        "open_deg": open_deg,
+        "close_deg": close_deg,
+        "change_deg": close_deg - open_deg,
+        "gyro_only_deg": gyro_only,
+        "span_s": float(log["t"][i1] - log["t"][i0]),
+        "open_horizontal": open_h,
+        "close_horizontal": close_h,
+    }
+
+
+def _as_scipy(quat) -> Rotation:
+    """w,x,y,z (this project) -> x,y,z,w (SciPy). See CLAUDE.md Conventions."""
+    q = np.atleast_2d(quat)
+    return Rotation.from_quat(np.column_stack([q[:, 1], q[:, 2], q[:, 3], q[:, 0]]))

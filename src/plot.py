@@ -305,3 +305,78 @@ def plot_rom_bounds(reconstructed: dict, video: dict | None = None):
               "wrong per capture.")
     fig.tight_layout()
     return fig
+
+
+def plot_anchors(anchors: dict, residuals: dict, exclusion: dict, momentum: dict):
+    """C6 — what the two anchors measured, and what they cannot see.
+
+    `anchors` maps stem -> calibrate.anchor_tilt result.
+    `residuals` maps lift -> (hold values, per-rep values) in g.
+    `exclusion` maps stem -> (pad_ms list, residual in g list).
+    `momentum` maps stem -> per-rep vertical velocity closure, m/s.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(13, 8.5))
+
+    # 1 --- the answer: attitude before and after a set -----------------------
+    ax = axes[0, 0]
+    names = list(anchors)
+    x = np.arange(len(names))
+    ax.bar(x - 0.2, [anchors[k]["open_deg"] for k in names], 0.38,
+           label="opening hold", color="#2c7fb8")
+    ax.bar(x + 0.2, [anchors[k]["close_deg"] for k in names], 0.38,
+           label="closing hold", color="#c0392b")
+    ax.plot(x, [anchors[k]["gyro_only_deg"] for k in names], "k^--", ms=6,
+            lw=0.9, label="gyro-only drift over the set")
+    ax.axhline(2.0, color="0.4", ls=":", lw=1.4)
+    ax.text(-0.4, 1.93, "P4 inferred a 2 deg attitude error. It is 15x smaller, "
+            "and the inference used the wrong projection.",
+            ha="left", va="top", fontsize=8, color="0.35")
+    ax.set_ylim(0, 2.3)
+    ax.set_xticks(x)
+    ax.set_xticklabels([n.replace("_", "\n", 1) for n in names], fontsize=7)
+    ax.set_ylabel("attitude error, degrees")
+    ax.set_title("Core Motion survives a set: 0.05 -> 0.14 deg across 40-55 s",
+                 fontsize=10, loc="left")
+    ax.legend(fontsize=8)
+
+    # 2 --- where the residual actually is ------------------------------------
+    ax = axes[0, 1]
+    for i, (lift, (hold, rep)) in enumerate(residuals.items()):
+        ax.scatter(np.full(len(hold), i - 0.15), hold, s=34, color="#2c7fb8",
+                   label="still hold" if i == 0 else None)
+        ax.scatter(np.full(len(rep), i + 0.15), rep, s=34, color="#c0392b",
+                   label="per rep" if i == 0 else None)
+    ax.axhline(0.0025, color="0.4", ls="--", lw=1.2)
+    ax.text(len(residuals) - 0.5, 0.0027, "0.0025 g accel bias, measured on a table",
+            ha="right", va="bottom", fontsize=8, color="0.35")
+    ax.set_yscale("log")
+    ax.set_xticks(range(len(residuals)))
+    ax.set_xticklabels(list(residuals))
+    ax.set_ylabel("mean horizontal residual, g")
+    ax.set_title("Bench and squat sit at the sensor's own noise floor; "
+                 "deadlift does not", fontsize=10, loc="left")
+    ax.legend(fontsize=8)
+
+    # 3 --- the deadlift residual is the impact -------------------------------
+    ax = axes[1, 0]
+    for stem, (pads, vals) in exclusion.items():
+        ax.plot(pads, vals, "o-", ms=5, lw=1.2, label=stem)
+    ax.set_xlabel("samples excluded around each floor impact, +/- ms")
+    ax.set_ylabel("per-rep horizontal residual, g")
+    ax.set_title("Removing 6% of samples removes 75% of it: the impact is "
+                 "where it enters", fontsize=10, loc="left")
+    ax.legend(fontsize=8)
+
+    # 4 --- vertical momentum does not close ----------------------------------
+    ax = axes[1, 1]
+    for i, (stem, dv) in enumerate(momentum.items()):
+        ax.scatter(np.arange(1, len(dv) + 1) + i * 0.12, dv, s=42, label=stem)
+    ax.axhline(0.0, color="0.3", lw=1.2)
+    ax.set_xlabel("rep")
+    ax.set_ylabel("vertical velocity change over the rep, m/s")
+    ax.set_title("Impact to impact the bar starts and ends at rest, so this "
+                 "must be zero", fontsize=10, loc="left")
+    ax.legend(fontsize=8)
+
+    fig.tight_layout()
+    return fig

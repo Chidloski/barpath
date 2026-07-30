@@ -1182,13 +1182,18 @@ def test_core_motion_residual_gyro_bias_is_negligible(path):
 @pytest.mark.skipif(not STATIONARY, reason="no stationary capture")
 @pytest.mark.parametrize("path", STATIONARY, ids=lambda p: p.stem)
 def test_body_frame_accel_bias_at_rest_is_small(path):
-    """0.0025 g on a table, against ~0.035 g seen on-wrist in the press posture.
+    """0.0025 g on a table. The number the pipeline's residuals are read against.
 
-    The gap matters: 0.035 g is g*sin(2.0 deg), so the on-wrist figure is the
-    size an attitude error of about two degrees would leak, not the size of the
-    accelerometer's own bias. That points P3 at ATTITUDE rather than at sensor
-    bias — and attitude error is exactly what a constant-bias estimator cannot
-    fix, which is consistent with B6's oracle recovering only ~30%.
+    This docstring used to draw a conclusion from the gap to a 0.035 g on-wrist
+    figure — that 0.035 g is g*sin(2.0 deg), so the on-wrist number was a two
+    degree attitude error. C6 retracted that on both counts: the 0.035 g is a
+    VERTICAL residual and vertical leaks g*(1-cos theta), which needs 15.2 deg;
+    and the figure does not survive the acceleration sign fix. See
+    `test_the_two_degree_attitude_error_is_not_there`.
+
+    What the 0.0025 g is genuinely good for is the comparison C6 does make:
+    bench and squat leave 0.003 g of per-rep residual, i.e. this floor, so
+    there is nothing on those lifts to explain beyond the sensor itself.
     """
     log = io.load_log(path)
     bias_g = np.linalg.norm(log["accel"][_quietest(log)].mean(axis=0)) / io.G
@@ -1211,3 +1216,202 @@ def test_core_motion_attitude_is_stable_at_rest(path):
     R = Rotation.from_quat(log["quat"][_quietest(log)], scalar_first=True)
     drift = np.degrees((R[-1] * R[0].inv()).magnitude())
     assert drift < 0.2, f"attitude drifted {drift:.3f} deg over 8 s at rest"
+
+
+# ------------------------------------------------------------------- C6 --
+# The two-anchor measurement C1 was built for. Only the 2026-07-30 captures
+# have both holds; older ones have no closing hold and are excluded by
+# `calibrate.anchor_tilt` raising rather than by a filter here, so a capture
+# that acquires a phase column joins automatically.
+TWO_ANCHOR = [p for p in CAPTURES if p.stem.split("_2026")[0] in {
+    "bench_spoto_90x5_1", "bench_spoto_90x5_2", "bench_spoto_90x5_3",
+    "squat_140x4_1", "squat_140x4_2", "squat_140x4_3", "squat_160x1"}]
+
+
+@needs_data
+@pytest.mark.parametrize("path", TWO_ANCHOR, ids=lambda p: p.stem)
+def test_a_working_set_does_not_wreck_core_motions_attitude(path):
+    """The answer C1 was built to get, and it is "no lasting damage".
+
+    Measured 2026-07-30: 0.05 deg at the opening anchor, 0.14 deg at the
+    closing anchor, across 40-55 s of loaded lifting with 20 g impacts in it.
+    Gyro-only propagation over the same span drifts 0.35-1.49 deg, so Core
+    Motion's fusion is doing real work and winning.
+
+    The ceiling is 0.5 deg, well above the 0.27 deg worst case, because this
+    gate exists to catch a REGIME change — a set that leaves the attitude
+    degrees out — not to pin a number that will wander with how still the
+    lifter stood.
+    """
+    from src import calibrate, orient
+
+    log = io.load_log(path)
+    world = orient.to_world(log["accel"], log["quat"], log["quat"])
+    a = calibrate.anchor_tilt(log, world)
+
+    assert a["open_deg"] < 0.2, (
+        f"the OPENING hold is already {a['open_deg']:.2f} deg out, before any "
+        f"lifting has happened")
+    assert a["close_deg"] < 0.5, (
+        f"attitude is {a['close_deg']:.2f} deg out after {a['span_s']:.0f} s "
+        f"of lifting — a set now damages the attitude solution, which it did "
+        f"not on 2026-07-30")
+    assert a["gyro_only_deg"] > a["close_deg"], (
+        "gyro-only propagation is no worse than Core Motion's fusion, so the "
+        "fusion is no longer buying anything")
+
+
+@needs_data
+def test_the_two_degree_attitude_error_is_not_there():
+    """P4 inferred a ~2 deg attitude error. Retracted 2026-07-30, twice over.
+
+    It rested on `analysis/11`'s 0.035 g, and two things are wrong with the
+    inference:
+
+    1. That figure is a VERTICAL residual, off-pipeline, from before the
+       acceleration sign fix (3c2cbed). It does not survive: bench_92.5x2, the
+       capture it was measured on, now reads 0.0005 g per rep.
+    2. Converting it with g*sin(theta) is the horizontal leak. Vertical leaks
+       g*(1-cos theta) — orient.py's own docstring states the asymmetry. 0.035 g
+       of VERTICAL implies 15.2 deg, not 2.0. The anchors exclude that by two
+       orders of magnitude.
+
+    This test pins the arithmetic and the data, so the claim cannot come back
+    without both being re-argued.
+    """
+    from src import orient, pipeline
+
+    assert abs(np.degrees(np.arcsin(0.035)) - 2.0) < 0.05          # the sin
+    assert abs(np.degrees(np.arccos(1 - 0.035)) - 15.2) < 0.1      # the truth
+    assert (1 - np.cos(np.radians(2.0))) < 0.001, (
+        "a 2 deg tilt puts under 0.001 g into vertical, not 0.035")
+
+    path = next((p for p in CAPTURES if p.stem.startswith("bench_92.5x2")), None)
+    if path is None:
+        pytest.skip("bench_92.5x2 not present")
+    result = pipeline.run(path)
+    log = result["log"]
+    world = orient.to_world(log["accel"], log["quat"], log["quat"])
+    per_rep = [abs(world[a:b, 2].mean()) / io.G for a, b in result["bounds"]]
+
+    assert max(per_rep) < 0.005, (
+        f"the vertical residual P4 was built on is back: {max(per_rep):.4f} g "
+        f"against the 0.035 g that analysis/11 recorded")
+
+
+@needs_data
+@pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
+def test_per_rep_residual_is_at_the_noise_floor_except_on_deadlift(path):
+    """A rep starts and ends at rest, so its mean world acceleration is zero.
+
+    Whatever is left is error, in the same units as the still-hold residual, so
+    the two are directly comparable. Measured: bench and squat sit at 0.003 g,
+    which is the 0.0025 g accel bias measured on a table — nothing to explain.
+    Deadlift runs 0.010-0.030 g, and `test_the_deadlift_residual_enters_at_the
+    _floor_impact` localises it.
+
+    Excludes the two captures with known bad windows: a window that spans the
+    re-rack has a large genuine net acceleration and this check would be
+    measuring the segmenter, not the sensor.
+    """
+    from src import orient, pipeline
+
+    if any(path.stem.startswith(k) for k in KNOWN_ROM_FAILURES):
+        pytest.skip(f"{path.stem} has known bad rep windows; see P1")
+
+    result = pipeline.run(path)
+    log = result["log"]
+    world = orient.to_world(log["accel"], log["quat"], log["quat"])
+    med = float(np.median([np.linalg.norm(world[a:b].mean(axis=0)[:2]) / io.G
+                           for a, b in result["bounds"]]))
+
+    ceiling = 0.05 if path.stem.startswith("deadlift") else 0.008
+    assert med < ceiling, f"{path.stem}: per-rep horizontal residual {med:.4f} g"
+    if not path.stem.startswith("deadlift"):
+        assert med > 0.0005, (
+            f"{path.stem}: {med:.4f} g is BELOW the sensor's own noise floor, "
+            f"which means this is measuring nothing")
+
+
+@needs_data
+@pytest.mark.parametrize("stem", ["deadlift_155x6_1", "deadlift_155x6_2",
+                                  "deadlift_180x3"])
+def test_the_deadlift_residual_enters_at_the_floor_impact(stem):
+    """6% of the samples carry ~75% of the deadlift's per-rep error.
+
+    Excluding +/-100 ms around each impact takes the residual from 0.015-0.031 g
+    to 0.006-0.010 g. That is not an argument for discarding those samples — the
+    impulse there is real and B5 measured it against video at a ratio of 1.04.
+    It says the error is concentrated where the signal is largest and where
+    Core Motion's gravity reference is most corrupted, which is the first
+    specific location P3 has ever had.
+    """
+    from src import orient, pipeline, segment
+
+    path = next((p for p in CAPTURES if p.stem.startswith(stem)), None)
+    if path is None:
+        pytest.skip(f"{stem} not present")
+
+    result = pipeline.run(path)
+    log = result["log"]
+    world = orient.to_world(log["accel"], log["quat"], log["quat"])
+    imp = segment.impact_anchors(log)
+
+    def residual(pad_ms):
+        pad = int(pad_ms * log["fs"] / 1000)
+        keep = np.ones(len(world), bool)
+        for k in imp:
+            keep[max(0, k - pad):k + pad + 1] = False
+        return float(np.median(
+            [np.linalg.norm(world[a:b][keep[a:b]].mean(axis=0)[:2]) / io.G
+             for a, b in result["bounds"] if keep[a:b].sum() > 10]))
+
+    whole, without = residual(0), residual(100)
+    assert without < whole * 0.75, (
+        f"{stem}: excluding the impact moved the residual {whole:.4f} -> "
+        f"{without:.4f} g. The impact is no longer where the error enters")
+
+
+@needs_data
+@pytest.mark.parametrize("stem", ["deadlift_155x6_1", "deadlift_155x6_2",
+                                  "deadlift_180x3"])
+def test_deadlift_vertical_momentum_does_not_close(stem):
+    """A defect this project had not recorded, on the axis assumed to be fine.
+
+    Deadlift rep windows run impact to impact, and every one contains exactly
+    one impact, so the bar is at rest on the floor at both ends and the
+    integral of vertical acceleration across the window must be zero. It is
+    -0.05 to -2.36 m/s, negative on 15 of 15 reps.
+
+    This does not contradict B5. B5 measured the velocity STEP across the
+    impact against video and got a ratio of 1.04; that is a local measurement
+    over a few hundred milliseconds and it is right. The deficit is what the
+    rest of the rep does, and the per-rep detrend hides it completely — which
+    is why vertical ROM comes out at a plausible 53-61 cm regardless.
+
+    Asserts the defect, not a target. It should fail when B6 fixes it.
+    """
+    from src import orient, pipeline, segment
+
+    path = next((p for p in CAPTURES if p.stem.startswith(stem)), None)
+    if path is None:
+        pytest.skip(f"{stem} not present")
+
+    result = pipeline.run(path)
+    log = result["log"]
+    world = orient.to_world(log["accel"], log["quat"], log["quat"])
+    imp = set(segment.impact_anchors(log))
+
+    dv = []
+    for a, b in result["bounds"]:
+        assert sum(1 for k in imp if a <= k < b) == 1, (
+            f"{stem}: rep window {a}-{b} does not contain exactly one impact, "
+            f"so 'starts and ends at rest' no longer holds and this test is "
+            f"measuring something else")
+        dv.append(float(np.trapezoid(world[a:b, 2], log["t"][a:b])))
+
+    assert all(v < 0.1 for v in dv), (
+        f"{stem}: vertical closure is no longer uniformly negative: {dv}")
+    assert np.median(dv) < -0.3, (
+        f"{stem}: median vertical closure {np.median(dv):.2f} m/s has improved "
+        f"— if that was deliberate, re-pin this test")

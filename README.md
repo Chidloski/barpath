@@ -41,9 +41,19 @@ The sensor is not the problem, which took until 2026-07-30 to establish. On a
 watch lying on a table, Core Motion's residual gyro bias is **0.002 °/s**, its
 attitude holds to **0.018° over 10 s**, and the accelerometer's own bias is
 **0.0025 g**. The 0.1–0.9 °/s this project spent months treating as residual
-bias is the lifter's wrist rotating, and the ~0.035 g "accel bias" seen on-wrist
-is the size of a **2° attitude error**, not of a sensor bias. Whatever is wrong
-is attitude, during motion — see `CLAUDE.md` P3 and P4.
+bias is the lifter's wrist rotating.
+
+Nor is the attitude. A "2° attitude error" was inferred from a 0.035 g residual
+and **retracted the same day**: that figure is a *vertical* residual converted
+with the *horizontal* leak formula (0.035 g of vertical needs 15.2°, not 2°),
+and it does not survive the acceleration sign fix anyway. Measured directly at
+the holds bracketing a set, Core Motion's attitude is **0.05° before and 0.14°
+after** 40–55 s of lifting.
+
+What is left, per rep: bench and squat leave 0.003 g of residual acceleration —
+the sensor's own noise floor — and deadlift leaves 0.010–0.030 g, three quarters
+of it injected in the 200 ms around each floor impact. See `CLAUDE.md` P4, P5
+and P6.
 
 Since A3 the failure has a measurement rather than an adjective. Against the
 video, per rep, on the three deadlifts: **horizontal 5.1, 9.2 and 15.4 cm rms

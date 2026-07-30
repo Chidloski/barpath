@@ -232,6 +232,36 @@ Four results, in descending order of how much they change what we believe:
 
 `analysis/23_rom_bounds.png`, `python run.py --rom`.
 
+### C6 — the two anchors, measured
+`calibrate.anchor_tilt`. The measurement C1 was built for, on the seven captures
+that carry both holds. **A set does no lasting damage to Core Motion's
+attitude**: 0.05° at the opening anchor, 0.14° at the closing anchor, worst case
+0.27°, across 39–56 s with 20 g impacts in it. Gyro-only propagation over the
+same span drifts 0.35–1.49°, so the fusion is working, not being corrupted.
+
+Four consequences:
+
+1. **B1's default is confirmed on the evidence its docstring asked for.** The
+   two-anchor baseline gives 0.014 °/s of effective drift against a pause
+   estimate of 0.1–0.9. Ten to sixty times too large.
+2. **P4's two-degree attitude error is retracted.** It converted a *vertical*
+   residual with the *horizontal* leak formula — 0.035 g of vertical needs
+   15.2°, not 2.0° — and the figure is pre-sign-fix and does not survive anyway
+   (`bench_92.5x2` now reads 0.0005 g).
+3. **C1 cannot see P3's error, by construction.** The anchors sample the
+   attitude when it is most likely right: still, no linear acceleration. P3
+   lives during the rep. What sees it is the per-rep mean, which must be zero.
+4. **P3 has a location for the first time.** Bench and squat leave 0.003 g per
+   rep, the sensor's own floor. Deadlift leaves 0.010–0.030 g, and ±100 ms
+   around each impact — 6% of samples — carries three quarters of it.
+
+Plus a defect nobody had recorded: deadlift vertical momentum does not close,
+by −0.05 to −2.36 m/s per rep, negative on 15 of 15. Not a contradiction of B5,
+whose 1.04 is a local step measurement; the deficit is in the rest of the rep,
+and step 7 hides it.
+
+`analysis/24_c6_two_anchors.png`, `python run.py --anchors`.
+
 ---
 
 ## To do
@@ -252,20 +282,24 @@ announces itself.
   squat. A single has no cadence for `_longest_cadence` to work with, which is
   the first thing to check.
 
-### C6 — measure the two anchors  ← the data now exists
-P5's replacement question: does Core Motion's attitude survive a working set?
-All seven 2026-07-30 captures carry a 4-5 s opening hold and a 3.0 s closing
-hold in `phase`. Compare the attitude solution across them, bracketing 40 s of
-lifting. P4's arithmetic implies a ~2° error and predicts it does not.
-
-### B6 — attack the acceleration error itself  ← next
+### B6 — attack the acceleration error itself  ← next, and C6 aimed it
 A3 puts the error upstream of the detrend and gives it a shape: a smooth arch
 at rep frequency, 5–15 cm of horizontal per rep. The metric B6 was waiting on
 now exists, so this is unblocked.
 
-Order from the original entry still stands: per-rep zero-mean-acceleration
-constraints first (they hold during motion and need no stillness), then the
-two-anchor estimate C1 unlocks, then time-varying correction if those fail.
+**C6 narrowed the target sharply, and removed two candidates.** Not attitude:
+Core Motion holds 0.05° → 0.14° across a set. Not gyro bias: the two-anchor
+baseline gives 0.014 °/s. Not sensor bias on bench or squat, whose per-rep
+residual is 0.003 g — the table noise floor, i.e. nothing to remove. What is
+left is deadlift's 0.010–0.030 g, three quarters of it injected in the ±100 ms
+around each floor impact, plus a vertical momentum deficit of ~1.5 m/s per rep.
+Start there; the other three doors are closed.
+
+Order from the original entry still stands, with one correction: per-rep
+zero-mean-acceleration constraints first (they hold during motion and need no
+stillness) — and note C6 has now measured exactly that residual, so the
+constraint's size is known before it is applied. The two-anchor estimate C1
+unlocks is measured and is not worth applying. Then time-varying correction.
 The cap also still stands — an oracle fitting constant gyro *and* accel bias
 directly against the error recovers only ~30% of the residual, so nothing
 constant-bias gets to 1 cm. Every attempt is now measurable against

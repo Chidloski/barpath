@@ -273,6 +273,34 @@ hardest landing — probably strap ring, which is #14.
 a touch-and-go deadlift and arrives at ~2 m/s. Do not predict its arrival from
 `sqrt(2gh)`, which gives 3.3 and makes the impulse look 80% missing.
 
+**Added by C6, 2026-07-30 — the impact is also where the error enters, and P3
+finally has a location.** Both halves are true and they are not in tension.
+
+A rep starts and ends at rest, so its mean world acceleration must be zero.
+Bench and squat leave **0.003 g** of horizontal, which is the 0.0025 g accel
+bias measured on a table — there is nothing there to explain. Deadlift leaves
+**0.010–0.030 g**, and excluding ±100 ms around each floor impact — **6% of the
+samples** — takes it to 0.006–0.010 g. So roughly three quarters of the
+deadlift's per-rep error is injected in a fifth of a second per rep, at the one
+moment when the signal is largest and Core Motion's gravity reference is most
+corrupted. The residual points the same way rep after rep (direction coherence
+0.60–0.88), which is P3's signature exactly: error that repeats with the rep and
+which a rep-to-rep comparison therefore preserves perfectly.
+
+**And vertical momentum does not close.** Deadlift windows run impact to impact
+with exactly one impact each, so ∫a_z dt across a window must be zero. It is
+**−0.05 to −2.36 m/s, negative on 15 of 15 reps**, median about −1.5. The
+reconstruction loses ~1.5 m/s of upward impulse every rep, on the axis this
+project has assumed was fine.
+
+This does not contradict B5's 1.04. That ratio is the velocity STEP measured
+locally across the impact against video, over a few hundred milliseconds, and it
+is right. The deficit is in what the rest of the rep does. Step 7's detrend
+hides it completely, which is why vertical ROM comes out at a plausible 53–61 cm
+either way — and it is the sharpest available statement of why "the detrend is
+carrying vertical entirely". *Evidence:* `analysis/24`, gated in
+`tests/test_real_data.py`.
+
 **P4 — There is almost no gyro bias to calibrate.** Rewritten 2026-07-30, after
 a stationary capture measured what no on-wrist capture could.
 
@@ -287,16 +315,32 @@ is the lifter's own slow wrist rotation**, which a 1–3 s hold cannot separate
 from anything. B1's default (never apply the pause estimate) is right for a
 better reason than B1 recorded: there is essentially nothing there to remove.
 
-Likewise the ~0.035 g "residual accel bias" seen on-wrist in the press posture:
-0.035 g is g·sin(2.0°), so that is the size an **attitude error of two degrees**
-would leak, not the size of the accelerometer's bias. That redirects P3 at
-attitude rather than at sensor bias — and attitude error is precisely what a
-constant-bias estimator cannot fix, which is why B6's oracle recovers only ~30%.
+**RETRACTED, later the same day — the two-degree attitude error.** This section
+used to say: the ~0.035 g "residual accel bias" seen on-wrist is g·sin(2.0°), so
+it is the size an attitude error of two degrees would leak, and that redirects
+P3 at attitude rather than at sensor bias. C6 measured it and **both halves of
+that inference are wrong.**
 
-*What this does not settle:* whether the residual stays that small THROUGH a set,
-with 20 g impacts and fast rotation perturbing Core Motion's estimator. That is
-now the open question, and it is what C1's two anchors are for. *Evidence:*
-`stationary_table_20260730`, gated in `tests/test_real_data.py`.
+*Wrong projection.* The 0.035 g comes from `analysis/11`, and it is a
+**vertical** residual. `orient.py`'s docstring states the asymmetry that makes
+this matter: a tilt θ leaks g·sin(θ) into horizontal but only g·(1−cos θ) into
+vertical. Converting a vertical number with the horizontal formula is what
+produced "2 degrees". Done correctly, 0.035 g of vertical needs **15.2°** — and
+a genuine 2° tilt puts 0.0006 g into vertical, 58× less than what was seen.
+
+*Wrong number.* That 0.035 g is an off-pipeline figure from before the
+acceleration sign fix (`3c2cbed`), and it does not survive it. `bench_92.5x2`,
+the very capture it was measured on, now reads **0.0005 g** of per-rep vertical
+residual; bench overall runs 0.0003–0.0014 g.
+
+*And the direct measurement.* Core Motion's attitude at a still hold is
+**0.05° before a set and 0.14° after** — see P5. 15° is excluded by two orders
+of magnitude, and so is 2°.
+
+So P3 is **not** redirected at attitude. What survives is that P3's error is
+real, is at rep frequency, and now has a location: see P5 and P6.
+*Evidence:* `stationary_table_20260730` and `analysis/24`, both gated in
+`tests/test_real_data.py`.
 
 The original framing, still true as far as it goes: the "stillest" window
 carries 7.2 °/s peak-to-peak of ~6.5 Hz physiological tremor; the bias being
@@ -323,16 +367,34 @@ rest against 9.80665 expected) — and B5 showed sample rate is not a limit,
 since the floor impulse is already captured at 100 Hz to a median ratio of 1.04
 against video.
 
-**What replaced it as the open sensing question.** Everything above is measured
-AT REST. Whether Core Motion's attitude survives a working set — 20 g impacts,
-fast rotation, its gravity reference corrupted by the lift's own acceleration —
-is untested, and the ~2° error implied by P4's arithmetic says it probably does
-not. The two-anchor protocol (C1, built) is the measurement: compare the
-attitude solution before and after 40 s of lifting. That needs one capture with
-a real closing hold. **That capture now exists** — all seven of the 2026-07-30
-captures carry a 4–5 s opening hold and a 3.0 s closing hold in the `phase`
-column. The data is there and the measurement has not been made; it is the next
-piece of work, not a blocked one.
+**What replaced it, and how that came out.** Everything above was measured AT
+REST, so the open question became whether Core Motion's attitude survives a
+working set — 20 g impacts, fast rotation, its gravity reference corrupted by
+the lift's own acceleration. C1's two-anchor protocol was built to answer it and
+**C6 measured it on 2026-07-30. The answer is that a set does no lasting damage.**
+
+Across all seven captures with both holds, the attitude error at a still hold is
+**0.05° at the opening anchor and 0.14° at the closing anchor**, worst case
+0.27°, over 39–56 s of loaded lifting. Propagating the logged gyro alone across
+the same span drifts **0.35–1.49°**, median 0.69 — so Core Motion's fusion is
+doing real work and winning, through the impacts rather than despite them.
+
+Two things follow, and the second matters more.
+
+*B1's default is now confirmed on the evidence it asked for.* `calibrate.py`'s
+docstring named exactly this test: two anchors 40 s apart, a baseline over which
+real rotation cancels and bias does not. The implied drift rate is 0.69° over
+~50 s ≈ **0.014 °/s**, against a pause estimate of 0.1–0.9 °/s. The pause
+estimate is 10–60× too large. Never apply it.
+
+*C1 cannot see the error it was hoped to find, by construction.* The anchors
+sample the attitude at the two moments it is most likely to be right — still,
+with no linear acceleration corrupting the gravity reference. P3's error lives
+DURING the rep, and a good number at the anchors says nothing about it. What
+does see it is the per-rep mean, which must be zero because a rep starts and
+ends at rest: bench and squat leave **0.003 g**, indistinguishable from the
+0.0025 g accel bias measured on a table, and deadlift leaves **0.010–0.030 g**.
+See P6. *Evidence:* `analysis/24`, `calibrate.anchor_tilt`.
 
 Validate on **deadlift** first — not because the pipeline differs by lift
 (it does not) but because it has the most external ground truth: the bar starts
