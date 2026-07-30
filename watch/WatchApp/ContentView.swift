@@ -173,11 +173,22 @@ struct RecordView: View {
                     }
                     .tint(.orange)
                     if rec.sessionlessTest {
-                        Text("Calibrate will NOT keep the app alive. Expect the "
-                             + "capture to truncate when your wrist drops — that "
-                             + "is the result. Do not use it as lifting data.")
-                            .font(.caption2).foregroundStyle(.orange)
-                            .multilineTextAlignment(.center)
+                        if rec.workoutActive {
+                            // The failure mode that made the first no-session
+                            // capture unreadable: a session left running keeps
+                            // the app alive whatever this toggle says.
+                            Text("END THE WORKOUT FIRST — a running session "
+                                 + "keeps the app alive and voids the test")
+                                .font(.caption2).foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                        } else {
+                            Text("Calibrate will NOT keep the app alive. Put "
+                                 + "your wrist down and LEAVE IT for 30+ s — "
+                                 + "a few seconds away proves nothing, watchOS "
+                                 + "waits before suspending.")
+                                .font(.caption2).foregroundStyle(.orange)
+                                .multilineTextAlignment(.center)
+                        }
                     }
 
                 case .calibrating:

@@ -141,22 +141,41 @@ Apple's documented mechanism and it is why the session exists — but it has nev
 been checked on this watch, this watchOS, this app.
 
 The idle screen carries a **Test: no workout session** toggle for exactly that.
-With it on, Calibrate records with no session at all. Do one wrist-down set,
-then check the capture:
+With it on, Calibrate records with no session; it refuses outright if a workout
+is already running, because a live session keeps the app alive whatever the
+toggle says and the capture would look like a pass for the wrong reason.
+
+The count of samples is NOT the measurement. A dropout is a **gap in the
+timestamps**, and the UI's sample counter cannot show one. Check the gaps:
 
 ```bash
-python -c "from src import io; l=io.load_log('data/raw/YOURFILE.csv'); \
-print(l['fs'], l['t'][-1], len(l['t']))"
+python -c "
+import numpy as np; from src import io
+l = io.load_log('data/raw/YOURFILE.csv'); dt = l['dt']
+print(f\"{len(l['t'])} samples, {l['t'][-1]:.1f}s, {len(l['t'])/l['t'][-1]:.2f} Hz\")
+print(f'max gap {dt.max()*1000:.0f} ms, gaps>50ms: {(dt>0.05).sum()}')"
 ```
 
-If it holds ~100 Hz for the whole set, **the session is not load-bearing**, the
-collision with the Workout app never mattered, and the right change is to stop
-starting one — which deletes the workflow change, the delegate, and most of this
-section. If it truncates when your wrist drops, that is the assumption
-confirmed and the section stands.
+**First result, `drop_test_20260730_183925`: no dropout at all.** 4711 samples
+over 47.08 s — 100.06 Hz, max gap 10.0 ms, zero gaps over 15 ms, zero repeated
+rows, unit quaternions, `check_log` clean. Live data through all three phases.
 
-Expect it to truncate. That IS the result — name the capture something you will
-recognise and do not use it as lifting data.
+**It is not conclusive, and the reason is worth knowing.** Reconstructing the
+wrist flicks from the gyro (peaks of 200–1375 °/s), the longest span the watch
+sat undisturbed was **6.5 s**, and most were 1–4 s. watchOS waits several
+seconds before suspending an app that loses frontmost, so this shows the grace
+period is at least 6.5 s — not that the app survives a set. A real set leaves
+the wrist down for 20–60 s continuously.
+
+**What would settle it:** one capture with the toggle on, no workout running,
+and the wrist down and left alone for **30+ s in one stretch**. If that holds
+100 Hz with no gap, the session is not load-bearing, the collision with the
+Workout app never mattered, and the right change is to stop starting one —
+deleting the workflow change, the delegate, and most of this section. If it
+truncates, the assumption is confirmed and the section stands.
+
+Either way, name the capture something you will recognise and do not use it as
+lifting data.
 
 *The tradeoff.* This is a workflow change, not a repair — the collision is still
 there, it is just no longer provoked. If you open the Workout app **during** a

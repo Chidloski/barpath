@@ -153,7 +153,23 @@ final class MotionRecorder: NSObject, ObservableObject {
         //
         // `sessionlessTest` is the one exception, and it exists to run the
         // experiment that could delete all of this. See its declaration.
-        if !sessionlessTest { startWorkout() }
+        //
+        // Refuse rather than proceed if a session is already up. The first
+        // version of this only skipped STARTING one, and startWorkout() returns
+        // early when `workout != nil` — so with a session left running from an
+        // earlier Start Workout the toggle did nothing, the app stayed alive for
+        // the ordinary reason, and the capture looked like a pass. A test that
+        // can silently be void is worse than no test.
+        if sessionlessTest {
+            if workout != nil {
+                status = "END THE WORKOUT FIRST — a running session keeps the "
+                       + "app alive and voids this test"
+                return
+            }
+            status = "no-session test: expect this capture to truncate"
+        } else {
+            startWorkout()
+        }
         phaseCode = 0
         startMotion()
         phase = .calibrating
