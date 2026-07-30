@@ -120,7 +120,8 @@ Paged rather than one long scroll on purpose: scrolling past live metrics to
 reach **Finish Set** at the end of a hard rep is the wrong shape. The Record
 page is the default because it is why the app exists.
 
-**Rate your effort.** Ending a workout shows a 1–10 effort dial — Apple's own
+**Rate your effort** (watchOS 11+; silently absent below, see the deployment
+target note). Ending a workout shows a 1–10 effort dial — Apple's own
 scale and wording (Easy / Moderate / Hard / All Out), driven by the crown or the
 slider. It writes an `HKQuantityTypeIdentifierWorkoutEffortScore` sample **and**
 calls `relateWorkoutEffortSample` to attach it to that workout; saving the sample
@@ -236,12 +237,19 @@ these sources in.
 5. Set the deployment targets to your OS versions, pick your team for signing,
    build the **watch** scheme to your paired watch.
 
-   **The watch target's minimum deployment must be watchOS 11.0 or later.** The
-   effort rating uses `HKQuantityTypeIdentifierWorkoutEffortScore` and
-   `relateWorkoutEffortSample`, both watchOS 11, and the paged layout uses
-   `.tabViewStyle(.verticalPage)`. Below 11.0 those are compile errors, not
-   runtime degradation. Sources typecheck against `-target
-   arm64_32-apple-watchos11.0`.
+   **The watch target's minimum deployment must be watchOS 10.0 or later.**
+   `.tabViewStyle(.verticalPage)` and `onChange(of:initial:_:)` are watchOS 10,
+   and they are not guarded — the paged layout is the design, not an extra.
+
+   The effort rating needs watchOS 11 (`HKQuantityTypeIdentifierWorkoutEffortScore`,
+   `relateWorkoutEffortSample`) and **is** guarded, so a 10.0 target builds and
+   simply has no rating screen. Raise the target to 11.0 to get it.
+
+   **Availability is checked against this setting, not against your watch.** A
+   watchOS 26 wrist does not make a watchOS 11 symbol legal in a target that
+   says 10.0 — the compiler has no idea which device you will install on. That
+   mismatch is what broke the build on 2026-07-30. Sources typecheck clean at
+   `-target arm64_32-apple-watchos10.0`, `...11.0` and `...26.0`.
 
 ## Loading an updated build onto the watch
 
@@ -259,7 +267,8 @@ update path, not first-time setup.
    separate phone install.
 3. **First launch on the watch: expect a HealthKit prompt, and grant it.** The
    app now asks for **heart rate**, **active/resting energy**, **walking +
-   running distance** and **workout effort score** on top of Workouts, because
+   running distance** and, on a watchOS 11+ target, **workout effort score** on
+   top of Workouts, because
    it saves a real workout rather than holding an unsaved session. Denying them
    does not stop recording — the keep-alive and the CSV are unaffected — it only
    thins the saved workout and blanks the metrics screen.

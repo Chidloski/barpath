@@ -319,12 +319,16 @@ final class MotionRecorder: NSObject, ObservableObject {
         // recording, and the CSV never depends on any of it.
         var share: Set<HKSampleType> = [HKObjectType.workoutType()]
         var read: Set<HKObjectType> = [HKObjectType.workoutType()]
+        var ids: [HKQuantityTypeIdentifier] = [.heartRate, .activeEnergyBurned,
+                                              .basalEnergyBurned,
+                                              .distanceWalkingRunning]
         // workoutEffortScore is the "Rate your effort" sample watchOS 11 added.
-        // It is SHARE-only here: we write the lifter's rating, we never read it.
-        for id: HKQuantityTypeIdentifier in [.heartRate, .activeEnergyBurned,
-                                             .basalEnergyBurned,
-                                             .distanceWalkingRunning,
-                                             .workoutEffortScore] {
+        // Guarded rather than raising the project's minimum deployment target,
+        // because the compiler checks availability against THAT, not against the
+        // watch you install on — a watchOS 26 device does not make a watchOS 11
+        // symbol legal in a target that says 10.0. See `effortAvailable`.
+        if #available(watchOS 11.0, *) { ids.append(.workoutEffortScore) }
+        for id in ids {
             guard let type = HKObjectType.quantityType(forIdentifier: id) else { continue }
             share.insert(type)
             read.insert(type)
@@ -418,8 +422,10 @@ final class MotionRecorder: NSObject, ObservableObject {
                     self?.workoutStart = nil
                     // Kept so the effort rating has something to attach to:
                     // relateWorkoutEffortSample needs the SAVED HKWorkout, which
-                    // does not exist until this callback hands it back.
-                    self?.finishedWorkout = saved
+                    // does not exist until this callback hands it back. Left nil
+                    // where the OS cannot rate, so the rating screen never
+                    // appears with no way to complete it.
+                    self?.finishedWorkout = MotionRecorder.effortAvailable ? saved : nil
                     self?.status = error == nil ? "workout saved to Health"
                                                 : "workout ended, save failed"
                 }
@@ -436,6 +442,7 @@ final class MotionRecorder: NSObject, ObservableObject {
     ///
     /// Best effort throughout. A failure here costs a rating, never a capture.
     func saveEffort(_ score: Int) {
+        guard #available(watchOS 11.0, *) else { finishedWorkout = nil; return }
         guard let workout = finishedWorkout,
               let type = HKObjectType.quantityType(forIdentifier: .workoutEffortScore)
         else { return }
@@ -455,6 +462,20 @@ final class MotionRecorder: NSObject, ObservableObject {
                 }
             }
         }
+    }
+
+    /// Whether this OS can record an effort score at all.
+    ///
+    /// The effort APIs are watchOS 11. Swift checks availability against the
+    /// project's MINIMUM DEPLOYMENT TARGET, not against the watch the build
+    /// lands on, so a watchOS 26 wrist does not make them legal in a target set
+    /// to 10.0 — that mismatch is what broke the build. Everything else here
+    /// works at 10.0, so the rating is gated rather than the whole app being
+    /// held to 11.0. On an older target the workout still saves; only the
+    /// rating screen is absent.
+    static var effortAvailable: Bool {
+        if #available(watchOS 11.0, *) { return true }
+        return false
     }
 
     /// Apple's own wording for the 1-10 scale, so the rating means the same
