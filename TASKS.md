@@ -232,6 +232,34 @@ Four results, in descending order of how much they change what we believe:
 
 `analysis/23_rom_bounds.png`, `python run.py --rom`.
 
+### C7 — the watch workout session, removed on measurement
+`watch/`. The app held an `HKWorkoutSession` while recording, on the documented
+belief that it was the only thing keeping Core Motion alive once the wrist drops.
+That cost the owner their own workout — watchOS allows one primary session per
+device, so logging ended whatever the Workout app was running.
+
+The first fix kept the session and made this app *be* the workout: saved to
+Health, live metrics, effort rating. It worked, and it imposed a workflow change
+to solve a problem nobody had measured.
+
+**Measured, 2026-07-30. The premise was false.** Two captures with no session:
+47.08 s with zero gaps over 15 ms, and 58.78 s with **zero gaps at any
+threshold** — including a 19.9 s and a 16.5 s span with the wrist still and the
+screen dimmed, and a notification raised and dismissed mid-capture. 100.06 Hz
+throughout, zero repeated rows, `check_log` clean.
+
+So the session, the workflow change, the metrics screens and the effort rating
+are all deleted, and the watch target no longer needs HealthKit or any
+background mode. The sources now typecheck at watchOS 9.0.
+
+*Untested, and the thing to check first if captures ever truncate:* the app being
+genuinely REPLACED mid-capture — watch face or another app — for longer than the
+~6.5 s the first test covered. Return to Clock will not fire inside a single set,
+which is why this is judged safe. `watch/README.md` carries the full record.
+
+*(Numbering note: the watch code called this C4, which collides with C4 above.
+It is C7.)*
+
 ### C6 — the two anchors, measured
 `calibrate.anchor_tilt`. The measurement C1 was built for, on the seven captures
 that carry both holds. **A set does no lasting damage to Core Motion's
