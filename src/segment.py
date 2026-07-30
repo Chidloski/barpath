@@ -93,6 +93,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.signal import butter, filtfilt
 
+from . import io
+
 
 def _rolling_var(x: np.ndarray, w: int) -> np.ndarray:
     """Centred rolling variance of a 1-D signal, same length as input."""
@@ -591,28 +593,50 @@ def quality_flags(log: dict, bounds: list[tuple[int, int]]) -> list[dict]:
 
     Discriminate on PHYSICAL IMPOSSIBILITY, not on unusualness. The rep you
     most want to discard for looking strange is often the rep with the real
-    form breakdown. Strap resonance is energy above ~10 Hz, where barbell
-    motion has essentially none. Clipping is a hard rail. Both are outside
-    what a barbell can do. A grind is ugly but physically plausible: keep it.
+    form breakdown. A rail is outside what any sensor can report. A grind is
+    ugly but physically plausible: keep it.
+
+    Clipping is now the only check, and it delegates to `io.clipped_runs`,
+    which tests for an actual rail — consecutive samples pinned at one value.
+    This used to threshold |accel| against 0.95 * 16 g, an assumption about a
+    sensor nobody had checked; B5 measured `deadlift_180x3`'s 21.78 g peak as a
+    genuine reading hit by a single sample and replaced the same assumption in
+    `io.check_log`. This copy survived it by a day.
+
+    THE STRAP-RESONANCE FLAG WAS REMOVED, 2026-07-30 (#14)
+    ------------------------------------------------------
+    It claimed that energy above ~10 Hz is strap ring, "where barbell motion
+    has essentially none". Three measurements killed it:
+
+    *It fired where resonance cannot be.* Rejection rate by lift: bench 26/30
+    (86.7%), deadlift 6/15 (40.0%), squat 1/28 (3.6%). Hard landings happen on
+    deadlift and nowhere else, so the flag was ANTI-correlated with the
+    phenomenon it claimed to detect — it fired hardest on the quietest lift.
+
+    *Neither formulation can work.* As a FRACTION of band energy it flags quiet
+    reps for having little signal at all, which is the bug the task recorded.
+    As ABSOLUTE energy — what this docstring used to intend — it separates by
+    lift and nothing else: squat 3e3-4e4, bench 6e3-1.4e5, deadlift 5.8e5-7.4e6.
+    An absolute threshold is a deadlift detector, because the floor impact is
+    real broadband signal.
+
+    *There is no resonance to find at 100 Hz.* The spectrum of the 400 ms after
+    each of the 15 floor impacts peaks at 10, 12.5, 15, 20, 22.5, 27.5, 30,
+    32.5, 35, 42.5 and 47.5 Hz — no repeatable frequency — with peak/median
+    ratios of 2.7-12.5, which is not narrowband. Nyquist is 50 Hz here, and a
+    watch-on-strap resonance is plausibly above it, so whatever exists aliases
+    to an arbitrary bin. You cannot detect what you cannot resolve.
+
+    None of this says the ringing is imaginary. B6 measured it in integrated
+    velocity, decaying over several hundred ms after each impact and leaving the
+    rep 0.4-1.5 m/s short of closing, and that is where the deadlift's error
+    enters. But a broadband transient is not a detectable resonance, and
+    throwing away the rep was never the right response to it — the fix belongs
+    in the reconstruction. See CLAUDE.md P6 and `analysis/25`.
     """
-    fs = log["fs"]
     out = []
     for a, b in bounds:
         seg = log["accel"][a:b]
-        n = len(seg)
-        flags = {"rep": (a, b), "clipped": False, "strap_resonance": False}
-
-        if np.abs(seg).max() > 0.95 * 16 * 9.80665:
-            flags["clipped"] = True
-
-        if n > 16:
-            mag = np.linalg.norm(seg, axis=1)
-            spec = np.abs(np.fft.rfft(mag - mag.mean())) ** 2
-            freq = np.fft.rfftfreq(n, 1.0 / fs)
-            total = spec.sum()
-            if total > 0 and spec[freq > 10.0].sum() / total > 0.25:
-                flags["strap_resonance"] = True
-
-        flags["ok"] = not (flags["clipped"] or flags["strap_resonance"])
-        out.append(flags)
+        clipped = io.clipped_runs(seg) > 0
+        out.append({"rep": (a, b), "clipped": clipped, "ok": not clipped})
     return out

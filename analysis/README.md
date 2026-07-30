@@ -84,7 +84,9 @@ Both need the video ground truth (A2).
 `python run.py` runs every capture and prints what happened; `--plot` writes
 per-run diagnostics (gitignored). Two things it made visible on its first run:
 
-- **`quality_flags` rejects 12 of 44 reps for strap resonance, wrongly.** It
+- **`quality_flags` rejects 12 of 44 reps for strap resonance, wrongly.**
+  *(Later 33 of 73, and the flag was removed entirely on 2026-07-30 — see #14
+  in TASKS.md. It fired hardest on bench, which has no floor impact at all.)* It
   thresholds the FRACTION of accel energy above 10 Hz, so a quiet rep fails for
   having little signal at all. The rejected bench reps carry 13-18k of absolute
   high-frequency energy against 0.9-2.9M in accepted deadlift reps — 50-200x
@@ -581,9 +583,13 @@ milliseconds and settles **0.4–1.5 m/s short of zero**.
 The error is injected at the impact and in the ringing that follows it, not
 distributed through the rep. The ringing is the signature to chase: the watch is
 not rigidly coupled to the bar, so it keeps moving after the bar has stopped and
-the accelerometer faithfully records motion the bar did not make. That is #14,
-strap resonance, which P6 already suspected for `deadlift_180x3` on independent
-evidence.
+the accelerometer faithfully records motion the bar did not make. That pointed
+at #14, strap resonance, which P6 already suspected for `deadlift_180x3` on
+independent evidence — **but #14 was then measured and removed.** The
+post-impact spectrum has no repeatable peak (10-47.5 Hz across the 15 impacts,
+peak/median 2.7-12.5) and Nyquist here is 50 Hz, so a watch-on-strap resonance
+aliases to an arbitrary bin. The ringing is real; it is not resolvable as a
+resonance at this sample rate.
 
 **One capture dissents, informatively.** `deadlift_180x3` is the only one the
 zero-mean constraint helps, 15.4 → 6.6 cm. It is also the capture that over-reads
@@ -601,8 +607,10 @@ negative on 8 of 9** intervals, with one +1.19. The defect is real and the
 direction holds; the range overstated it.
 
 **What B6 should do instead.** Not a constant, and not a per-rep constant. The
-two live candidates are modelling the impact and its ringing directly (which
-makes #14 a prerequisite rather than a side quest), and integrating across the
+two live candidates are modelling the impact and its ringing directly (#14 was
+tried as the way in and removed — the ring is not resolvable at 100 Hz, so this
+has to work on the transient itself rather than on a detected resonance), and
+integrating across the
 impact using the known rest state on both sides instead of through it. Bench and
 squat need neither — they have no impact, and their per-rep residual is already
 at the sensor's noise floor.

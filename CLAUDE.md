@@ -267,7 +267,10 @@ assumption by comparison.
 
 One capture dissents. `deadlift_180x3` over-reads its impact step by 58–72%,
 alone among the three, and is also the worst by horizontal error. Heaviest bar,
-hardest landing — probably strap ring, which is #14.
+hardest landing — probably strap ring. That was tracked as #14, whose detector
+has since been REMOVED: it could not see the phenomenon and never could. The
+suspicion about this capture stands; the flag that was going to confirm it does
+not exist. See #14 in TASKS.md.
 
 *Caution, from getting this wrong once:* the bar is **lowered under control** on
 a touch-and-go deadlift and arrives at ~2 m/s. Do not predict its arrival from
@@ -311,8 +314,13 @@ available statement of why "the detrend is carrying vertical entirely".
 Cumulative vertical velocity across a rest-to-rest interval is smooth and
 physical through the pull and the descent, then rings violently for several
 hundred milliseconds at the floor impact and settles short. The ringing is the
-watch still moving when the bar has stopped — strap compliance, i.e. #14, which
-is therefore on the critical path rather than a side quest. **Every
+watch still moving when the bar has stopped — strap compliance. That pointed at
+#14, and #14 turned out to be undetectable: the post-impact spectrum has no
+repeatable peak (10-47.5 Hz across 15 impacts, peak/median 2.7-12.5) and Nyquist
+here is 50 Hz, so a watch-on-strap resonance aliases to an arbitrary bin. The
+ringing is real and is where the error enters; it is simply not resolvable as a
+resonance at 100 Hz, and rejecting the rep was never the right response. The fix
+belongs in the reconstruction. **Every
 constant-bias correction tried against this makes it worse**, because a constant
 cannot represent an impulse: see P3 and `analysis/25`.
 *Evidence:* `analysis/24` and `25`, gated in `tests/test_real_data.py`.

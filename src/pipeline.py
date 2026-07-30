@@ -226,19 +226,14 @@ def summary(result: dict) -> str:
     lines.append(f"  reps found {n}" + (f" / {want} expected" if want else ""))
     lines.append(f"  floor impacts {len(result['impacts'])}")
 
+    # The CAVEAT that used to sit here explained why the strap-resonance
+    # rejections should not be trusted. #14 removed the flag rather than the
+    # caveat: it rejected 33 of 73 real reps and fired hardest on the lift with
+    # no floor impact at all. See segment.quality_flags.
     bad = [q for q in result["quality"] if not q["ok"]]
     if bad:
         for q in bad:
-            flags = [k for k in ("clipped", "strap_resonance") if q[k]]
-            lines.append(f"  REJECT rep at {q['rep']}: {', '.join(flags)}")
-        if any(q["strap_resonance"] for q in bad):
-            lines.append(
-                "  CAVEAT  strap_resonance is currently unreliable and these "
-                "rejections should not be trusted. It thresholds the FRACTION "
-                "of energy above 10 Hz, so a quiet rep fails for having little "
-                "signal at all: the rejected bench reps carry 13-18k of "
-                "absolute high-frequency energy against 0.9-2.9M in accepted "
-                "deadlift reps. Its docstring intends absolute energy.")
+            lines.append(f"  REJECT rep at {q['rep']}: clipped")
     elif n:
         lines.append(f"  quality  all {n} reps pass")
 

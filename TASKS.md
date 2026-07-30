@@ -232,6 +232,39 @@ Four results, in descending order of how much they change what we believe:
 
 `analysis/23_rom_bounds.png`, `python run.py --rom`.
 
+### #14 — the strap-resonance flag, REMOVED on measurement (2026-07-30)
+It was promoted by B5 and again by B6, on the reasoning that the ringing after a
+hard landing is strap compliance and this flag exists to catch it. It does not
+catch it, and cannot.
+
+**It rejected 33 of 73 real reps** — worse than the 12 of 44 recorded here, the
+gap being captures added since. Rejection rate by lift: bench **26/30 (86.7%)**,
+deadlift **6/15 (40.0%)**, squat **1/28 (3.6%)**. Hard landings happen on
+deadlift and nowhere else, so the flag was ANTI-correlated with the phenomenon
+it claimed to detect, firing hardest on the quietest lift.
+
+**Neither formulation can work.** As a *fraction* of band energy it flags quiet
+reps for having little signal at all — the bug recorded above. As *absolute*
+energy, which its docstring intended, it separates by lift and nothing else:
+squat 3e3–4e4, bench 6e3–1.4e5, deadlift 5.8e5–7.4e6. An absolute threshold is a
+deadlift detector, because the floor impact is real broadband signal.
+
+**And there is no resonance to find at 100 Hz.** The spectrum of the 400 ms
+after each of the 15 floor impacts peaks at 10, 12.5, 15, 20, 22.5, 27.5, 30,
+32.5, 35, 42.5 and 47.5 Hz — no repeatable frequency — with peak/median of
+2.7–12.5, which is not narrowband. Nyquist is 50 Hz and a watch-on-strap
+resonance is plausibly above it, so whatever exists aliases to an arbitrary bin.
+You cannot detect what you cannot resolve.
+
+The ringing B6 measured is still real and still where the deadlift's error
+enters. But a broadband transient is not a detectable resonance, and discarding
+the rep was never the right response — the fix belongs in the reconstruction.
+
+`clipped` survives and now delegates to `io.clipped_runs`, a real rail test,
+instead of thresholding against an assumed 16 g full scale that B5 disproved in
+`io.check_log` a day earlier and that this copy outlived. Rejections are now
+0 of 73, which is correct: nothing in `data/raw/` clips.
+
 ### C7 — the watch workout session, removed on measurement
 `watch/`. The app held an `HKWorkoutSession` while recording, on the documented
 belief that it was the only thing keeping Core Motion alive once the wrist drops.
@@ -377,16 +410,6 @@ problem, and nothing external measures it yet.
 Every attempt is measurable against `metrics.vs_truth`, which is the whole point
 of having built it. `analysis/25_b6_bias_models.png`, `python run.py --bias`.
 
-### #14 — fix `quality_flags` strap resonance
-**Promoted by B5**, which found `deadlift_180x3` over-reading its impact
-velocity step by 58–72% — the signature of the strap ringing on a hard landing,
-which is exactly what this flag is supposed to catch and currently cannot.
-
-Rejects 12 of 44 real reps, all on quieter lifts, and is backwards: it
-thresholds the *fraction* of accel energy above 10 Hz, so a quiet rep fails for
-having little signal at all. Rejected bench reps carry 13–18k absolute HF
-energy against 0.9–2.9M in accepted deadlift reps — 50–200× **less**. Its own
-docstring intends absolute energy.
 
 ### B2 — step 6 implemented; the term is 3× smaller than we thought
 `correct.apply_offset` works and step 6 is no longer a blocked stage. It is

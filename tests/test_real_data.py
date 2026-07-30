@@ -1479,3 +1479,47 @@ def test_constant_bias_corrections_are_worse_than_none(video, csv, reps):
     assert zeroed > shipped * 1.5, (
         f"{csv}: zero-mean acceleration now HELPS ({shipped:.2f} -> "
         f"{zeroed:.2f} cm). The B6 diagnosis above needs re-running")
+
+
+# ------------------------------------------------------------------- #14 --
+@needs_data
+@pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
+def test_quality_flags_rejects_only_actual_clipping(path):
+    """No real rep may be rejected. Nothing in data/raw/ clips, so nothing goes.
+
+    This pins the removal of the strap-resonance flag (#14), which rejected
+    **33 of 73** real reps. Three measurements retired it, and they are worth
+    keeping because any replacement has to beat them:
+
+    It fired where resonance cannot be — bench 26/30, deadlift 6/15, squat
+    1/28. Hard landings happen on deadlift and nowhere else, so it was
+    anti-correlated with its own phenomenon.
+
+    Neither formulation works. As a FRACTION it flags quiet reps for having
+    little signal; as ABSOLUTE energy it separates by lift alone (squat 3e3-4e4,
+    bench 6e3-1.4e5, deadlift 5.8e5-7.4e6) and is just a deadlift detector,
+    because the floor impact is real broadband signal.
+
+    And there is no resonance to find at 100 Hz: the 400 ms after the 15 floor
+    impacts peaks at 10 through 47.5 Hz with no repeatable frequency and
+    peak/median of 2.7-12.5. Nyquist is 50 Hz and a watch-on-strap resonance is
+    plausibly above it, so whatever exists aliases to an arbitrary bin.
+
+    `clipped` survives because a rail is real and well defined, and it now
+    delegates to `io.clipped_runs` rather than thresholding against an assumed
+    16 g full scale that B5 disproved.
+    """
+    from src import pipeline
+
+    result = pipeline.run(path)
+    bad = [q for q in result["quality"] if not q["ok"]]
+    assert not bad, (
+        f"{path.stem}: {len(bad)} of {len(result['quality'])} reps rejected. "
+        f"B5 established that nothing in data/raw/ clips, so a rejection here "
+        f"means either a genuine rail or a detector that has regained the "
+        f"habit of discarding real lifting")
+
+    assert all("strap_resonance" not in q for q in result["quality"]), (
+        "the strap-resonance flag is back. It rejected 33 of 73 real reps and "
+        "fired hardest on the lift with no floor impact; see the docstring "
+        "above and segment.quality_flags before reinstating it")
