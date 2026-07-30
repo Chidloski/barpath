@@ -25,7 +25,11 @@ from src import calibrate, integrate, io, orient, segment  # noqa: E402
 
 RAW = Path(__file__).resolve().parents[1] / "data" / "raw"
 
-REP_COUNT = re.compile(r"^(bench|squat|deadlift)_[\d.]+x(\d+)")
+# Must stay identical to pipeline.REP_LABEL. The optional middle token is a
+# lift variant (bench_spoto_90x5); without it the three 2026-07-30 benches
+# matched nothing, dropped out of CAPTURES, and every gate below skipped them
+# silently — which is how a 6-window segmentation of a 5-rep set survived.
+REP_COUNT = re.compile(r"^(bench|squat|deadlift)(?:_[a-z]+)*_[\d.]+x(\d+)")
 
 # Every log, including non-lifts. Use for format-level checks — clipping,
 # sampling, quaternion norms — which are about the FILE, not about lifting.
@@ -37,6 +41,29 @@ ALL_LOGS = sorted(RAW.glob("*.csv")) if RAW.is_dir() else []
 CAPTURES = [p for p in ALL_LOGS if REP_COUNT.match(p.name)]
 
 needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
+
+# Captures whose rep COUNT is wrong. P1 recorded counting as closed at 44/44,
+# and it was, on the ten captures that existed on 2026-07-29. The 2026-07-30
+# session added seven more and broke it — so the honest state is 51/52, not
+# 44/44, and the gates below xfail here rather than being loosened.
+#
+# Separate from KNOWN_ROM_FAILURES, which is about how far each window SPANS.
+# A window can be miscounted with the right extent or counted right with the
+# wrong extent, and squat_160x1 is exactly the second case.
+WRONG_REP_COUNT = {
+    "bench_spoto_90x5_1": (
+        "segments a 5-rep set into 6 windows. The spurious extra runs 88.7 cm "
+        "of vertical against a 35 cm bench bound, so it is not a rep split in "
+        "two — it is the re-rack being counted. Undetected until 2026-07-30 "
+        "because REP_COUNT did not match the 'spoto' variant token"),
+}
+
+
+def xfail_if_miscounted(path: Path) -> None:
+    """xfail the captures whose rep count is a known defect."""
+    for stem, reason in WRONG_REP_COUNT.items():
+        if path.stem.startswith(stem):
+            pytest.xfail(f"{path.stem}: {reason}")
 
 
 def truth_reps(path: Path) -> int:
@@ -138,6 +165,7 @@ def test_every_rep_is_found_and_nothing_else(path):
     they are LARGER than the reps: setup peaks reach 1.5-2.0 m/s against
     0.3-0.6 m/s for a bench rep.
     """
+    xfail_if_miscounted(path)
     log = io.load_log(path)
     velocity, _ = world(log)
     bounds = segment.rep_bounds(log, velocity[:, 2])
@@ -256,6 +284,72 @@ def test_every_rep_contains_both_phases(path):
         )
 
 
+# ----------------------------------------------------- vertical ROM bounds --
+# The only external check bench and squat have. Everything else in this file
+# that compares against something outside the IMU needs either deadlift floor
+# impacts or trackable video, and bench and squat have neither: bench video
+# RAISES, squat video tracks at ~0.40 median NCC. So until this, a bench or
+# squat reconstruction could be wrong by any factor at all and no gate here
+# would notice.
+#
+# It is a weak check — a bound is not a measurement, and it constrains only the
+# amplitude of one axis. But it is external, and it catches both ways a rep
+# window can be wrong that a correct COUNT cannot see: spanning more than a rep,
+# and spanning less. P1 closed counting at 44/44 while every window sat half a
+# rep out of phase; this is a different question asked of the same windows.
+SLACK_M = 0.02      # the bounds are anatomical, quoted to the nearest cm
+KNOWN_ROM_FAILURES = {
+    "bench_spoto_90x5_1": (
+        "segments a 5-rep set into 6 windows; reps 5 and 6 come out 45.7 and "
+        "88.7 cm against a 35 cm bench bound. Invisible before 2026-07-30 "
+        "because REP_COUNT did not match 'spoto', so this capture was not in "
+        "CAPTURES and no gate ran on it at all"),
+    "squat_160x1": (
+        "reconstructs 18.0 cm for a single at 160 kg, a quarter of the ~65 cm "
+        "the other squat captures give. The window is a fragment of the rep, "
+        "not the rep — and note the COUNT is right, 1 of 1"),
+}
+
+
+@needs_data
+@pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
+def test_reconstructed_rom_is_physically_possible(path):
+    """Every rep's vertical ROM must be a range this lifter can move a bar through.
+
+    Bounds are measured per lift (`truth.VERTICAL_ROM_M`); the floors are
+    inferred, so read a floor violation as "that window is not a whole rep".
+
+    Where this is measured matters. Run on `result["position"]` instead of
+    `result["reps"]` — that is, before step 7 — the same numbers are absurd:
+    deadlift_155x6_1 climbs from 100 cm on rep 1 to 1939 cm on rep 6. Passing
+    here is therefore a statement about the detrended output only, and says
+    nothing about the acceleration reaching the integrator, which is P3.
+
+    The bounds are anatomical and quoted to the nearest centimetre, so this
+    gate allows `SLACK_M` on each end where `truth.rom_flags` allows none. The
+    flag is a thing to look at; a build failure is a claim that something is
+    wrong. `deadlift_180x3` rep 2 lands at 61.1 cm against the 61 cm bound —
+    worth surfacing in `pipeline.summary`, not worth failing over.
+    """
+    from src import pipeline, truth
+
+    result = pipeline.run(path)
+    reason = next((r for k, r in KNOWN_ROM_FAILURES.items()
+                   if path.stem.startswith(k)), None)
+    lo, hi = truth.VERTICAL_ROM_M[truth.lift_of(path)]
+    flags = [f"rep {i}: {r*100:.1f} cm outside {lo*100:.0f}-{hi*100:.0f} cm"
+             for i, r in enumerate(result["rep_rom_m"], 1)
+             if not (lo - SLACK_M) <= r <= (hi + SLACK_M)]
+
+    if reason is not None:
+        if flags:
+            pytest.xfail(f"{path.stem}: {reason}")
+        pytest.fail(f"{path.stem} now passes the ROM bound. It used to fail: "
+                    f"{reason}. Remove it from KNOWN_ROM_FAILURES.")
+
+    assert not flags, f"{path.stem}: " + "; ".join(flags)
+
+
 # ------------------------------------------------------------------- A2 --
 VIDEO = Path(__file__).resolve().parents[1] / "data" / "video"
 
@@ -302,14 +396,14 @@ def test_video_and_imu_agree_on_when_the_bar_lands(video, csv, reps):
 def test_video_deadlift_rom_is_physical(video, csv, reps):
     """Per-rep lockout height must be a plausible deadlift ROM.
 
-    Measured from the bar resting on the floor, so it excludes the 22.5 cm
-    plate radius: true bar height at lockout is this plus that. A wrong
-    PLATE_DIAMETER_M would scale every measurement proportionally, and this is
-    what would catch it.
+    Measured from the bar resting on the floor, so it excludes the 22.25 cm
+    bumper radius: true bar height at lockout is this plus that.
 
-    Deliberately a band, not a number. The tape-measured lockout height has not
-    been recorded yet, and asserting a precise value without it would invent
-    the ground truth this module exists to supply.
+    The band used to be 0.40-0.85 m, which was wide enough to pass anything.
+    It is now `truth.VERTICAL_ROM_M["deadlift"]`, whose ceiling is measured for
+    this lifter — and at that width the check finally bites: `deadlift_155x6_2`
+    reads 67-70 cm and fails. That is the video's scale error, not the lifter's
+    ROM, and it is xfailed below rather than papered over.
     """
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
@@ -325,8 +419,18 @@ def test_video_deadlift_rom_is_physical(video, csv, reps):
     peaks = [p for p in peaks if p > 0.2]
 
     assert len(peaks) >= reps - 1, f"only {len(peaks)} lockouts resolved"
+
+    if csv.startswith("deadlift_155x6_2"):
+        pytest.xfail(
+            "the video's vertical scale is wrong on this capture: 67-70 cm of "
+            "lockout against a 61 cm bound, from the same lifter and the same "
+            "plate radius as deadlift_155x6_1's 60 cm. See truth.VERTICAL_ROM_M")
+
+    lo, hi = truth.VERTICAL_ROM_M["deadlift"]
     for p in peaks:
-        assert 0.40 < p < 0.85, f"lockout {p*100:.0f} cm above the floor is not a deadlift"
+        assert lo < p < hi, (
+            f"lockout {p*100:.0f} cm above the floor is outside the "
+            f"{lo*100:.0f}-{hi*100:.0f} cm deadlift ROM band")
 
 
 @pytest.mark.parametrize("video", ["bench_90x4_1_20260727", "bench_92.5x2_20260727"])
@@ -354,7 +458,16 @@ def test_bench_tracking_fails_loudly_rather_than_silently(video):
 
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
 def test_deadlift_tracking_is_clean_enough_to_trust(video, csv, reps):
-    """Deadlifts must track well, unattended, with no warning."""
+    """Deadlifts must track well, unattended, with no warning.
+
+    "Tracks well" and "is dimensionally right" turned out to be different
+    questions. `deadlift_155x6_2` tracks beautifully — 0.85 median NCC, a floor
+    baseline steady to 0.4 cm, per-rep lockouts agreeing with each other to a
+    couple of centimetres — and reports the bar moving through 69.5 cm of a
+    range whose ceiling is 61. A confident, self-consistent, wrongly scaled
+    track is not what this test was written to catch, and it does not catch it;
+    `test_video_rom_is_flagged_where_it_is_implausible` does.
+    """
     if not _has(video, csv):
         pytest.skip(f"{video} not present")
     import warnings as w
@@ -362,6 +475,10 @@ def test_deadlift_tracking_is_clean_enough_to_trust(video, csv, reps):
 
     with w.catch_warnings():
         w.simplefilter("error")          # any quality warning fails the test
+        if csv.startswith("deadlift_155x6_2"):
+            pytest.xfail("tracks cleanly but the vertical scale is wrong: "
+                         "69.5 cm against a 61 cm bound. See "
+                         "truth.VERTICAL_ROM_M")
         path = truth.bar_path(VIDEO / f"{video}.mov")
 
     assert path["travel_m"] > 0.40
@@ -383,6 +500,7 @@ def test_pipeline_runs_end_to_end_without_raising(path):
 
     result = pipeline.run(path)
     assert result["blocked"], "unimplemented stages must be reported, not hidden"
+    xfail_if_miscounted(path)
     assert len(result["bounds"]) == truth_reps(path)
     assert result["position"].shape == (len(result["log"]["t"]), 3)
     assert isinstance(pipeline.summary(result), str)
@@ -540,10 +658,13 @@ def test_floor_impact_decelerates_the_bar(stem):
 # they should be tightened whenever one of those lands. The xfail below carries
 # the actual spec.
 AS_SHIPPED_H_CM = {                 # median per-rep horizontal rms vs video
-    "deadlift_155x6_1": 5.1,
-    "deadlift_155x6_2": 9.2,
-    "deadlift_180x3": 15.4,
+    "deadlift_155x6_1": 5.05,       # was 5.1 at the assumed 450 mm plate
+    "deadlift_155x6_2": 9.19,       # was 9.2
+    "deadlift_180x3": 15.44,        # was 15.4
 }
+# Re-pinned 2026-07-30 against the measured 445 mm deadlift bumper. The whole
+# correction is worth under 1% here, which is the useful negative result: the
+# plate diameter was never what made these numbers 5-15x out of spec.
 CEILING = 1.25                      # 25% headroom, so noise does not flap it
 
 
@@ -594,11 +715,21 @@ def test_horizontal_meets_the_spec(video, csv, reps):
 @needs_data
 @pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
 def test_dispersion_is_finite_and_reported(path):
-    """dispersion must run on every capture and produce usable numbers."""
+    """dispersion must run on every MULTI-REP capture and produce usable numbers.
+
+    Single-rep sets are excluded rather than special-cased, and `pipeline.run`
+    is right to omit the key: dispersion is rep-to-rep spread, so on one rep it
+    has nothing to measure. `squat_160x1` from the 2026-07-30 session is the
+    first such capture and is the reason this is stated at all.
+    """
     from src import metrics, pipeline
+
+    if truth_reps(path) < 2:
+        pytest.skip(f"{path.stem} is a single — dispersion needs >=2 reps")
 
     result = pipeline.run(path)
     d = result["dispersion"]
+    xfail_if_miscounted(path)
     assert d["n_reps"] == truth_reps(path)
     for key in ("horizontal_rms", "horizontal_p95", "vertical_rms"):
         assert np.isfinite(d[key]) and d[key] >= 0
@@ -667,23 +798,90 @@ def test_video_truth_is_physically_sane(video, csv, reps):
     """Guard the metric itself: if these drift, distrust the number, not the pipeline.
 
     A metric is only as good as the truth behind it, and this one leans on the
-    video scale (PLATE_DIAMETER_M, still assumed) and on the IMU-video sync.
-    These are the quantities that would make vs_truth confidently wrong, so
-    they are asserted alongside it rather than taken on faith.
+    video scale and on the IMU-video sync. These are the quantities that would
+    make vs_truth confidently wrong, so they are asserted alongside it rather
+    than taken on faith.
+
+    The plate diameters are measured now (2026-07-30) rather than assumed, and
+    that turned out not to be where the scale error was: 450 -> 445 mm moved
+    everything about 1%, while the per-capture ROM spread is 19 cm. The ROM
+    assertion below is the one that finds it.
     """
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
-    from src import metrics, pipeline
+    from src import metrics, pipeline, truth
 
     result = pipeline.run(RAW / f"{csv}.csv")
     m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
 
     assert m["sync_rms_ms"] < 50.0, "rep timing is specified at +/-50 ms"
     assert abs(m["sync_drift_pct"]) < 1.0
-    assert 40.0 < m["video_rom_cm"] < 85.0, "not a deadlift ROM"
+
+    if csv.startswith("deadlift_155x6_2"):
+        pytest.xfail("video vertical scale wrong on this capture; "
+                     "see truth.VERTICAL_ROM_M")
+    lo, hi = truth.VERTICAL_ROM_M["deadlift"]
+    assert lo * 100 < m["video_rom_cm"] < hi * 100, (
+        f"video ROM {m['video_rom_cm']:.0f} cm is not a deadlift ROM for this "
+        f"lifter ({lo*100:.0f}-{hi*100:.0f} cm)")
     assert 2.0 < m["video_fore_aft_cm"] < 25.0, (
         "real fore-aft travel is 10-20 cm; outside that the tracker or the "
         "plate scale is wrong")
+
+
+# Per-rep video ROM, measured 2026-07-30 against the 445 mm bumper. Same
+# lifter, same lift, three captures — and a 19 cm spread, which a range of
+# motion set by the lifter's own limbs cannot have.
+VIDEO_ROM_CM = {
+    "deadlift_155x6_1": 59.1,
+    "deadlift_155x6_2": 66.8,   # over the 61 cm bound
+    "deadlift_180x3": 47.6,     # implausibly low, and NOT flagged — see below
+}
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_video_rom_is_flagged_where_it_is_implausible(video, csv, reps):
+    """The referee is checked against the same bounds as the pipeline.
+
+    This test asserts a defect, not a capability. `vs_truth` is the only
+    external judge of P2, and on one of its three captures it measures the bar
+    travelling 66.8 cm through a range whose ceiling is 61 — so its vertical
+    scale is wrong there, and every vertical number it reports on that capture
+    inherits the error. Pinning it here keeps that visible until the footage is
+    re-shot with a known vertical reference in frame.
+
+    Note what is NOT caught. `deadlift_180x3` reads 47.6 cm, 12 cm below the
+    other 155 kg set and about 20% low, and it passes: the sanity floor is 40 cm
+    and nothing measured justifies raising it to 50. So the flag is one-sided in
+    practice, and a capture can still referee P2 with a scale ~20% too small.
+    That capture is also the worst by horizontal error (15.4 cm) and the one
+    that over-reads its impact velocity step by 58-72% (P6). Three independent
+    complaints about the same capture is not a coincidence, and it is not
+    diagnosed.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import metrics, pipeline, truth
+
+    result = pipeline.run(RAW / f"{csv}.csv")
+    m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
+    stem = next(k for k in VIDEO_ROM_CM if csv.startswith(k))
+
+    assert abs(m["video_rom_cm"] - VIDEO_ROM_CM[stem]) < 1.0, (
+        f"video ROM moved from {VIDEO_ROM_CM[stem]} to {m['video_rom_cm']:.1f} cm")
+
+    hi = truth.VERTICAL_ROM_M["deadlift"][1] * 100
+    assert bool(m["video_rom_flags"]) == (VIDEO_ROM_CM[stem] > hi), (
+        f"{stem}: ROM {m['video_rom_cm']:.1f} cm vs a {hi:.0f} cm bound, but "
+        f"flags={m['video_rom_flags']}")
+
+    if stem == "deadlift_155x6_2":
+        # The whole point, on the one capture that makes it: judged by the same
+        # table, the video fails the bound and the IMU it is refereeing passes.
+        assert m["video_rom_flags"]
+        assert not truth.rom_flags("deadlift", result["rep_rom_m"]), (
+            "the reconstruction now fails the bound too, so this capture no "
+            "longer shows the referee failing alone")
 
 
 # ------------------------------------------------------------------- B7 --

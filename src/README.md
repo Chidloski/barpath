@@ -26,27 +26,37 @@ rather than assumed.
 **Absolute ROM.** Lockout height above the resting bar, per rep, in metres.
 
 **The horizontal spec, given a number.** `metrics.vs_truth` (A3) uses this
-module to measure the reconstruction against the bar: 5.1, 9.2 and 15.4 cm rms
-per rep on the three deadlifts, against a 1 cm spec, and 5.2/6.8/4.9 cm
+module to measure the reconstruction against the bar: 5.05, 9.19 and 15.44 cm
+rms per rep on the three deadlifts, against a 1 cm spec, and 5.24/6.60/5.24 cm
 vertical against ±2–3 cm. It also showed the horizontal error is a smooth arch
 at rep frequency rather than noise. See `analysis/19`.
 
-Note what that leans on. Drawback 1 below — `PLATE_DIAMETER_M` assumed at
-450 mm — scales every one of those numbers proportionally. At 2% error that is
-about 0.2 cm on a 10 cm fore-aft measurement, small against a 5–15 cm error but
-not against the 1 cm spec those numbers are being compared to. Measuring a
-plate matters more now that something depends on the scale.
+Note what that leans on, and how it turned out. The plates were measured on
+2026-07-30 — 425 mm notched, 445 mm bumper, 450 mm calibrated — replacing a
+single assumed 450. Correcting deadlift to the bumper moved those numbers by
+under 1% (they were 5.1/9.2/15.4 and 5.2/6.8/4.9), so the diameter was never
+the problem it was flagged as.
+
+The scale error is real and it is somewhere else. Per-rep video ROM on the
+three deadlifts is 59.1, 66.8 and 47.6 cm against a 61 cm ceiling measured for
+this lifter — a 19 cm spread, from two captures that found the *same* plate
+radius. Drawback 1 below is rewritten around it. The horizontal numbers above
+survive; the vertical ones and the ranking do not. See `analysis/23`.
 
 **Still to come:** B2 needs this to establish the wrist-to-bar lever arm `d`
 against something other than a guess.
 
 ## Current state, per lift
 
-| lift | works? | median NCC | travel | notes |
-|---|---|---|---|---|
-| deadlift | **yes, unattended** | 0.83–0.94 | 49–70 cm | sync 11–16 ms rms, drift <0.25% |
-| squat | tracks, **warns** | ~0.40 | 51–74 cm | plate clips top of frame at lockout |
-| bench | **raises** | — | 0.0 cm | needs a manual seed |
+| lift | plate | works? | median NCC | per-rep ROM | notes |
+|---|---|---|---|---|---|
+| deadlift | 445 mm bumper | **timing yes, vertical no** | 0.83–0.94 | 59.1 / **66.8** / **47.6** cm | sync 11–16 ms rms, drift <0.25%; ROM spread 19 cm on a 61 cm ceiling |
+| squat | 450 mm calibrated | tracks, **warns** | ~0.40 | — | plate clips top of frame at lockout |
+| bench | 425 mm notched | **raises** | — | — | needs a manual seed |
+
+Deadlift's row used to read "yes, unattended" without qualification. It tracks
+unattended and it syncs to the IMU, and on two of three captures its vertical
+scale is wrong — see drawback 1.
 
 Pinned by tests in `tests/test_real_data.py` so the state cannot regress
 unnoticed.
@@ -78,14 +88,30 @@ Requires `ffmpeg` on PATH. No new Python dependencies.
 
 Ordered by how much they could bite.
 
-**1. `PLATE_DIAMETER_M` is assumed (450 mm).** It sets the scale directly, so a
-wrong value is a proportional error on every number this module produces. At 2%
-that is 1.2 cm on a 60 cm ROM — larger than the spec. *Nobody has measured the
-actual plates.*
+**1. The vertical scale is wrong by up to ±20%, per capture.** Per-rep video ROM
+on the three deadlifts: 59.1, **66.8** and **47.6 cm**, against a ceiling of 61
+measured for this lifter. One lifter, one lift, a 19 cm spread.
+
+This drawback used to read "`PLATE_DIAMETER_M` is assumed (450 mm), nobody has
+measured the actual plates." They were measured on 2026-07-30 and it was not the
+cause: captures 1 and 2 found the *same* plate radius, and 450 → 445 mm moves
+everything about 1%. Radius quantisation (a 1 px grid moves ROM under 2%) and
+tracker drift (the floor baseline holds to 0.4 cm; the worst capture has the
+*best* NCC) were tested and ruled out too.
+
+What is left is the geometry: `find_plate` calibrates on a plate resting on the
+floor, and that scale is then applied to travel reaching the top of frame. The
+module docstring used to assert this was safe. It is not. The fix is footage
+with a known vertical reference in shot — a metre rule against the rack — not
+code. `truth.validate` warns and `metrics.vs_truth` returns `video_rom_flags`;
+never quote a flagged capture's vertical unqualified.
+
+Note the flag is one-sided in practice. `deadlift_180x3`'s 47.6 cm is ~20% low
+and passes, because the sanity floor is 40 cm and nothing justifies raising it.
 
 **2. Lens distortion is uncorrected.** A phone wide lens bows straight lines and
-the bar crosses most of the frame vertically. This is the largest error here
-that has no number attached to it.
+the bar crosses most of the frame vertically. The leading candidate for
+drawback 1, and still without a number of its own.
 
 **3. Bench does not seed automatically.** The plate is small, sits against a
 dark ceiling, and abuts the lifter-and-bench silhouette — a larger dark blob
@@ -117,8 +143,8 @@ sampling.
 
 **9. `height` is relative, not absolute.** Measured from the lowest tracked
 position. For a deadlift that is the bar on the floor, which is meaningful
-(add the 22.5 cm plate radius for height above ground). For bench and squat the
-lowest point is arbitrary.
+(add the 22.25 cm bumper radius for height above ground). For bench and squat
+the lowest point is arbitrary.
 
 **10. Auto-seed can pick a bad frame.** It scans the middle half of the clip for
 the strongest disc response. A false lock at r=108 px scoring 11 was observed

@@ -246,3 +246,62 @@ def plot_truth_comparison(recovered, truth, title=""):
     fig.suptitle(title)
     fig.tight_layout()
     return fig
+
+
+def plot_rom_bounds(reconstructed: dict, video: dict | None = None):
+    """Per-rep vertical ROM against what the lifter can actually move through.
+
+    `reconstructed` maps capture stem -> (lift, [rom_m per rep]); `video` maps
+    the same stems -> [rom_m per rep] measured from the footage.
+
+    Two rows because they say opposite things. The reconstruction sits inside
+    every band, which is the first external check bench and squat have passed.
+    The video — the referee those bounds were meant to validate the pipeline
+    against — does not: three deadlifts by one lifter spread across 19 cm.
+
+    Bands are drawn with the measured ceiling solid and the inferred floor
+    dashed, because they are not the same kind of claim.
+    """
+    from . import truth
+
+    have_video = bool(video)
+    fig, axes = plt.subplots(2 if have_video else 1, 1,
+                             figsize=(12, 8 if have_video else 4.5))
+    axes = np.atleast_1d(axes)
+
+    def panel(ax, data, title):
+        x = 0
+        for stem, (lift, roms) in data.items():
+            lo, hi = truth.VERTICAL_ROM_M[lift]
+            xs = np.arange(x, x + len(roms))
+            l, r = xs[0] - 0.5, xs[-1] + 0.5
+            # Shade only this capture's span — the bands differ by lift, so one
+            # axhspan across the whole axis would draw the squat band under the
+            # bench points.
+            ax.fill_between([l, r], lo * 100, hi * 100, color="0.92", zorder=0)
+            ax.hlines(hi * 100, l, r, color="0.35", lw=1.4)
+            ax.hlines(lo * 100, l, r, color="0.35", lw=1.0, ls="--")
+            out = [(v < lo or v > hi) for v in roms]
+            ax.scatter(xs, np.array(roms) * 100, s=42, zorder=3,
+                       c=["#c0392b" if o else "#2c7fb8" for o in out])
+            ax.plot(xs, np.array(roms) * 100, lw=0.8, color="0.6", zorder=2)
+            ax.text(xs.mean(), 0.02, stem.split("_2026")[0], rotation=90,
+                    ha="center", va="bottom", fontsize=7, color="0.3",
+                    transform=ax.get_xaxis_transform())
+            x += len(roms) + 1
+        ax.set_xlim(-1, x)
+        ax.set_xticks([])
+        ax.set_ylabel("vertical ROM, cm")
+        ax.set_title(title, fontsize=10, loc="left")
+
+    panel(axes[0], reconstructed,
+          "Reconstruction, per rep, after step 7. Band = measured ceiling "
+          "(solid) and inferred floor (dashed). Red = outside.")
+    if have_video:
+        vid = {k: (truth.lift_of(k), v) for k, v in video.items()}
+        panel(axes[1], vid,
+              "The same bounds applied to the VIDEO ground truth. One lifter, "
+              "one lift, 19 cm of spread — the referee's vertical scale is "
+              "wrong per capture.")
+    fig.tight_layout()
+    return fig

@@ -345,6 +345,12 @@ def vs_truth(result: dict, video: str | Path) -> dict:
         "video_closure_v": med("video_closure_v"),
         "video_rom_cm": med("video_rom_cm"),
         "video_fore_aft_cm": med("video_fore_aft_cm"),
+        # The referee, checked against the same table as the reconstruction.
+        # Non-empty means this capture's video vertical scale is wrong and its
+        # vertical numbers — video_rom_cm, pipeline_v_rms, raw_v_rms — carry it.
+        # Horizontal and sync are not implicated. See truth.VERTICAL_ROM_M.
+        "video_rom_flags": truth.rom_flags(
+            truth.lift_of(name), [r["video_rom_cm"] / 100 for r in good]),
     }
 
 
@@ -374,6 +380,14 @@ def summary(disp: dict | None = None, truth_result: dict | None = None) -> str:
             f"  vs video    {r['n_compared']}/{r['n_reps']} reps, sync "
             f"{r['sync_rms_ms']:.0f} ms, video ROM {r['video_rom_cm']:.0f} cm / "
             f"fore-aft {r['video_fore_aft_cm']:.1f} cm")
+        if r.get("video_rom_flags"):
+            lines.append(
+                f"    FLAGGED  the VIDEO fails the ROM bound on "
+                f"{len(r['video_rom_flags'])}/{r['n_compared']} reps "
+                f"({r['video_rom_flags'][0]}). Its vertical scale is wrong on "
+                f"this capture, so every vertical number below is measured "
+                f"against a bad ruler and must not be quoted unqualified. "
+                f"Horizontal and sync are unaffected; see truth.VERTICAL_ROM_M.")
         lines.append(
             f"    AS SHIPPED  horizontal {r['pipeline_h_rms']:.1f} cm rms / "
             f"{r['pipeline_h_max']:.1f} cm max, vertical "

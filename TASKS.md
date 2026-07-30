@@ -28,7 +28,10 @@ because SNR tests whether a mean is reproducible, not whether it is bias.
 
 ### A1 — rep segmentation `e8a8a0b` `efd5f5c`
 **44/44 reps across all 10 captures, zero false positives**, against the old
-stationarity segmenter's 0/14 bench and 1/15 squat. Shape matching in a
+stationarity segmenter's 0/14 bench and 1/15 squat. *(True as measured. The
+2026-07-30 session took it to **51/52** — see P1; `bench_spoto_90x5_1` counts
+the re-rack as a sixth rep, and the variant token in its name had kept it out
+of the gates entirely.)* Shape matching in a
 fixed-*duration* window, floor-impact anchors where the lift provides them
 (6/6, 6/6, 3/3), and lateness as the tie-break. Every rep window now contains
 both a concentric and an eccentric phase of comparable size (0/44 unbalanced,
@@ -208,6 +211,27 @@ the repo. Does not raise on unimplemented stages — records them as blocked and
 returns what worked. Surfaced `io.check_log` and `segment.quality_flags`, both
 previously dead code.
 
+### C4 — measured plates and ROM bounds
+Two tape measurements turned into gates. Plate diameters (425 notched / 445
+bumper / 450 calibrated) replaced `truth.PLATE_DIAMETER_M`'s single assumed 450
+and moved A3 by under 1%. Per-rep vertical ROM ceilings (bench 35, squat 76,
+deadlift 61 cm) became `truth.VERTICAL_ROM_M`, applied by `pipeline.run` to the
+reconstruction and by `metrics.vs_truth` to the video.
+
+Four results, in descending order of how much they change what we believe:
+
+1. **The video's vertical scale is wrong, per capture, by up to ±20%.** The
+   referee for P2. Three deadlifts, one lifter: 59.1 / 66.8 / 47.6 cm. Diameter,
+   radius quantisation and tracker drift all tested and ruled out.
+2. **The reconstruction passes on all 17 captures** bar two known defects, and
+   is more self-consistent on vertical ROM than the video judging it.
+3. **Rep counting is 51/52, not 44/44** — `bench_spoto_90x5_1` counts the
+   re-rack, hidden by a regex that did not match the variant token in its name.
+4. **`squat_160x1` reconstructs 18.0 cm at a correct count of 1 of 1** — the
+   first right-count-wrong-window failure any gate here has caught.
+
+`analysis/23_rom_bounds.png`, `python run.py --rom`.
+
 ---
 
 ## To do
@@ -215,6 +239,24 @@ previously dead code.
 Ordered by what unblocks the most. **Re-ordered by A3's measurements:** B6 and
 B2 are where the error actually is; B3 dropped because measurement showed it
 worth 2–4 cm, not 15.
+
+### C5 — fix the segmenter's two new failures  ← from C4
+Both are xfailed with their evidence in `tests/test_real_data.py`
+(`WRONG_REP_COUNT`, `KNOWN_ROM_FAILURES`), so they cannot be forgotten and a fix
+announces itself.
+
+- `bench_spoto_90x5_1`: the re-rack is counted as a sixth rep. Its 88.7 cm of
+  vertical is 2.5× the bench bound, so ROM alone would reject it — but rejecting
+  on ROM is a patch, not a diagnosis. Why does `_similar_cluster` accept it?
+- `squat_160x1`: one rep, correctly counted, window spanning 18.0 cm of a ~65 cm
+  squat. A single has no cadence for `_longest_cadence` to work with, which is
+  the first thing to check.
+
+### C6 — measure the two anchors  ← the data now exists
+P5's replacement question: does Core Motion's attitude survive a working set?
+All seven 2026-07-30 captures carry a 4-5 s opening hold and a 3.0 s closing
+hold in `phase`. Compare the attitude solution across them, bracketing 40 s of
+lifting. P4's arithmetic implies a ~2° error and predicts it does not.
 
 ### B6 — attack the acceleration error itself  ← next
 A3 puts the error upstream of the detrend and gives it a shape: a smooth arch
@@ -318,9 +360,15 @@ through is open — fix the acceleration first (B6) and re-measure before
 designing around it.
 
 ### C1 done, C2 abandoned, C3 added — watch logger
-`watch/WatchApp/`. Typechecks clean against the watchOS 26.5 SDK. C1 and C3 are
-**not yet validated on a lift** — the only captures from the new logger are two
-stationary table tests.
+`watch/WatchApp/`. Typechecks clean against the watchOS 26.5 SDK.
+
+**C1 and C3 are validated on lifts as of 2026-07-30.** Seven captures came off
+the new logger — `squat_160x1`, `squat_140x4_1/2/3`, `bench_spoto_90x5_1/2/3` —
+and every one carries a clean `phase` column: 4.2–4.8 s opening hold, the reps,
+and a 3.0 s closing hold, exactly as designed. **The two-anchor measurement
+C1 exists for has not been made.** The data is no longer the blocker; comparing
+the attitude solution across phase 0 and phase 2 on those seven captures is the
+next piece of work, and it is what answers P5's replacement question.
 
 **C1 — closing stillness hold. Built.** "Finish Set" starts a 3 s countdown and
 saves itself, driven off the device-motion callback rather than a Timer because
@@ -371,9 +419,23 @@ confirm nothing behavioural survives.
 
 Not code, and the highest value per effort available:
 
-- **Measure a plate.** `truth.PLATE_DIAMETER_M` is assumed at 450 mm and sets
-  the video scale directly — a 2% error is 1.2 cm on a 60 cm ROM.
+- ~~**Measure a plate.**~~ **DONE 2026-07-30.** Black notched 425 mm, black
+  bumper 445 mm, blue calibrated 450 mm. `truth.PLATE_DIAMETER_M` is now a
+  per-lift table keyed on the largest plate in shot. It moved A3's numbers by
+  under 1% — a useful negative result, since this was flagged for months as a
+  scale risk and the real scale error is 20× larger and elsewhere.
+- **Re-shoot with a vertical reference in frame** — a metre rule against the
+  rack, in shot for the whole clip. **Now the highest-value item here.** The
+  video's vertical scale is wrong by up to ±20% per capture (per-rep ROM 59.1 /
+  66.8 / 47.6 cm against a 61 cm ceiling) and the plate cannot fix it, because
+  it calibrates at the bottom of frame for travel reaching the top. The referee
+  for P2 is mis-scaled and no amount of code repairs footage. See `analysis/23`.
 - **Step the camera back.** Squat clips the plate at lockout; bench sits the
-  plate against clutter. Both become usable truth with no code.
-- **Film a plumb line once**, to put a number on lens distortion — currently the
-  largest unquantified error in A2.
+  plate against clutter. Both become usable truth with no code. Squat is worth
+  more than it was: `squat_160x1` reconstructs 18.0 cm for a 160 kg single and
+  there is nothing to check it against.
+- **Film a plumb line once**, to put a number on lens distortion — the leading
+  candidate for the scale error above.
+- **Tape the lockout height.** Deadlift bar centre at lockout, once. It would
+  turn `VERTICAL_ROM_M`'s deadlift ceiling from a bound into a measurement and
+  let the video be calibrated against it rather than flagged by it.

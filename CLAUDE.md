@@ -138,36 +138,54 @@ The learning goal survives the lockout that used to enforce it, and it changes
 The milestone table is gone. Milestones 1–6 all passed and the project does
 not work; a schedule that reports success while the artefact fails is worse
 than no schedule. What survived it is real: the watch logger works, and
-`data/raw/` holds 10 captures, all labelled with rep counts and totalling 44
-reps (4 bench, 3 squat, 3 deadlift). The room and warm-up captures were
+`data/raw/` holds 17 captures, all labelled with rep counts and totalling 52
+reps (7 bench, 7 squat, 3 deadlift), plus two stationary diagnostic logs. The
+2026-07-30 session added seven of those and every one carries the C3 `phase`
+column, including a real 3.0 s closing hold. The room and warm-up captures were
 removed in `7004c32` because no video exists for them; measurements made
-before that commit say 13 captures and are correct as of when they were taken.
+before that commit say 13 captures, and measurements between it and 2026-07-30
+say 10 and 44 reps. Both are correct as of when they were taken.
 
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
 
-**P1 — Rep counting is solved; boundary phase is verified only on deadlift.**
-*Counting:* closed by A1. 44/44 reps across all 10 captures with zero false
-positives, against the old stationary detector's 0 of 14 bench and 1 of 15
-squat. That detector assumed a quiet window between reps and loaded lifting has
-none — only 13.5% of a deadlift capture qualifies, essentially all of it the
-pre-set pause.
+**P1 — Rep counting is 51/52, not solved; window extent is now checkable on
+every lift.** Reopened 2026-07-30 by the new captures.
 
-*What is still open:* where each window sits, not how many there are. Counts
-cannot see phase — the segmenter scored a perfect 44/44 while every window ran
-lockout-to-lockout, half a rep out of step. Deadlift boundaries now come from
-floor impacts, which use raw acceleration alone and match video to 13.5 ms, and
-all 15 deadlift windows contain exactly one video lockout. **Bench and squat
-have no such anchor.** They still segment on integrated velocity carrying 145 cm
-of in-band error against a 69 cm signal, so their phase is unverified and will
-stay that way until P3 is fixed. This is not a segmentation problem.
+*Counting:* A1 closed this at 44/44 with zero false positives, against the old
+stationary detector's 0 of 14 bench and 1 of 15 squat. That was true on the ten
+captures then held. The 2026-07-30 session broke it: `bench_spoto_90x5_1`
+segments a 5-rep set into **6** windows, the extra one running 88.7 cm of
+vertical against a 35 cm bench bound — the re-rack counted as a rep. It had gone
+unnoticed because `REP_LABEL` did not match the `spoto` variant token, so
+`expected_reps` was `None` and every count gate silently skipped all three new
+benches. The regex is fixed and the failure is xfailed with its evidence.
+
+*Window extent, which is new.* Counts cannot see phase — the segmenter scored a
+perfect 44/44 while every window ran lockout-to-lockout, half a rep out of step.
+Deadlift boundaries come from floor impacts, which use raw acceleration alone,
+match video to 13.5 ms, and put exactly one video lockout in each of the 15
+deadlift windows. **Bench and squat still have no phase anchor** and still
+segment on integrated velocity carrying 145 cm of in-band error against a 69 cm
+signal, so their phase stays unverified until P3 is fixed.
+
+But they now have a *partial* external check: per-rep vertical ROM against
+`truth.VERTICAL_ROM_M`. It cannot see phase either — a window half a rep out of
+step has the right amplitude — but it does see a window that spans too much or
+too little, which counting cannot. It found `squat_160x1` reconstructing 18.0 cm
+for a 160 kg single at a correct count of 1 of 1. That is the first time a gate
+in this project has caught a right-count-wrong-window failure.
 *Evidence:* `analysis/04`–`07`, `12` for the old failure; `15`–`18` for A1;
-`17` and `src/README.md` for the phase bug.
+`17` and `src/README.md` for the phase bug; `23` and `analysis/README.md` for
+the ROM bounds.
 
-**P2 — Horizontal is 5–15× outside spec, and vertical is out too.** Measured
-against video by A3, per rep, on the three deadlifts: horizontal **5.1, 9.2 and
-15.4 cm rms** against a 1 cm spec, and vertical **5.2, 6.8 and 4.9 cm rms**
-against ±2–3 cm.
+**P2 — Horizontal is 5–15× outside spec; vertical is out too, but the ruler
+that says so is itself broken on two captures of three.** Measured against
+video by A3, per rep, on the three deadlifts: horizontal **5.05, 9.19 and
+15.44 cm rms** against a 1 cm spec, and vertical **5.24, 6.60 and 5.24 cm rms**
+against ±2–3 cm. (Re-measured 2026-07-30 against the 445 mm bumper; the
+previously recorded 5.1/9.2/15.4 and 5.2/6.8/4.9 used an assumed 450 mm plate
+and the correction is worth under 1%.)
 
 Two corrections to what this problem used to say. It is 5–15×, not the two
 orders of magnitude claimed from off-pipeline reconstructions and from
@@ -175,6 +193,29 @@ whole-set excursion — excursion counts between-rep divergence, which per-rep
 error does not. And **"vertical comes out fine" is false**; vertical was never
 measured per rep before A3 and it misses its own looser spec on all three
 captures.
+
+**A third correction, 2026-07-30: do not quote the spread.** The video's
+vertical scale is wrong per capture. Per-rep video ROM on the three deadlifts is
+59.1, **66.8** and **47.6 cm** against a measured 61 cm ceiling — a 19 cm spread
+on a range of motion fixed by the lifter's own limbs, from footage where two of
+the three captures found an identical plate radius. Plate diameter, radius
+quantisation and tracker drift were each tested and each ruled out; what is left
+is that the scale is calibrated on a plate resting on the floor and applied to
+travel reaching the top of frame.
+
+So: the horizontal numbers stand — fore-aft travel is a few centimetres, well
+inside the frame region the plate calibrates, and the sync still matches to
+11–16 ms. The **vertical** numbers and the **ranking** do not. The error order
+tracks the ROM error exactly, the capture nearest a plausible ROM scoring best.
+`metrics.vs_truth` now returns `video_rom_flags` and `pipeline.summary` prints
+the warning; a flagged capture's vertical must never be quoted unqualified. The
+fix is footage with a known vertical reference in shot, not code. *Evidence:*
+`analysis/23`, `truth.VERTICAL_ROM_M`.
+
+Note this cuts the other way for the IMU. Judged by the same bounds the
+reconstruction passes on all 17 captures bar two known defects — deadlift 53–61,
+squat 61–68, bench 24–31 cm. On vertical ROM the reconstruction is currently
+more self-consistent than the video it is scored against.
 
 Still true, and now with a number on it: the reconstruction invents fore-aft
 travel. Excursion is 18–36 cm on deadlift where the video says the bar moved
@@ -288,11 +329,19 @@ fast rotation, its gravity reference corrupted by the lift's own acceleration �
 is untested, and the ~2° error implied by P4's arithmetic says it probably does
 not. The two-anchor protocol (C1, built) is the measurement: compare the
 attitude solution before and after 40 s of lifting. That needs one capture with
-a real closing hold, which does not exist yet.
+a real closing hold. **That capture now exists** — all seven of the 2026-07-30
+captures carry a 4–5 s opening hold and a 3.0 s closing hold in the `phase`
+column. The data is there and the measurement has not been made; it is the next
+piece of work, not a blocked one.
 
 Validate on **deadlift** first — not because the pipeline differs by lift
-(it does not) but because it is the only lift with external ground truth:
-the bar starts at plate radius (22.5 cm to bar centre) and ends at a
-tape-measurable lockout height. Bench and squat offer nothing to check
-against but your own judgement of whether a curve looks plausible, which is
-exactly how you convince yourself a broken pipeline works.
+(it does not) but because it has the most external ground truth: the bar starts
+at the bumper's radius (22.25 cm to bar centre, measured 2026-07-30) and ends at
+a tape-measurable lockout height.
+
+Bench and squat used to offer nothing to check against but your own judgement of
+whether a curve looks plausible, which is exactly how you convince yourself a
+broken pipeline works. As of 2026-07-30 they offer one thing:
+`truth.VERTICAL_ROM_M` bounds their per-rep vertical travel. Do not oversell it
+— a bound is not a measurement, it constrains one axis, and it cannot see phase.
+It is still the difference between an unfalsifiable claim and a weak one.

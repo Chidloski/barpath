@@ -37,9 +37,14 @@ from pathlib import Path
 
 import numpy as np
 
-from . import calibrate, correct, integrate, io, metrics, orient, project, segment
+from . import (calibrate, correct, integrate, io, metrics, orient, project,
+               segment, truth)
 
-REP_LABEL = re.compile(r"^(bench|squat|deadlift)_[\d.]+x(\d+)")
+# The optional middle token is a lift variant — bench_spoto_90x5. Without it
+# `expected_reps` returned None for all three of the 2026-07-30 benches, so the
+# rep-count gate silently skipped them and a 6-window segmentation of a 5-rep
+# set went unnoticed until the ROM bound caught it.
+REP_LABEL = re.compile(r"^(bench|squat|deadlift)(?:_[a-z]+)*_[\d.]+x(\d+)")
 
 
 def expected_reps(path: str | Path) -> int | None:
@@ -144,6 +149,25 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None,
     # 7 --- per-rep detrend --------------------------------------------------
     reps = correct.detrend_set(bar, bounds, log["t"]) if bounds else []
     result["reps"] = reps
+
+    # Vertical ROM against what the lifter can actually move the bar through.
+    # The first external check bench and squat have ever had — every other gate
+    # in this project needs deadlift floor impacts or video, and bench and squat
+    # have neither. It is weak (a bound, not a measurement) and it is one-sided
+    # per rep, but it is external, and it catches the two things a rep window
+    # can get wrong that a count cannot see: spanning too much, and too little.
+    #
+    # Worth knowing where this is measured. Before step 7 the same quantity is
+    # off by metres — deadlift_155x6_1 runs 100 cm on rep 1 to 1939 cm on rep 6 —
+    # so it is the detrend that makes vertical dimensionally sane at all, and
+    # this check does not vouch for anything upstream of it.
+    result["rep_rom_m"] = [float(r[:, 2].max() - r[:, 2].min()) for r in reps]
+    try:
+        lift = truth.lift_of(path)
+    except ValueError:
+        result["notes"].append("no ROM check: cannot tell which lift this is")
+    else:
+        result["warnings"].extend(truth.rom_flags(lift, result["rep_rom_m"]))
 
     # 8 --- display axis -----------------------------------------------------
     if reps:

@@ -15,11 +15,17 @@ a circle and the camera axis lies along the bar. That is the fortunate case:
   in-frame vertical    = up/down
   depth from camera    = along the bar, which barely moves
 
-Because the bar travels in a plane at roughly constant distance, the pinhole
-projection reduces to a single constant scale — pixels to metres is one number,
-not a function of height in frame, despite the strong perspective of a camera
-sitting on the floor. The plate itself supplies that number: it is a circle of
-known diameter, so detecting it calibrates the scale from the footage.
+The plate supplies the scale: it is a circle of known diameter, so detecting it
+calibrates pixels to metres from the footage.
+
+That calibration was believed to be a single constant — "pixels to metres is
+one number, not a function of height in frame" is what this docstring used to
+say, on the argument that the bar travels in a plane at roughly constant
+distance so the pinhole projection collapses to one scale. **That is false, and
+the ROM bounds are what caught it.** See `VERTICAL_ROM_M` below for the
+measurement. The plate is detected with the bar on the floor, so the scale is
+calibrated at the BOTTOM of frame and then applied to travel that reaches the
+top of it.
 
 Parallax was expected to be the hard part and is not, for the same reason. It
 would matter if the camera were beside the lifter looking across, where fore-aft
@@ -34,8 +40,11 @@ that tolerance is the strongest validation in the project.
 
 Limits, honestly
 ----------------
-- **Deadlift: automatic and trustworthy.** No seeding, no clicking. Median NCC
-  0.83-0.94, 49-70 cm of travel, sync to the IMU at 11-16 ms.
+- **Deadlift: automatic. Trustworthy on timing and horizontal, NOT on vertical
+  scale.** No seeding, no clicking; median NCC 0.83-0.94, sync to the IMU at
+  11-16 ms. But the 49-70 cm of travel this used to quote as a sign of health is
+  the symptom: it is one lifter, one lift, three captures, and a real deadlift
+  ROM does not vary by 19 cm. See `VERTICAL_ROM_M`.
 - **Squat: tracks, but only indicatively.** Median NCC ~0.40 because the plate
   clips the top of frame at lockout and the template only partly matches. A
   warning is raised. Needs a wider shot, not code.
@@ -45,10 +54,15 @@ Limits, honestly
   motionless background at 0.907 median NCC reporting 0.0 cm of travel before
   `validate` existed. Pass `seed_yx` to place it by hand.
 - Lens distortion is uncorrected. A phone wide lens bows straight lines, and
-  the bar crosses much of the frame vertically. This is the largest unquantified
-  error here and it wants a checkerboard, or at least a plumb line in shot.
-- `PLATE_DIAMETER_M` is assumed. It sets the scale directly, so a wrong value is
-  a proportional error on every measurement. Measure the actual plates.
+  the bar crosses much of the frame vertically. It is one candidate for the
+  scale error below, and it wants a checkerboard, or at least a plumb line.
+- **The vertical scale is wrong by up to ±20%, per capture.** This is now the
+  largest known error in the module and it is described at `VERTICAL_ROM_M`.
+  The horizontal and the timing are not implicated; the sync still matches the
+  IMU to 11-16 ms and `x` moves only a few centimetres, well inside the frame
+  region the plate calibrates.
+- `PLATE_DIAMETER_M` was assumed at 450 mm for every lift and is now measured
+  per lift. It is no longer the dominant scale error, and it never was.
 
 Requires `ffmpeg` on PATH. No new Python dependencies.
 """
@@ -64,7 +78,97 @@ import numpy as np
 from scipy.ndimage import uniform_filter
 from scipy.signal import fftconvolve
 
-PLATE_DIAMETER_M = 0.450     # standard 20 kg plate. VERIFY against the real ones.
+# Measured 2026-07-30, with a tape, on the actual plates. Replaces a single
+# assumed 0.450 that was right only for squat.
+#
+# The tracker locks onto the largest circle in shot, so what matters per lift is
+# the BIGGEST plate loaded, not the nominal one:
+#   bench    black notched, 425 mm. Plates under 20 kg are smaller still, so a
+#            notched 20 is the outline at any working weight.
+#   squat    blue calibrated, 450 mm, with smaller plates outside it.
+#   deadlift one black bumper, 445 mm. Above 60 kg black notched plates load
+#            outside it, and every notched plate is smaller, so the bumper stays
+#            the outline.
+PLATE_DIAMETER_M = {"bench": 0.425, "squat": 0.450, "deadlift": 0.445}
+
+# Per-rep vertical range of motion, (floor, ceiling) in metres.
+#
+# The ceilings are measured for this lifter: bench 0.35 (0.32 typical), squat
+# 0.76, deadlift 0.61, each from the start position to the far end of the range.
+# The floors are NOT measured. They are set at ~60-65% of the ceiling as a
+# sanity bound, because an upper bound alone cannot see a truncated rep window —
+# `squat_160x1` reconstructs 18.0 cm for a 160 kg squat and passes any ceiling.
+# Treat a floor violation as "this window is not a whole rep", not as a claim
+# about the lifter.
+#
+# What the ceilings caught, and it was not the pipeline. Per-rep video ROM on
+# the three deadlifts — same lifter, same lift, 155/155/180 kg:
+#
+#     deadlift_155x6_1   59.8 cm   plate found at 64 px
+#     deadlift_155x6_2   67.5 cm   plate found at 64 px   over the 61 cm bound
+#     deadlift_180x3     48.1 cm   plate found at 56 px   implausibly low
+#
+# A 19 cm spread on a range of motion fixed by the lifter's own limbs. Three
+# explanations were tested and none survives:
+#
+#   Plate diameter. Captures 1 and 2 found the SAME radius, so no diameter
+#   explains a 13% gap between them; 450 -> 445 mm moves everything ~1%.
+#   Radius quantisation. `find_plate` searches a 4 px grid. Re-run at 1 px the
+#   radii are 64/65/54 and the ROMs 61.2/69.2/50.8 — under 2% of movement.
+#   Tracker drift. The floor baseline holds to 0.4 cm across every clip and the
+#   per-capture lockouts are internally consistent (61/60/60, 70/69/64,
+#   49/49/48). `deadlift_180x3` has the BEST median NCC, 0.94, and the worst ROM.
+#
+# What is left is the geometry: the scale is calibrated on a plate sitting on
+# the floor and then applied to travel reaching the top of frame. That is the
+# assumption the module docstring used to state outright. It does not hold
+# between captures, and re-filming with a known vertical reference in shot — a
+# metre rule against the rack — is the fix. Until then every A3 number carries
+# an unmeasured per-capture scale error, `vs_truth` flags it, and P2's 5-15 cm
+# SPREAD is partly this rather than the IMU.
+VERTICAL_ROM_M = {"bench": (0.20, 0.35), "squat": (0.45, 0.76), "deadlift": (0.40, 0.61)}
+
+
+def lift_of(name: str | Path) -> str:
+    """The lift a capture or video is of, from the first token of its name.
+
+    Raises on anything else rather than defaulting. A silent default is exactly
+    how a 450 mm squat plate went on refereeing bench footage.
+    """
+    lift = Path(name).name.split("_")[0]
+    if lift not in PLATE_DIAMETER_M:
+        raise ValueError(
+            f"{Path(name).name!r}: cannot tell which lift this is. The first "
+            f"name token must be one of {sorted(PLATE_DIAMETER_M)}."
+        )
+    return lift
+
+
+def plate_diameter(name: str | Path) -> float:
+    """Diameter in metres of the largest plate in shot, for this lift."""
+    return PLATE_DIAMETER_M[lift_of(name)]
+
+
+def rom_flags(lift: str, roms_m) -> list[str]:
+    """One message per rep whose vertical ROM leaves `VERTICAL_ROM_M[lift]`.
+
+    Deliberately returns messages rather than raising, and is used on BOTH the
+    reconstruction and the video, so the two are judged against one table. The
+    referee has no standing to be exempt from the check it applies: run against
+    the deadlift videos this flags two of the three captures, and the
+    reconstruction it was refereeing flags none.
+    """
+    lo, hi = VERTICAL_ROM_M[lift]
+    out = []
+    for i, r in enumerate(roms_m, start=1):
+        if r > hi:
+            out.append(f"rep {i}: vertical ROM {r*100:.1f} cm exceeds the "
+                       f"{hi*100:.0f} cm {lift} bound")
+        elif r < lo:
+            out.append(f"rep {i}: vertical ROM {r*100:.1f} cm is below the "
+                       f"{lo*100:.0f} cm sanity floor for {lift} — probably not "
+                       f"a whole rep")
+    return out
 
 
 # ----------------------------------------------------------------- decode --
@@ -212,7 +316,8 @@ def bar_path(video: str | Path, scale: float = 0.5,
              seed_time: float | None = None,
              seed_yx: tuple[int, int] | None = None,
              seed_radius: int | None = None,
-             check: bool = True) -> dict:
+             check: bool = True,
+             diameter_m: float | None = None) -> dict:
     """Track the plate and return the bar path in metres.
 
     Automatic on deadlifts: the plate sits isolated against a bright floor, so
@@ -229,6 +334,11 @@ def bar_path(video: str | Path, scale: float = 0.5,
     `check` raises when the tracked bar barely moves. That silent-confident
     failure is the one worth being loud about: a high score means the template
     matched, not that it matched the plate.
+
+    `diameter_m` overrides the plate size. It is otherwise taken from the file
+    name via `plate_diameter`, which raises rather than defaulting — so a clip
+    named outside the convention fails here instead of being silently scaled by
+    somebody else's plate.
     """
     stack, fps, _ = frames(video, scale)
     if seed_time is not None:
@@ -247,7 +357,8 @@ def bar_path(video: str | Path, scale: float = 0.5,
 
     raw = track(stack, seed, cy, cx)
 
-    m_per_px = PLATE_DIAMETER_M / (2 * radius)
+    m_per_px = (diameter_m if diameter_m is not None
+                else plate_diameter(video)) / (2 * radius)
     t = np.arange(len(raw)) / fps
     path = {
         "t": t,
@@ -272,6 +383,11 @@ def validate(path: dict, video: str | Path = "") -> None:
     it matched a motionless piece of background for the whole clip at 0.907
     median and reported 0.0 cm of travel without complaint — which would have
     gone downstream as ground truth.
+
+    Only the no-motion case raises. An out-of-band ROM warns, because the video
+    is still the only external check on the horizontal and on the timing, and
+    both survive a vertical scale error. Warn, flag, and never quote the number
+    unqualified — see `VERTICAL_ROM_M`.
     """
     name = Path(video).name or "video"
     if path["travel_m"] < MIN_TRAVEL_M:
@@ -289,6 +405,25 @@ def validate(path: dict, video: str | Path = "") -> None:
             f"clean track gives. The template is only partly matching — on the "
             f"squats this is the plate leaving the top of frame at lockout. "
             f"Treat the path as indicative, not as truth.",
+            stacklevel=2,
+        )
+
+    # Whole-clip travel stands in for per-rep ROM here, because `validate` has
+    # no rep bounds. It reads consistently HIGH — 61.2/70.3/49.0 against per-rep
+    # medians of 59.8/67.5/48.1 on the three deadlifts — since it also spans the
+    # walk-up and any between-rep excursion. So this warns slightly too eagerly,
+    # which is the right way round for a check on the referee. `metrics.vs_truth`
+    # applies the same table per rep, and that is the number to act on.
+    try:
+        lift = lift_of(video)
+    except ValueError:
+        return
+    for flag in rom_flags(lift, [path["travel_m"]]):
+        warnings.warn(
+            f"{name}: {flag.split(': ', 1)[1]}. The video's vertical scale is "
+            f"suspect on this capture, so treat its ROM and any vertical error "
+            f"measured against it as flagged. Horizontal and timing are not "
+            f"implicated. See truth.VERTICAL_ROM_M.",
             stacklevel=2,
         )
 

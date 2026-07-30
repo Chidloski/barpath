@@ -27,9 +27,15 @@ passed every synthetic gate and failed in the gym by two orders of magnitude.
 behind each. `CLAUDE.md` holds the open problems. `analysis/README.md` holds the
 plots and numbers.
 
-Two things work well and are verified against video: rep segmentation (44/44
-reps across 10 captures, zero false positives) and the video ground truth itself
-(IMU and video agree on floor-impact timing to 11–16 ms).
+One thing works well and is verified against video: the IMU and the video agree
+on floor-impact **timing** to 11–16 ms.
+
+Rep segmentation was the other, at 44/44 with zero false positives, and the
+2026-07-30 captures took it to **51/52** — `bench_spoto_90x5_1` counts the
+re-rack as a sixth rep of a five-rep set. The same session also showed the video
+ground truth is trustworthy on timing and horizontal but **not on vertical
+scale**: per-rep ROM across three deadlifts by one lifter spreads 47.6–66.8 cm
+against a measured 61 cm ceiling. See `CLAUDE.md` P1 and P2.
 
 The sensor is not the problem, which took until 2026-07-30 to establish. On a
 watch lying on a table, Core Motion's residual gyro bias is **0.002 °/s**, its

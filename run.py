@@ -6,6 +6,7 @@
     python run.py --plot               # also write diagnostics to analysis/
     python run.py --truth              # also measure against the video (A3)
     python run.py --stages             # draw the pipeline stage by stage
+    python run.py --rom                # per-rep vertical ROM against the bounds
 
 --truth is slow: it decodes each clip. It only produces numbers on deadlift,
 which is the only lift with trustworthy video truth — the others report why.
@@ -14,6 +15,11 @@ which is the only lift with trustworthy video truth — the others report why.
 per stage, from raw acceleration to the bar path. It ignores any paths given
 on the command line and uses one representative capture per lift, because the
 point of it is the comparison.
+
+--rom writes analysis/23_rom_bounds.png: every capture's per-rep vertical range
+of motion against what the lifter can actually move a bar through. Also slow —
+it decodes the deadlift clips to check the video against the same bounds, which
+is where it found that two of the three are mis-scaled.
 """
 
 from __future__ import annotations
@@ -68,6 +74,44 @@ def draw_stages() -> int:
     return 0
 
 
+def draw_rom() -> int:
+    """Per-rep vertical ROM for every capture, against the measured bounds."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import metrics, plot, truth
+
+    raw = ROOT / "data" / "raw"
+    recon, video = {}, {}
+    for path in sorted(raw.glob("*.csv")):
+        try:
+            lift = truth.lift_of(path)
+        except ValueError:
+            continue                      # stationary diagnostics have no reps
+        result = pipeline.run(path)
+        recon[path.stem] = (lift, result["rep_rom_m"])
+
+        clip = pipeline.find_video(path, ROOT / "data" / "video")
+        if clip is None or lift != "deadlift":
+            continue                      # only deadlift video is trackable
+        m = metrics.vs_truth(result, clip)
+        video[path.stem] = [r["video_rom_cm"] / 100 for r in m["per_rep"]
+                            if r["covered"]]
+        flags = m["video_rom_flags"]
+        print(f"{path.stem}: video ROM median "
+              f"{np.median(video[path.stem])*100:.1f} cm, "
+              f"{len(flags)} rep(s) flagged")
+
+    if not recon:
+        print("no captures found for the ROM plot")
+        return 1
+
+    out = ROOT / "analysis" / "23_rom_bounds.png"
+    plot.plot_rom_bounds(recon, video).savefig(out, dpi=105)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -75,6 +119,8 @@ def main(argv: list[str]) -> int:
 
     if "--stages" in argv:
         return draw_stages()
+    if "--rom" in argv:
+        return draw_rom()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:

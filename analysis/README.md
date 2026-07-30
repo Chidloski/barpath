@@ -319,3 +319,96 @@ why that capture is an outlier — pointing at strap ring, i.e. #14.
 
 Also checked and rejected: per-rep peak g does not predict per-rep error
 (correlation +0.17 across all 15 deadlift reps).
+
+## The ROM bounds — the reconstruction passes, the referee does not (2026-07-30)
+- `23_rom_bounds.png` — per-rep vertical ROM against what the lifter can
+  actually move a bar through. Regenerate with `python run.py --rom`.
+
+Two things arrived on 2026-07-30: seven more captures, and tape measurements
+that replaced two standing assumptions. Plate diameters are black notched
+425 mm, black bumper 445 mm, blue calibrated 450 mm — so `PLATE_DIAMETER_M`,
+assumed at 450 for everything, was wrong on bench and deadlift. And per-rep
+vertical ROM has ceilings for this lifter: bench 35 cm (32 typical), squat 76,
+deadlift 61.
+
+**The plate diameters were not where the error was.** Correcting deadlift to
+445 mm moves the A3 numbers by under 1% — horizontal 5.1/9.2/15.4 → 5.05/9.19/
+15.44, vertical 5.2/6.8/4.9 → 5.24/6.60/5.24. Worth fixing, and a useful
+negative result: the scale assumption this project has flagged as a risk since
+`truth.py` was written is not what makes the reconstruction 5–15× out of spec.
+
+**The reconstruction passes the bounds** (top row). Post-step-7 per-rep ROM is
+bench 24–31 cm, squat 61–68, deadlift 53–61 — inside every band, and tight
+within each capture. This is the first external check bench and squat have ever
+had; every other gate in the project needs floor impacts or trackable video and
+they have neither. It is weak, but it is not self-referential, and they clear it.
+
+Where it is measured matters. Run the same check *before* step 7 and the
+numbers are absurd — `deadlift_155x6_1` climbs from 100 cm on rep 1 to 1939 cm
+on rep 6. The detrend is what makes vertical dimensionally sane at all, so this
+result vouches for the output of step 7 and for nothing upstream of it.
+
+**The video ground truth fails them** (bottom row). Per-rep video ROM on the
+three deadlifts, same lifter, same lift:
+
+| capture | video ROM | plate radius | pipeline h_rms |
+|---|---|---|---|
+| deadlift_155x6_1 | 59.1 cm | 64 px | 5.05 cm |
+| deadlift_155x6_2 | **66.8 cm** | 64 px | 9.19 cm |
+| deadlift_180x3 | **47.6 cm** | 56 px | 15.44 cm |
+
+A 19 cm spread on a range of motion set by the lifter's own limbs. Three
+explanations were tested and none survives:
+
+- **Plate diameter.** Captures 1 and 2 found the *same* radius, so no diameter
+  explains a 13% gap between them.
+- **Radius quantisation.** `find_plate` searches a 4 px grid. Re-run at 1 px the
+  radii are 64/65/54 and the ROMs 61.2/69.2/50.8 at 450 mm — under 2% of
+  movement. Not it.
+- **Tracker drift.** The floor baseline holds to 0.4 cm across every clip and
+  the per-capture lockouts are internally consistent (61/60/60, 70/69/64,
+  49/49/48). `deadlift_180x3` has the *best* median NCC, 0.94, and the worst ROM.
+
+What is left is the geometry. The scale is calibrated on a plate sitting on the
+floor and then applied to travel reaching the top of frame — which is exactly
+the assumption `truth.py`'s docstring used to state outright ("pixels to metres
+is one number, not a function of height in frame"). That claim is now marked
+false in the module.
+
+**Why this matters more than it looks.** `vs_truth` is the only external judge
+of P2, and on one of its three captures it measures the bar moving through
+66.8 cm of a 61 cm range. Its vertical numbers on that capture are measured
+with a bad ruler. The horizontal and the sync are not implicated — sync still
+matches the IMU to 11–16 ms, and fore-aft travel is a few centimetres, well
+inside the frame region the plate calibrates — so P2's horizontal result stands.
+But P2's *spread* across captures is partly this rather than the IMU, and the
+error ranking tracks the ROM error exactly: the capture nearest a plausible ROM
+scores best, the two flagged ones score 1.8× and 3× worse.
+
+The fix is footage, not code: re-shoot with a known vertical reference in frame
+— a metre rule against the rack — and calibrate the scale over the travel
+rather than at the bottom of it.
+
+**One-sided in practice.** `deadlift_180x3` reads 47.6 cm, about 20% low, and
+is *not* flagged: the sanity floor is 40 cm and nothing measured justifies
+raising it to 50. So a capture can still referee P2 with a scale 20% too small.
+That capture is also the worst by horizontal error and the one that over-reads
+its impact velocity step by 58–72% (B5). Three independent complaints about the
+same capture, still undiagnosed.
+
+**Three defects the bounds found in the pipeline, all in the new captures.**
+
+- `bench_spoto_90x5_1` segments a 5-rep set into **6** windows; the extra one
+  runs 88.7 cm of vertical against a 35 cm bench bound, so it is the re-rack
+  being counted, not a rep split in two. It had gone undetected because
+  `REP_LABEL`/`REP_COUNT` did not match the `spoto` variant token — so
+  `expected_reps` was `None` and *every* count gate silently skipped all three
+  of the 2026-07-30 benches. P1's "44/44 with zero false positives" was true
+  when measured and is now **51/52**.
+- `squat_160x1` reconstructs **18.0 cm** for a single at 160 kg, a quarter of
+  the ~65 cm the other squat captures give. The count is right, 1 of 1 — this
+  is the failure mode P1 warns about, a window in the right number and the
+  wrong place, and it is the first time a gate here has caught one.
+- `deadlift_180x3` rep 2 lands at 61.1 cm against the 61 cm bound. A 0.2%
+  breach is inside the precision of the bound itself; it is reported and does
+  not fail the gate, which allows 2 cm of slack.

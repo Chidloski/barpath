@@ -21,8 +21,9 @@ variation IS the tremor.
 Subtracting a noise sample as though it were a bias injects the error it was
 meant to remove. Applying this estimate was worse than doing nothing on 13 of
 the 13 captures held when it was measured, taking the median per-rep horizontal
-residual from 4.3 cm to 55.0 cm. (`data/raw/` holds 10 captures now; the room
-and warm-up ones were dropped in 7004c32 for having no video.)
+residual from 4.3 cm to 55.0 cm. (`data/raw/` holds 17 rep-labelled captures
+now: the room and warm-up ones were dropped in 7004c32 for having no video, and
+the 2026-07-30 session added seven. The gate still holds on all 17.)
 
 A significance gate was tried first — correct an axis only where the estimate
 stands clear of the standard error of its own mean — and it failed. It passed

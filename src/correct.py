@@ -39,8 +39,9 @@ with d. Leave-one-out settles it: one fold returns |d| = 129 cm and makes the
 held-out capture worse, 5.1 -> 16.2 cm.
 
 So d wants a tape measure, not an optimiser: watch centre to bar centre, in
-watch axes, once. Thirty seconds, and the same class of fix as measuring a
-plate for truth.PLATE_DIAMETER_M. Until then it stays None and the correction
+watch axes, once. Thirty seconds, and the same class of fix as measuring the
+plates for truth.PLATE_DIAMETER_M — which was done on 2026-07-30 and took about
+that long. Until then it stays None and the correction
 stays off, because a guessed d costs up to 0.8 cm rather than saving anything.
 
 **How big is it really? Smaller than this project has been claiming.** B2
