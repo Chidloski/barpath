@@ -59,6 +59,23 @@ final class MotionRecorder: NSObject, ObservableObject {
     @Published var workoutActive = false   // keep-alive session is running
     var logName = "log"
 
+    // Live workout metrics, so this app can show what the Workout app would and
+    // the lifter is not giving anything up by starting the workout here. All of
+    // it comes from HKLiveWorkoutBuilder's statistics; none of it touches the
+    // CSV, and a denied HealthKit type leaves the field at zero rather than
+    // failing anything.
+    @Published var heartRate: Double = 0        // bpm, most recent sample
+    @Published var avgHeartRate: Double = 0     // bpm, workout mean
+    @Published var activeEnergy: Double = 0     // kcal
+    @Published var totalEnergy: Double = 0      // kcal, active + basal
+    @Published var workoutStart: Date?          // drives the elapsed clock
+
+    /// Set when a workout finishes, so the effort rating has something to
+    /// attach to. `relateWorkoutEffortSample` needs the saved HKWorkout, which
+    /// only exists once `finishWorkout` has returned it.
+    @Published var finishedWorkout: HKWorkout?
+    @Published var effortSaved = false
+
     /// How long to hold still after the last rep. Three seconds is the same ask
     /// as the opening pause, and what matters is the ~40 s BASELINE between the
     /// two anchors, not the length of either.
@@ -282,9 +299,12 @@ final class MotionRecorder: NSObject, ObservableObject {
         // recording, and the CSV never depends on any of it.
         var share: Set<HKSampleType> = [HKObjectType.workoutType()]
         var read: Set<HKObjectType> = [HKObjectType.workoutType()]
+        // workoutEffortScore is the "Rate your effort" sample watchOS 11 added.
+        // It is SHARE-only here: we write the lifter's rating, we never read it.
         for id: HKQuantityTypeIdentifier in [.heartRate, .activeEnergyBurned,
                                              .basalEnergyBurned,
-                                             .distanceWalkingRunning] {
+                                             .distanceWalkingRunning,
+                                             .workoutEffortScore] {
             guard let type = HKObjectType.quantityType(forIdentifier: id) else { continue }
             share.insert(type)
             read.insert(type)
@@ -335,8 +355,15 @@ final class MotionRecorder: NSObject, ObservableObject {
             let live = session.associatedWorkoutBuilder()
             live.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore,
                                                       workoutConfiguration: config)
+            // The builder's delegate is what feeds the metrics screen. Without
+            // it the session still keeps us alive and still saves — the app just
+            // has nothing to show, which is the state this replaced.
+            live.delegate = self
             let now = Date()
             session.startActivity(with: now)
+            workoutStart = now
+            heartRate = 0; avgHeartRate = 0; activeEnergy = 0; totalEnergy = 0
+            finishedWorkout = nil; effortSaved = false
             // Best effort. If collection never begins we lose the Health record,
             // not the capture — the CSV is written from Core Motion and touches
             // none of this.
@@ -364,12 +391,60 @@ final class MotionRecorder: NSObject, ObservableObject {
         workoutActive = false
         let end = Date()
         session.end()
-        guard let live else { return }
+        guard let live else { workoutStart = nil; return }
         live.endCollection(withEnd: end) { [weak self] _, _ in
-            live.finishWorkout { _, error in
-                self?.setStatus(error == nil ? "workout saved to Health"
-                                             : "workout ended, save failed")
+            live.finishWorkout { saved, error in
+                DispatchQueue.main.async {
+                    self?.workoutStart = nil
+                    // Kept so the effort rating has something to attach to:
+                    // relateWorkoutEffortSample needs the SAVED HKWorkout, which
+                    // does not exist until this callback hands it back.
+                    self?.finishedWorkout = saved
+                    self?.status = error == nil ? "workout saved to Health"
+                                                : "workout ended, save failed"
+                }
             }
+        }
+    }
+
+    /// Attach a 1-10 "Rate your effort" score to the workout just finished.
+    ///
+    /// Two steps, and the second is the one that is easy to miss: saving the
+    /// sample puts a number in Health, and `relateWorkoutEffortSample` is what
+    /// makes it that WORKOUT's effort rather than a free-floating reading. Skip
+    /// the relate and the Fitness app shows nothing.
+    ///
+    /// Best effort throughout. A failure here costs a rating, never a capture.
+    func saveEffort(_ score: Int) {
+        guard let workout = finishedWorkout,
+              let type = HKObjectType.quantityType(forIdentifier: .workoutEffortScore)
+        else { return }
+        let sample = HKQuantitySample(
+            type: type,
+            quantity: HKQuantity(unit: .appleEffortScore(), doubleValue: Double(score)),
+            start: workout.startDate,
+            end: workout.endDate)
+        healthStore.save(sample) { [weak self] ok, _ in
+            guard ok else { self?.setStatus("effort not saved"); return }
+            self?.healthStore.relateWorkoutEffortSample(sample, with: workout,
+                                                        activity: nil) { _, _ in
+                DispatchQueue.main.async {
+                    self?.effortSaved = true
+                    self?.finishedWorkout = nil
+                    self?.status = "effort \(score)/10 saved"
+                }
+            }
+        }
+    }
+
+    /// Apple's own wording for the 1-10 scale, so the rating means the same
+    /// thing here as it does in the Workout app.
+    static func effortLabel(_ score: Int) -> String {
+        switch score {
+        case ...3: return "Easy"
+        case 4...6: return "Moderate"
+        case 7...8: return "Hard"
+        default: return "All Out"
         }
     }
 
@@ -468,6 +543,55 @@ extension MotionRecorder: HKWorkoutSessionDelegate {
             if self.phase != .idle { WKInterfaceDevice.current().play(.failure) }
         }
     }
+}
+
+/// Live metrics for the workout screen. Everything the Workout app would show
+/// for a strength session comes from here, so that starting the workout in this
+/// app is not a downgrade — which it was, for exactly as long as C4's session
+/// existed with nothing displaying it.
+///
+/// `HKLiveWorkoutDataSource` decides WHICH types arrive; this only reads the
+/// running statistics for whatever did. A type the lifter denied simply never
+/// appears and its field stays at zero.
+extension MotionRecorder: HKLiveWorkoutBuilderDelegate {
+
+    func workoutBuilder(_ builder: HKLiveWorkoutBuilder,
+                        didCollectDataOf collectedTypes: Set<HKSampleType>) {
+        // Snapshot on the calling queue, publish once on main. Reading the
+        // statistics is cheap; hopping per type would not be.
+        var hr: Double?, hrAvg: Double?, active: Double?, basal: Double?
+
+        for type in collectedTypes {
+            guard let quantity = type as? HKQuantityType,
+                  let stats = builder.statistics(for: quantity) else { continue }
+            switch quantity.identifier {
+            case HKQuantityTypeIdentifier.heartRate.rawValue:
+                let bpm = HKUnit.count().unitDivided(by: .minute())
+                hr = stats.mostRecentQuantity()?.doubleValue(for: bpm)
+                hrAvg = stats.averageQuantity()?.doubleValue(for: bpm)
+            case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:
+                active = stats.sumQuantity()?.doubleValue(for: .kilocalorie())
+            case HKQuantityTypeIdentifier.basalEnergyBurned.rawValue:
+                basal = stats.sumQuantity()?.doubleValue(for: .kilocalorie())
+            default:
+                continue
+            }
+        }
+
+        DispatchQueue.main.async {
+            if let hr { self.heartRate = hr }
+            if let hrAvg { self.avgHeartRate = hrAvg }
+            if let active { self.activeEnergy = active }
+            // Total is what the Workout app calls "Total Calories": active plus
+            // resting. Basal can arrive on its own, so recompute from whichever
+            // of the two is current rather than from this callback's set.
+            let a = active ?? self.activeEnergy
+            let b = basal ?? max(self.totalEnergy - self.activeEnergy, 0)
+            self.totalEnergy = a + b
+        }
+    }
+
+    func workoutBuilderDidCollectEvent(_ builder: HKLiveWorkoutBuilder) {}
 }
 
 extension MotionRecorder: WCSessionDelegate {

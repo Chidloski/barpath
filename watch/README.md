@@ -105,6 +105,33 @@ watchOS 26.5 SDK headers and none exist:
 heart rate and energy, as a Traditional Strength Training workout with ring
 credit. Start it from the app; there is then no second session to preempt.
 
+### The screens
+
+Giving up the Workout app is only acceptable if nothing is lost with it, so the
+app shows what that app showed. Two pages while a workout is running, paged with
+the crown or a swipe:
+
+| page | when you want it |
+|---|---|
+| **Workout** (swipe up) | between sets. Elapsed clock, live heart rate with workout average, active and total calories. |
+| **Record** (default) | during a set. The calibrate / start / finish buttons, and nothing else. |
+
+Paged rather than one long scroll on purpose: scrolling past live metrics to
+reach **Finish Set** at the end of a hard rep is the wrong shape. The Record
+page is the default because it is why the app exists.
+
+**Rate your effort.** Ending a workout shows a 1–10 effort dial — Apple's own
+scale and wording (Easy / Moderate / Hard / All Out), driven by the crown or the
+slider. It writes an `HKQuantityTypeIdentifierWorkoutEffortScore` sample **and**
+calls `relateWorkoutEffortSample` to attach it to that workout; saving the sample
+alone leaves a free-floating number the Fitness app will not show against the
+session. **Skip** is a first-class option — an unrated workout is still a saved
+workout, and a rating should not be the price of the Health record.
+
+Metrics are best-effort throughout. A HealthKit type you denied simply never
+arrives and its field stays at `--`; none of it touches the CSV, which comes
+from Core Motion and depends on none of it.
+
 *The tradeoff.* This is a workflow change, not a repair — the collision is still
 there, it is just no longer provoked. If you open the Workout app **during** a
 recording it preempts *us*, Core Motion stops the next time your wrist drops, and
@@ -122,8 +149,11 @@ starting one. That test costs one set and has never been run.
 0. **Start Workout** (idle screen) — instead of starting one in the Workout app.
    Once per gym session, not per set. If you forget, **Calibrate** starts one for
    you and says so on the status line; losing a capture to a suspended app is the
-   worse failure. At the end of the session, **End Workout & Save** writes it to
-   Health.
+   worse failure. Once it is running, **swipe up** for the workout page — elapsed,
+   heart rate, calories — and back down for the recording controls. At the end of
+   the session, **End Workout & Save** writes it to Health and asks you to rate
+   the effort 1–10 (crown or slider; **Skip** is fine, the workout is already
+   saved by then).
 1. Type the movement name (e.g. `deadlift_80`).
 2. **Calibrate** — starts recording. Hold the bar still ~3 s (racked / on the
    floor). This is the *opening anchor*; it must be at the start and genuinely
@@ -181,6 +211,13 @@ these sources in.
 5. Set the deployment targets to your OS versions, pick your team for signing,
    build the **watch** scheme to your paired watch.
 
+   **The watch target's minimum deployment must be watchOS 11.0 or later.** The
+   effort rating uses `HKQuantityTypeIdentifierWorkoutEffortScore` and
+   `relateWorkoutEffortSample`, both watchOS 11, and the paged layout uses
+   `.tabViewStyle(.verticalPage)`. Below 11.0 those are compile errors, not
+   runtime degradation. Sources typecheck against `-target
+   arm64_32-apple-watchos11.0`.
+
 ## Loading an updated build onto the watch
 
 The Xcode project is not checked in, so you already have one — this is the
@@ -196,15 +233,17 @@ update path, not first-time setup.
    the phone app and the embedded watch app in one shot; you do not need a
    separate phone install.
 3. **First launch on the watch: expect a HealthKit prompt, and grant it.** The
-   app now asks for **heart rate**, **active/resting energy** and **walking +
-   running distance** on top of Workouts, because it saves a real workout rather
-   than holding an unsaved session. Denying them does not stop recording — the
-   keep-alive and the CSV are unaffected — it only thins the saved workout.
-4. **Check it took.** Two things. On the idle screen there is now a **Start
+   app now asks for **heart rate**, **active/resting energy**, **walking +
+   running distance** and **workout effort score** on top of Workouts, because
+   it saves a real workout rather than holding an unsaved session. Denying them
+   does not stop recording — the keep-alive and the CSV are unaffected — it only
+   thins the saved workout and blanks the metrics screen.
+4. **Check it took.** Three things. On the idle screen there is now a **Start
    Workout** button (and, once running, "End Workout & Save"); if the only
-   button is Calibrate, the old build is running. And the "Finish Set" button is
-   **orange** rather than red, showing a `HOLD STILL / closing anchor` countdown
-   instead of saving immediately.
+   button is Calibrate, the old build is running. Once a workout is running,
+   **swiping up shows the metrics page** — elapsed clock, heart rate, calories.
+   And the "Finish Set" button is **orange** rather than red, showing a
+   `HOLD STILL / closing anchor` countdown instead of saving immediately.
 5. **Check the phase column arrived.** `head -1` the CSV: the header should end
    `...,gx,gy,gz,phase`, and `io.check_log` will tell you if the closing hold ran
    for less than 2 s.
