@@ -149,17 +149,34 @@ say 10 and 44 reps. Both are correct as of when they were taken.
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
 
-**P1 — Rep counting is 51/52, not solved; window extent is now checkable on
-every lift.** Reopened 2026-07-30 by the new captures.
+**P1 — Counting and extent are both clean at 52/52; the phase question is
+untouched and is the one that matters.** Rewritten 2026-07-31 by C5.
 
 *Counting:* A1 closed this at 44/44 with zero false positives, against the old
 stationary detector's 0 of 14 bench and 1 of 15 squat. That was true on the ten
-captures then held. The 2026-07-30 session broke it: `bench_spoto_90x5_1`
-segments a 5-rep set into **6** windows, the extra one running 88.7 cm of
-vertical against a 35 cm bench bound — the re-rack counted as a rep. It had gone
-unnoticed because `REP_LABEL` did not match the `spoto` variant token, so
-`expected_reps` was `None` and every count gate silently skipped all three new
-benches. The regex is fixed and the failure is xfailed with its evidence.
+captures then held. The 2026-07-30 session broke it to 51/52 —
+`bench_spoto_90x5_1` segmented a 5-rep set into **6** windows, the re-rack
+counted as a rep — hidden because `REP_LABEL` did not match the `spoto` variant
+token, so `expected_reps` was `None` and every count gate silently skipped all
+three new benches.
+
+C5 fixed it on 2026-07-31 and counting is **52/52**. The cause was
+`segment._longest_cadence`'s cadence tolerance of 1.6: that capture's five reps
+sit 2.78–2.94 s apart and the first post-set movement follows 4.50 s after the
+last, so admitting it needs 4.50/2.86 = 1.573, which 1.6 allowed — growing a run
+of six that beat the true run of five *on length alone*. It is 1.45 now, the
+middle of a plateau where every value in 1.35–1.55 gives 17/17. That plateau is
+bounded by real data on both sides and the margins are not large: 1.30 and below
+splits `squat_140x4_3`, whose four reps genuinely vary 5.00/5.60/6.55 s (ratio
+1.310), and 1.60 and above restores the failure. **A rest-pause or cluster set
+would have a real mid-set gap above 1.45 and would be split.** No such capture
+exists in `data/raw/`, so this holds for touch-and-go and straight sets only.
+
+Two things that fix taught us. The old segmenter was also *missing rep 1* on
+that capture — it was 4 real reps plus 2 spurious, not 5 plus 1, so a right-ish
+count concealed two errors. And duration was blind to it: the spurious windows
+ran 2.1 and 2.6 s against real reps of 2.5–2.9 s. Only their 45.7 and 88.7 cm of
+vertical gave them away.
 
 *Window extent, which is new.* Counts cannot see phase — the segmenter scored a
 perfect 44/44 while every window ran lockout-to-lockout, half a rep out of step.
@@ -173,11 +190,38 @@ But they now have a *partial* external check: per-rep vertical ROM against
 `truth.VERTICAL_ROM_M`. It cannot see phase either — a window half a rep out of
 step has the right amplitude — but it does see a window that spans too much or
 too little, which counting cannot. It found `squat_160x1` reconstructing 18.0 cm
-for a 160 kg single at a correct count of 1 of 1. That is the first time a gate
-in this project has caught a right-count-wrong-window failure.
+for a 160 kg single at a correct count of 1 of 1: the first time a gate in this
+project caught a right-count-wrong-window failure.
+
+C5 fixed that one too, and its cause is worth keeping because it is a hole in an
+argument rather than a bad constant. `_similar_cluster` ranks candidate clusters
+by `(size, median_time)`, and the lateness tie-break rests on "a lifter sets up
+first and lifts second". That argument correctly rejects everything *before* the
+reps — approach, unrack, walkout — and says **nothing about what comes after
+them, and something always does.** On a multi-rep set it never bites, because
+the reps are the largest cluster and size decides first. On a *single* there is
+no cluster to be largest: every candidate is a cluster of one, size is
+degenerate, lateness decides alone, and the latest movement in any capture is by
+construction the re-rack. Singletons now rank by concentric displacement
+instead — an argmax, so no threshold — and the capture reconstructs 67.0 cm.
+
+**That rule is unfalsified on bench rather than verified there, and the
+distinction is load-bearing.** It claims a working rep moves the bar further
+than the movements bracketing it. That is measurably false on bench:
+`bench_92.5x2`'s unrack carries 0.433 m against 0.295 and 0.239 for its two real
+reps. Clustering saves every bench capture we hold (winning cluster size 4+), and
+`squat_160x1` is the only one of 17 whose winning cluster is size 1 — but **a
+bench single would enter this branch and pick the unrack.** Duration does not
+rescue it either. If you capture a bench single, expect this to fail.
+
+The C3 `phase` column cannot help either defect, which was checked rather than
+assumed: the lifter re-racks *before* pressing "Finish Set", so both spurious
+windows sat entirely inside `phase == 1`. **The column marks the closing hold,
+not the end of lifting.**
+
 *Evidence:* `analysis/04`–`07`, `12` for the old failure; `15`–`18` for A1;
 `17` and `src/README.md` for the phase bug; `23` and `analysis/README.md` for
-the ROM bounds.
+the ROM bounds; `tests/test_segmentation.py` and `28` for C5.
 
 **P2 — Horizontal is 5–15× outside spec; vertical is out too, but the ruler
 that says so is itself broken on two captures of three.** Measured against

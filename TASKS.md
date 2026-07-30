@@ -29,9 +29,10 @@ because SNR tests whether a mean is reproducible, not whether it is bias.
 ### A1 — rep segmentation `e8a8a0b` `efd5f5c`
 **44/44 reps across all 10 captures, zero false positives**, against the old
 stationarity segmenter's 0/14 bench and 1/15 squat. *(True as measured. The
-2026-07-30 session took it to **51/52** — see P1; `bench_spoto_90x5_1` counts
+2026-07-30 session took it to **51/52** — see P1; `bench_spoto_90x5_1` counted
 the re-rack as a sixth rep, and the variant token in its name had kept it out
-of the gates entirely.)* Shape matching in a
+of the gates entirely. **C5 restored it to 52/52 on 2026-07-31.**)* Shape
+matching in a
 fixed-*duration* window, floor-impact anchors where the lift provides them
 (6/6, 6/6, 3/3), and lateness as the tie-break. Every rep window now contains
 both a concentric and an eccentric phase of comparable size (0/44 unbalanced,
@@ -225,10 +226,12 @@ Four results, in descending order of how much they change what we believe:
    radius quantisation and tracker drift all tested and ruled out.
 2. **The reconstruction passes on all 17 captures** bar two known defects, and
    is more self-consistent on vertical ROM than the video judging it.
-3. **Rep counting is 51/52, not 44/44** — `bench_spoto_90x5_1` counts the
+3. **Rep counting went to 51/52, not 44/44** — `bench_spoto_90x5_1` counted the
    re-rack, hidden by a regex that did not match the variant token in its name.
-4. **`squat_160x1` reconstructs 18.0 cm at a correct count of 1 of 1** — the
+   *Fixed by C5 on 2026-07-31; counting is 52/52.*
+4. **`squat_160x1` reconstructed 18.0 cm at a correct count of 1 of 1** — the
    first right-count-wrong-window failure any gate here has caught.
+   *Fixed by C5; it reads 67.0 cm.*
 
 `analysis/23_rom_bounds.png`, `python run.py --rom`.
 
@@ -344,17 +347,47 @@ Ordered by what unblocks the most. **Re-ordered by A3's measurements:** B6 and
 B2 are where the error actually is; B3 dropped because measurement showed it
 worth 2–4 cm, not 15.
 
-### C5 — fix the segmenter's two new failures  ← from C4
-Both are xfailed with their evidence in `tests/test_real_data.py`
-(`WRONG_REP_COUNT`, `KNOWN_ROM_FAILURES`), so they cannot be forgotten and a fix
-announces itself.
+### C5 — DONE 2026-07-31. Both segmenter failures fixed, by two mechanisms
+Counting is **52/52** and every rep of all 17 captures sits inside its ROM band
+bar `deadlift_180x3` rep 2 at 61.1 cm, which is inside the gate's slack and is a
+different problem. Fifteen captures are unchanged rep for rep. Four lines of
+behaviour changed; `WRONG_REP_COUNT` and `KNOWN_ROM_FAILURES` are now empty.
+*Evidence:* `analysis/28`, `tests/test_segmentation.py`.
 
-- `bench_spoto_90x5_1`: the re-rack is counted as a sixth rep. Its 88.7 cm of
-  vertical is 2.5× the bench bound, so ROM alone would reject it — but rejecting
-  on ROM is a patch, not a diagnosis. Why does `_similar_cluster` accept it?
-- `squat_160x1`: one rep, correctly counted, window spanning 18.0 cm of a ~65 cm
-  squat. A single has no cadence for `_longest_cadence` to work with, which is
-  the first thing to check.
+**The two defects looked alike and were not**, which is why they did not share a
+fix. `squat_160x1`'s bad window was 1.26 s against 2.8–3.1 s for every other
+squat — anomalous in *duration*. `bench_spoto_90x5_1`'s spurious windows were
+2.1 and 2.6 s against real reps of 2.5–2.9 s — indistinguishable in duration,
+anomalous only in *amplitude*. A criterion covering both would have been fitted
+to the pair.
+
+- `bench_spoto_90x5_1`: `_longest_cadence`'s tolerance was 1.6 and admitting the
+  4.50 s post-set gap needs 4.50/2.86 = 1.573, so a run of six beat the true run
+  of five on length alone. It is 1.45 now, the middle of a **1.35–1.55** plateau
+  measured over all 17 captures: below 1.30 `squat_140x4_3` splits (its reps
+  genuinely vary by a third, ratio 1.310), at 1.60 the failure returns. The old
+  run of six was also *shifted* — it missed the real rep 1, so it was 4 real
+  plus 2 spurious, not 5 plus 1.
+- `squat_160x1`: `_similar_cluster`'s lateness tie-break encodes "set up first,
+  lift second", which rejects everything *before* the reps and nothing after
+  them. On a single, every cluster is size 1, so lateness decided alone and
+  picked the re-rack. Singletons now rank by concentric displacement — an
+  argmax, no threshold. Reads 67.0 cm.
+
+**Two live caveats, neither hypothetical.** A rest-pause or cluster set has a
+real mid-set gap above 1.45 and would be split. And the singleton rule claims a
+rep moves the bar further than the movements bracketing it, which is measurably
+**false on bench** — `bench_92.5x2`'s unrack carries 0.433 m against 0.295 for a
+real rep — so a bench *single* would pick the unrack. Clustering saves every
+bench capture held, and a gate pins that containment.
+
+`phase` cannot help either: the lifter re-racks before pressing "Finish Set", so
+both spurious windows sat inside `phase == 1`. The C3 column marks the closing
+hold, not the end of lifting.
+
+**This fixes count and extent, not phase.** Whether a bench or squat window
+starts where the rep starts is still unverified, and a window half a rep out of
+step has the right count, duration and amplitude.
 
 ### B6 — attack the acceleration error itself  ← next, and C6 aimed it
 A3 puts the error upstream of the detrend and gives it a shape: a smooth arch
@@ -485,11 +518,19 @@ effective sample size is the REP count, not the sample count — is stated as a
 judgement and checked by a bootstrap in `tests/test_projection.py`, which is
 written as a distribution statement because it does not hold on every capture.
 
-It vouches for 9 of 17 sets, and it discriminates without having been tuned to:
-it rejects both captures with a known segmentation defect
-(`bench_spoto_90x5_1`'s 91.6 cm excursion, `squat_160x1`'s single rep) and the
+It vouches for **11 of 17** sets — 9 when this was written, before C5.
+
+Half the evidence that it discriminates has since evaporated. It used to reject
+both captures with a known segmentation defect (`bench_spoto_90x5_1`'s 91.6 cm
+excursion, `squat_160x1`'s single rep); C5 fixed both defects and both now pass
+comfortably (excursion 91.6 → 9.4 cm at ratio 20.2, and ratio 69.7). Confidence
+was agreeing with the segmenter's failures, and stopped objecting when they
+stopped happening — consistent with it working, but no longer independent
+evidence that it does. What survives is the stronger half: it still rejects the
 two deadlifts with the worst measured error (35.9 and 30.0 cm excursion, 9.19
-and 15.44 cm rms), while accepting `deadlift_155x6_1`, the best at 5.05 cm.
+and 15.44 cm rms) and accepts `deadlift_155x6_1`, the best at 5.05 cm — a
+comparison against video rather than against this pipeline. Treat
+`squat_160x1`'s 69.7 as weak: single-rep PCA, where `min_ratio(1)` is 10.1.
 
 **Vouching for the axis is not vouching for the path**, and the code says so in
 three places. An error at rep frequency (P3) lands in the covariance as variance
@@ -580,9 +621,12 @@ Not code, and the highest value per effort available:
   it calibrates at the bottom of frame for travel reaching the top. The referee
   for P2 is mis-scaled and no amount of code repairs footage. See `analysis/23`.
 - **Step the camera back.** Squat clips the plate at lockout; bench sits the
-  plate against clutter. Both become usable truth with no code. Squat is worth
-  more than it was: `squat_160x1` reconstructs 18.0 cm for a 160 kg single and
-  there is nothing to check it against.
+  plate against clutter. Both become usable truth with no code.
+- **Film a bench single.** Newly worth doing: C5's singleton rule ranks by
+  displacement, and `bench_92.5x2`'s unrack moves the bar *further* than its
+  reps, so a bench single is predicted to segment onto the unrack. No capture
+  exists to confirm or refute it. One set of one is the cheapest falsifier in
+  this list.
 - **Film a plumb line once**, to put a number on lens distortion — the leading
   candidate for the scale error above.
 - **Tape the lockout height.** Deadlift bar centre at lockout, once. It would

@@ -23,7 +23,7 @@ and ends in the same place.
 All nine steps now run, on every capture — step 8 was implemented on
 2026-07-30 and nothing raises. **That is coverage, not correctness.** The
 reconstruction is still 5-15x outside its horizontal spec where anything can
-measure it, the display axis's sign is unresolved, and 8 of 17 sets do not earn
+measure it, the display axis's sign is unresolved, and 6 of 17 sets do not earn
 enough axis confidence to be drawn stretched. It is being rebuilt after the
 original version passed every synthetic gate and failed in the gym by two
 orders of magnitude, and a completing pipeline is not a working one.
@@ -35,12 +35,19 @@ plots and numbers.
 One thing works well and is verified against video: the IMU and the video agree
 on floor-impact **timing** to 11–16 ms.
 
-Rep segmentation was the other, at 44/44 with zero false positives, and the
-2026-07-30 captures took it to **51/52** — `bench_spoto_90x5_1` counts the
-re-rack as a sixth rep of a five-rep set. The same session also showed the video
-ground truth is trustworthy on timing and horizontal but **not on vertical
-scale**: per-rep ROM across three deadlifts by one lifter spreads 47.6–66.8 cm
-against a measured 61 cm ceiling. See `CLAUDE.md` P1 and P2.
+Rep segmentation is the other, and it is back to **52/52** with zero false
+positives. The 2026-07-30 captures broke it to 51/52 — `bench_spoto_90x5_1`
+counted the re-rack as a sixth rep of a five-rep set — and C5 fixed that on
+2026-07-31 along with a squat single whose window had landed on the re-rack.
+Counts and window *extent* are now clean on all 17 captures. **Window phase on
+bench and squat is still unverified**, and a window half a rep out of step has
+the right count, the right duration and the right amplitude, so do not read
+52/52 as more than it says.
+
+The same 2026-07-30 session showed the video ground truth is trustworthy on
+timing and horizontal but **not on vertical scale**: per-rep ROM across three
+deadlifts by one lifter spreads 47.6–66.8 cm against a measured 61 cm ceiling.
+See `CLAUDE.md` P1 and P2.
 
 The sensor is not the problem, which took until 2026-07-30 to establish. On a
 watch lying on a table, Core Motion's residual gyro bias is **0.002 °/s**, its
@@ -147,4 +154,5 @@ looks plausible, which is exactly how you convince yourself a broken pipeline
 works. Since 2026-07-30 they have one weak external check — per-rep vertical ROM
 against `truth.VERTICAL_ROM_M`. It cannot see phase and constrains one axis, but
 it is not self-referential, and it caught `squat_160x1` reconstructing 18 cm of
-a 65 cm squat at a correct rep count of 1 of 1.
+a 65 cm squat at a correct rep count of 1 of 1 — a defect C5 has since fixed,
+and one no count could have found.

@@ -44,19 +44,26 @@ needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
 
 # Captures whose rep COUNT is wrong. P1 recorded counting as closed at 44/44,
 # and it was, on the ten captures that existed on 2026-07-29. The 2026-07-30
-# session added seven more and broke it — so the honest state is 51/52, not
-# 44/44, and the gates below xfail here rather than being loosened.
+# session added seven more and took it to 51/52 — `bench_spoto_90x5_1` counted
+# the re-rack as a sixth rep, hidden by a REP_COUNT regex that did not match
+# the 'spoto' variant token.
+#
+# EMPTY as of 2026-07-31 (C5): counting is 52/52. The cause was
+# `segment._longest_cadence`'s tolerance of 1.6, which admitted the 4.50 s gap
+# between the last rep and the re-rack (4.50/2.86 = 1.573) and grew a run of
+# six that beat the true run of five on length. It is 1.45 now, the middle of a
+# plateau that gives 17/17.
+#
+# Kept rather than deleted, with `xfail_if_miscounted`, because the next
+# miscount wants recording the same way. But NOTE this mechanism is NOT strict:
+# `pytest.xfail()` raises immediately, so an entry here masks a test whether it
+# would pass or fail, and a fix does not announce itself the way
+# KNOWN_ROM_FAILURES' does. Verify by hand before adding or removing one.
 #
 # Separate from KNOWN_ROM_FAILURES, which is about how far each window SPANS.
 # A window can be miscounted with the right extent or counted right with the
-# wrong extent, and squat_160x1 is exactly the second case.
-WRONG_REP_COUNT = {
-    "bench_spoto_90x5_1": (
-        "segments a 5-rep set into 6 windows. The spurious extra runs 88.7 cm "
-        "of vertical against a 35 cm bench bound, so it is not a rep split in "
-        "two — it is the re-rack being counted. Undetected until 2026-07-30 "
-        "because REP_COUNT did not match the 'spoto' variant token"),
-}
+# wrong extent, and squat_160x1 was exactly the second case.
+WRONG_REP_COUNT: dict[str, str] = {}
 
 
 def xfail_if_miscounted(path: Path) -> None:
@@ -298,17 +305,25 @@ def test_every_rep_contains_both_phases(path):
 # and spanning less. P1 closed counting at 44/44 while every window sat half a
 # rep out of phase; this is a different question asked of the same windows.
 SLACK_M = 0.02      # the bounds are anatomical, quoted to the nearest cm
-KNOWN_ROM_FAILURES = {
-    "bench_spoto_90x5_1": (
-        "segments a 5-rep set into 6 windows; reps 5 and 6 come out 45.7 and "
-        "88.7 cm against a 35 cm bench bound. Invisible before 2026-07-30 "
-        "because REP_COUNT did not match 'spoto', so this capture was not in "
-        "CAPTURES and no gate ran on it at all"),
-    "squat_160x1": (
-        "reconstructs 18.0 cm for a single at 160 kg, a quarter of the ~65 cm "
-        "the other squat captures give. The window is a fragment of the rep, "
-        "not the rep — and note the COUNT is right, 1 of 1"),
-}
+# EMPTY as of 2026-07-31 (C5). It held the two defects this bound was written
+# to catch, and both are fixed in `segment.py`:
+#
+#   bench_spoto_90x5_1 — segmented a 5-rep set into 6 windows; reps 5 and 6
+#   came out 45.7 and 88.7 cm against a 35 cm bench bound. Cause: the cadence
+#   tolerance was 1.6 where admitting the post-set gap needs 1.573. Now 5
+#   windows at 27.6-30.0 cm.
+#
+#   squat_160x1 — reconstructed 18.0 cm for a single at 160 kg at a correct
+#   count of 1 of 1, the first right-count-wrong-window failure any gate here
+#   caught. Cause: a single leaves every cluster size 1, so the lateness
+#   tie-break decided alone and picked the re-rack. Now 67.0 cm.
+#
+# What remains marginal, and was NOT introduced by C5: deadlift_180x3 rep 2
+# reconstructs 61.1 cm against a 61 cm bound, inside SLACK_M and nothing else.
+# It is the worst capture by measured horizontal error (P2) and the one that
+# over-reads its impact step (P6); treat a drift past ~63 cm as that capture
+# getting worse rather than as the bound being tight.
+KNOWN_ROM_FAILURES: dict[str, str] = {}
 
 
 @needs_data
@@ -499,7 +514,7 @@ def test_pipeline_runs_end_to_end_without_raising(path):
 
     Do not read that as progress toward the spec. The pipeline is still 5-15x
     outside its horizontal target where anything can measure it (P2), the
-    display axis's sign is unresolved (B4), and 8 of 17 sets do not earn
+    display axis's sign is unresolved (B4), and 6 of 17 sets do not earn
     `project.confidence` at all. A completing pipeline is not a working one, and
     this gate deliberately asserts nothing about quality — `vs_truth` and the
     ROM bounds do that.

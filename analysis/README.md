@@ -411,21 +411,27 @@ its impact velocity step by 58–72% (B5). Three independent complaints about th
 same capture, still undiagnosed.
 
 **Three defects the bounds found in the pipeline, all in the new captures.**
+Two were fixed by C5 on 2026-07-31 — see `28` below — and are kept here as the
+record of what the bounds were able to catch.
 
-- `bench_spoto_90x5_1` segments a 5-rep set into **6** windows; the extra one
-  runs 88.7 cm of vertical against a 35 cm bench bound, so it is the re-rack
+- `bench_spoto_90x5_1` segmented a 5-rep set into **6** windows; the extra one
+  ran 88.7 cm of vertical against a 35 cm bench bound, so it was the re-rack
   being counted, not a rep split in two. It had gone undetected because
   `REP_LABEL`/`REP_COUNT` did not match the `spoto` variant token — so
   `expected_reps` was `None` and *every* count gate silently skipped all three
   of the 2026-07-30 benches. P1's "44/44 with zero false positives" was true
-  when measured and is now **51/52**.
-- `squat_160x1` reconstructs **18.0 cm** for a single at 160 kg, a quarter of
-  the ~65 cm the other squat captures give. The count is right, 1 of 1 — this
+  when measured, went to **51/52**, and is **52/52** since C5.
+- `squat_160x1` reconstructed **18.0 cm** for a single at 160 kg, a quarter of
+  the ~65 cm the other squat captures give. The count was right, 1 of 1 — this
   is the failure mode P1 warns about, a window in the right number and the
-  wrong place, and it is the first time a gate here has caught one.
+  wrong place, and it is the first time a gate here caught one. **It reads
+  67.0 cm since C5.**
 - `deadlift_180x3` rep 2 lands at 61.1 cm against the 61 cm bound. A 0.2%
   breach is inside the precision of the bound itself; it is reported and does
-  not fail the gate, which allows 2 cm of slack.
+  not fail the gate, which allows 2 cm of slack. **This one is not fixed and
+  was not touched by C5** — it is the same capture that is worst by horizontal
+  error and over-reads its impact step, so treat a drift past ~63 cm as that
+  capture degrading rather than as the bound being tight.
 
 ## C6 — the two anchors, and the error they cannot see (2026-07-30)
 - `24_c6_two_anchors.png` — four panels. Regenerate with `python run.py --anchors`.
@@ -636,9 +642,11 @@ would convince itself a broken pipeline works, and is why CLAUDE.md says to
 validate on deadlift first.
 
 Row 3 is the one check that reaches all three lifts: per-rep vertical ROM
-against `truth.VERTICAL_ROM_M`, every rep of every capture. All inside the bands
-except the two known defects — `bench_spoto_90x5_1`'s spurious sixth window and
-`squat_160x1`'s 18 cm fragment.
+against `truth.VERTICAL_ROM_M`, every rep of every capture. When 27 was drawn,
+two captures fell outside the bands — `bench_spoto_90x5_1`'s spurious sixth
+window and `squat_160x1`'s 18 cm fragment. **C5 fixed both on 2026-07-31**, so
+all 52 reps now sit inside the bands bar `deadlift_180x3` rep 2 at 61.1 cm,
+which is inside the gate's 2 cm slack. Redraw 27 to see the current state.
 
 **What 21 shows on the current pipeline.** Rows 3 and 4 are the drift: vertical
 velocity ramps to −6 m/s on the deadlift and position spans **57.7 m** against a
@@ -669,11 +677,28 @@ independent draws. That is stated as a judgement and checked by a bootstrap in
 `tests/test_projection.py`, written as a distribution statement because it does
 not hold on every capture.
 
-**It vouches for 9 of 17 sets, and discriminates without having been tuned to.**
-It rejects both captures with an independently known segmentation defect —
-`bench_spoto_90x5_1` (91.6 cm excursion) and `squat_160x1` (one rep) — and the
-two deadlifts with the worst measured error (35.9 and 30.0 cm excursion, 9.19
-and 15.44 cm rms), while accepting `deadlift_155x6_1`, the best at 5.05 cm.
+**It vouches for 11 of 17 sets** (9 when this was written, before C5).
+
+**Half the evidence for "it discriminates without having been tuned to" has
+since evaporated, and that is worth stating rather than quietly restating the
+claim.** It used to reject both captures with an independently known
+segmentation defect — `bench_spoto_90x5_1` at 91.6 cm excursion and
+`squat_160x1` at one rep. C5 fixed both defects on 2026-07-31 and both now pass
+comfortably: `bench_spoto_90x5_1`'s excursion falls 91.6 → **9.4 cm** at a ratio
+of 20.2, and `squat_160x1` reaches a ratio of **69.7**. So confidence was
+agreeing with the segmenter's failures, and when the segmenter stopped failing
+it stopped objecting — which is consistent with it working, but is no longer
+independent evidence that it does.
+
+What survives intact is the half that was always the stronger one: it rejects
+the two deadlifts with the worst measured error (35.9 and 30.0 cm excursion,
+9.19 and 15.44 cm rms) and accepts `deadlift_155x6_1`, the best at 5.05 cm.
+That comparison is against video, not against another part of this pipeline.
+
+**And treat `squat_160x1`'s 69.7 as weak.** It is a single-rep PCA, where
+`min_ratio(1)` is 10.1 — one smooth excursion has little to disagree with
+itself about, so a high ratio there is close to structural. Passing on one rep
+is not the same evidence as passing on six.
 
 **Vouching for the axis is not vouching for the path.** An error at rep
 frequency (P3) lands in the covariance as variance and makes the ratio look
@@ -682,3 +707,72 @@ frequency (P3) lands in the covariance as variance and makes the ratio look
 "NO external horizontal check" on bench and squat, the measured rms on deadlift
 — and low-confidence sets are drawn without the 4× stretch, because stretching
 noise is how you invent faults.
+
+## C5 — both segmentation defects fixed, and neither by the same mechanism (2026-07-31)
+- `28_c5_segmentation.png` — band-passed vertical velocity for the two
+  defective captures, old windows above the axis and new below, each labelled
+  with its centimetres of vertical.
+
+Counting is **52/52** and every rep of all 17 captures is inside its ROM band
+except `deadlift_180x3` rep 2 at 61.1 cm, which is inside the gate's slack and
+is a different problem. Fifteen captures are unchanged rep for rep.
+
+**The two defects looked alike and were not.** That was the first useful finding
+and it is why no single criterion was allowed to fix both.
+
+`squat_160x1`'s bad window was **1.26 s** against 2.8–3.1 s for every other
+squat — anomalous in duration, at a correct count. `bench_spoto_90x5_1`'s two
+spurious windows were **2.1 and 2.6 s** against real reps of 2.5–2.9 s, so
+duration is blind to them and only their 45.7 and 88.7 cm of vertical gives them
+away. Mirror images, and a criterion covering both would have been fitted to the
+pair rather than derived from either.
+
+**Bench: a cadence tolerance that was 8% too loose.** The five reps sit 2.78,
+2.88, 2.86 and 2.94 s apart (ratio 1.058) and the first post-set movement
+follows 4.50 s after the last, so admitting it needs 4.50/2.86 = **1.573**.
+`_longest_cadence`'s tolerance was 1.6. That admitted the re-rack and grew a run
+of six which beat the true run of five **on length alone**. The plot shows the
+consequence the counts hid: the old run of six was *shifted*, missing the real
+rep 1 at 26–29 s entirely. It was four real reps plus two spurious, not five
+plus one.
+
+*The margin, swept over all 17 captures and confirmed independently.* Every
+value in **1.35–1.55** gives 17/17. Below 1.30 `squat_140x4_3` splits to 3 reps,
+because its four reps genuinely vary 5.00/5.60/6.55 s (ratio **1.310**) — real
+sets vary cadence by a third. At 1.60 the bench failure returns. 1.45 is the
+middle: 11% clear of the worst real set, 8% clear of the failure. **This is a
+plateau, not a wide one.** A rest-pause or cluster set would have a real mid-set
+gap above 1.45 and would be split; no such capture exists in `data/raw/`.
+
+**Squat: a tie-break resting on half an argument.** `_similar_cluster` ranks by
+`(size, median_time)`, and the lateness rule encodes "set up first, lift
+second". That correctly rejects everything *before* the reps and says nothing
+about what follows them — and something always does. On a multi-rep set it never
+bites, because size decides first. On a **single** there is no cluster to be
+largest: every candidate is size 1, lateness decides alone, and the latest
+movement in any capture is by construction the re-rack. Singletons now rank by
+concentric displacement — an argmax, no threshold — and the capture reads
+**67.0 cm**, separating 0.602 m against 0.384 for the runner-up.
+
+**That rule is unfalsified on bench, not verified there.** It claims a working
+rep moves the bar further than the movements bracketing it, and that is
+measurably false on bench: `bench_92.5x2`'s unrack carries 0.433 m against 0.295
+and 0.239 for its two real reps. Clustering saves every bench capture held
+(winning cluster size 4+) and `squat_160x1` is the only one of 17 whose winning
+cluster is size 1 — but **a bench single would enter this branch and pick the
+unrack**, and duration does not rescue it (area×duration also prefers that
+capture's setup, 0.302 against 0.280). A gate pins the containment so a future
+capture entering the branch announces itself.
+
+**`phase` cannot help either defect, and this was checked rather than assumed.**
+The lifter re-racks *before* pressing "Finish Set", so both spurious windows sat
+entirely inside `phase == 1` — `squat_160x1`'s re-rack ends at 38.3 s against
+phase 1 running to 39.3 s. **The C3 column marks the closing hold, not the end
+of lifting.** Both fixes are therefore phase-independent and apply equally to
+the ten older captures.
+
+**What this does not do.** It fixes how many windows there are and how far each
+spans. It says nothing about **phase** — whether a bench or squat window starts
+where the rep starts — which remains unverified and unverifiable until those
+lifts get an external anchor. A window half a rep out of step has the right
+count, the right duration and the right amplitude.

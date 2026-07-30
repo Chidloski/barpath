@@ -69,6 +69,27 @@ size. Gaps are compared to EACH OTHER rather than to their own median: against
 a median, 6.6 s and 12.9 s both fall inside a wide band and a bad run of three
 survives.
 
+**Two failures the 2026-07-30 captures added, both fixed 2026-07-31 (C5), and
+they do not share a mechanism.**
+
+`bench_spoto_90x5_1` counted six reps in a five-rep set. The cadence tolerance
+was 1.6 and admitting the first post-set movement needed 1.573, so a sloppy run
+of six outgrew the true run of five on length alone. The tolerance is 1.45 now,
+which is the middle of a 1.35–1.55 plateau bounded by real data at both ends.
+Worth noting what did NOT catch it: the two spurious windows are 2.1 and 2.6 s
+against real reps of 2.5–2.9 s, so duration is blind to them. Only their 45.7
+and 88.7 cm of vertical, against a 35 cm bench bound, gives them away.
+
+`squat_160x1` counted its one rep correctly and put the window on the re-rack —
+18.0 cm of a ~65 cm squat. A single leaves the cluster ranking degenerate: every
+candidate is a cluster of one, so the lateness tie-break decides alone, and the
+latest movement in any capture is the re-rack. Singletons now rank by
+displacement instead. See `_similar_cluster`, which records why that rule is
+unfalsified on bench rather than verified there.
+
+Neither is helped by the C3 `phase` column: the lifter re-racks before pressing
+"Finish Set", so both spurious windows sit inside `phase == 1`.
+
 Honest limit: **bench and squat have no impact anchor and still segment on the
 integrated velocity**, which carries 145 cm of in-band error against a 69 cm
 signal. Their counts are right; their boundaries are only as good as that
@@ -490,7 +511,7 @@ def _lobes_before(lobes, anchors, t) -> list:
     return chosen
 
 
-def _longest_cadence(chosen, t, tol=1.6):
+def _longest_cadence(chosen, t, tol=1.45):
     """Keep the longest run of candidates that share a cadence.
 
     Reps in a set come at a regular interval; the unrack does not belong to
@@ -501,6 +522,31 @@ def _longest_cadence(chosen, t, tol=1.6):
     Ties go to the later run, because a set is always set up first and lifted
     second. That is what resolves bench_92.5x2, where two reps and two setup
     events each form a pair and no cadence argument can separate them.
+
+    `tol` was 1.6 until 2026-07-31 and that is what miscounted
+    `bench_spoto_90x5_1` as six reps. Its five real reps sit 2.78, 2.88, 2.86
+    and 2.94 s apart — a ratio of 1.058 — and the first post-set movement
+    follows 4.50 s after the last rep. Admitting that gap needs 4.50/2.86 =
+    1.573, which 1.6 allowed, growing a run of six that beat the true run of
+    five on length alone. Note the failure is NOT that the extra window looks
+    like a rep: at 2.1 and 2.6 s the spurious windows are the same duration as
+    the real ones, and only their 45.7 and 88.7 cm of vertical gives them away.
+
+    **The judgement `tol` encodes:** the gap between two reps of one set varies
+    less than the gap between the last rep and whatever the lifter does next.
+    Falsified by a set with a genuine long pause mid-set — a rest-pause or
+    cluster set, where the lifter re-breathes between singles — which would
+    have a real gap ratio above 1.45 and would be split. No such capture exists
+    in `data/raw/`, so this is a bound from touch-and-go and straight sets only.
+
+    **The margin, measured over all 17 captures.** True rep runs span ratios of
+    1.018 to 1.310, the worst being `squat_140x4_3` at gaps of 5.00, 5.60 and
+    6.55 s. The false admission needs 1.573. Every value in **1.35–1.55** gives
+    17/17; 1.30 and below splits `squat_140x4_3` to 3 reps, 1.6 and above
+    restores the `bench_spoto_90x5_1` failure. 1.45 is the middle of that
+    plateau — 11% clear of the worst real set, 8% clear of the failure — so it
+    is a value bounded by real data on both sides rather than one that happens
+    to pass.
     """
     if len(chosen) < 3:
         return chosen
@@ -556,18 +602,62 @@ def _similar_cluster(v, t, lobes, similarity, peak_ratio) -> list:
     form a clean, internally consistent pair, so size alone picks whichever was
     seeded first — and picking the unrack yields exactly the right rep COUNT
     with entirely the wrong reps.
+
+    **Lateness is only half an argument, and a single exposes it.** "Set up
+    first, lift second" correctly rejects everything BEFORE the reps — the
+    approach, the unrack, the walkout. It says nothing about what comes AFTER
+    them, and something always does: the re-rack, the walk back, setting the
+    bar down. On a multi-rep set that never bites, because the reps are the
+    largest cluster and size decides before lateness is consulted. On a SINGLE
+    there is no cluster to be largest — every candidate is a cluster of one, so
+    lateness alone decides, and the latest movement in a capture is by
+    construction the re-rack.
+
+    That is exactly how `squat_160x1` failed: a correct count of 1, on the
+    re-rack at 37.7 s, giving an 18.0 cm window of a ~65 cm squat, while the
+    real rep sat at 33.6 s and yields 67.0 cm. `squat_160x1` is the only
+    capture of the 17 whose winning cluster has size 1 — every other has 4 or
+    more — so ranking singletons differently cannot disturb the other sixteen.
+
+    **The judgement for singletons:** rank by concentric displacement, because
+    a working rep moves the bar further than the movements that bracket it. On
+    `squat_160x1` the rep carries 0.602 m against 0.384 for the walkout and
+    0.170 for the re-rack, a 1.57x margin over the runner-up. It is an argmax,
+    so there is no threshold to fit.
+
+    **What would falsify it, and it is not hypothetical — it is bench.** The
+    claim fails wherever the unrack lifts the bar further than the rep does.
+    `bench_92.5x2` is exactly that capture: its unrack lobe carries 0.433 m
+    against 0.295 and 0.239 for its two real reps. Clustering saves it today
+    (its winning cluster has size 4, so this branch never runs), but a bench
+    SINGLE would land here and this rule would pick the unrack. There is no
+    bench single in `data/raw/`, so this rule is unfalsified on bench rather
+    than verified there, and it should not be trusted on one until a capture
+    exists. Duration does not rescue it either: area x duration also prefers
+    that capture's setup, 0.302 against 0.280.
+
+    **`phase` cannot help.** The C3 column marks the closing hold, not the
+    re-rack, and the lifter re-racks before pressing "Finish Set" — so on both
+    defective captures every spurious window sits entirely inside `phase == 1`
+    (`squat_160x1`'s re-rack at 37.7 s against phase 1 running to 39.3 s).
+    Checked, and it separates nothing here.
     """
     shapes = np.array([_shape(v, t, i) for i, _, _, _ in lobes])
     peaks = np.array([np.abs(v[a:b]).max() for _, a, b, _ in lobes])
     times = np.array([t[i] for i, _, _, _ in lobes])
+    areas = np.array([abs(a) for _, _, _, a in lobes])
 
-    best, best_score = None, (-1, -np.inf)
+    best, best_score = None, None
     for seed in range(len(lobes)):
         keep = _grow(shapes, peaks, seed, similarity, peak_ratio)
         if not keep.any():
             continue
-        score = (int(keep.sum()), float(np.median(times[keep])))
-        if score > best_score:
+        n = int(keep.sum())
+        # Clusters are only ever compared at equal `n`, so the second key
+        # never mixes units across a comparison.
+        score = (n, float(np.median(times[keep])) if n > 1
+                 else float(areas[keep].sum()))
+        if best_score is None or score > best_score:
             best, best_score = keep, score
 
     if best is None:
