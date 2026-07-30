@@ -2,10 +2,21 @@ import Foundation
 import CoreMotion
 import HealthKit
 import WatchConnectivity
+import WatchKit
 
 /// Records device-motion at 100 Hz to a CSV matching src/io.py COLUMNS, keeps
 /// the app alive with a HealthKit workout session, and ships finished logs to
 /// the paired iPhone over WatchConnectivity.
+///
+/// C4 — the workout session is now the workout OF RECORD, not a hidden
+/// keep-alive. watchOS allows exactly one primary workout session on the
+/// device, so the old code's "start a session whenever you press Calibrate"
+/// silently ended whatever the Workout app was running. It now starts on an
+/// explicit button, saves itself to Health so there is no reason to run the
+/// Workout app alongside, and has a delegate so a session lost to another app
+/// is visible instead of silently truncating a capture. The full reasoning,
+/// including the three coexistence routes that do not exist, is in the
+/// HealthKit section below.
 ///
 /// Two additions the Python side asked for, both about measuring error rather
 /// than about lifting:
@@ -69,10 +80,12 @@ final class MotionRecorder: NSObject, ObservableObject {
     ///   0 opening hold   1 reps   2 closing hold
     private var phaseCode = 0
 
-    // HealthKit workout session — its only job is to keep us running when the
-    // wrist drops. We never save the workout.
+    // HealthKit workout session. Two jobs now: keep us running when the wrist
+    // drops, AND be the workout the lifter would otherwise start in the Workout
+    // app. See the HealthKit section below for why those had to become one job.
     private let healthStore = HKHealthStore()
     private var workout: HKWorkoutSession?
+    private var builder: HKLiveWorkoutBuilder?
 
     // In-memory CSV rows. A set is a few thousand rows — trivial.
     private var rows: [String] = []
@@ -86,6 +99,7 @@ final class MotionRecorder: NSObject, ObservableObject {
         if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
         activateSession()
         requestHealthAuth()
+        recoverWorkout()
     }
 
     // MARK: - Control (the three buttons)
@@ -97,6 +111,11 @@ final class MotionRecorder: NSObject, ObservableObject {
         rows.removeAll(); sampleCount = 0; elapsed = 0; t0 = 0
         settleDeadline = nil; settleRemaining = settleDuration
         status = ""
+        // Auto-start the keep-alive if the lifter did not press Start Workout.
+        // Losing a gym capture to a suspended app is worse than taking over the
+        // device's workout session, so this stays automatic — but startWorkout()
+        // now says on screen that it took the session, rather than doing it
+        // invisibly the way this line used to.
         startWorkout()
         phaseCode = 0
         startMotion()
@@ -194,40 +213,173 @@ final class MotionRecorder: NSObject, ObservableObject {
 
     private func stopMotion() { motion.stopDeviceMotionUpdates() }
 
-    // MARK: - HealthKit workout (keep-alive only)
+    // MARK: - HealthKit workout (keep-alive, and the workout of record)
+    //
+    // WHY A WORKOUT SESSION AT ALL. Core Motion stops delivering the moment
+    // watchOS suspends the app, and it suspends the app seconds after the wrist
+    // drops. An HKWorkoutSession — with the Workout Processing background mode —
+    // is the one mechanism Apple documents for keeping a watch app and its
+    // sensors running with the screen off. Without it a capture silently stops
+    // part way through a set. That is not theory; it is why this code exists.
+    //
+    // WHY IT USED TO KILL THE LIFTER'S OWN WORKOUT. watchOS permits exactly one
+    // PRIMARY workout session on the device. HKError's own wording:
+    // errorAnotherWorkoutSessionStarted is "Another primary workout session has
+    // started or is already ongoing by this or another application."
+    // startCalibration() created one unconditionally, so pressing Calibrate
+    // ended the session the Workout app was running — reported by the owner as
+    // "logging data stops my workout". Nothing in this file noticed, because no
+    // delegate was ever attached to the session.
+    //
+    // WHAT WAS TRIED AND DOES NOT EXIST — do not re-propose these:
+    //
+    //   * Attaching to the Workout app's session. There is no such API.
+    //     `recoverActiveWorkoutSession` is documented as "Recovers an active
+    //     workout session after a client crash" — it hands YOUR app back YOUR
+    //     session, not another app's. `workoutSessionMirroringStartHandler` is
+    //     cross-DEVICE within one app, not cross-app. Nothing in HealthKit even
+    //     reports whether another app currently holds a session, so the app
+    //     cannot detect the collision, let alone join it.
+    //
+    //   * Starting no session and letting the lifter's Workout-app session keep
+    //     the watch busy. Background execution on watchOS is granted per app,
+    //     not per device: their session keeps THEIR app alive, not ours. This
+    //     buys nothing and costs the capture.
+    //
+    //   * WKExtendedRuntimeSession as a substitute keep-alive. Rejected without
+    //     testing, deliberately. It needs a WKBackgroundModes plist key this app
+    //     does not have and that Apple gates to mindfulness / physical-therapy
+    //     apps; the ungated session types are invalidated with
+    //     `resignedFrontmost`, which is exactly the wrist-drop case we need to
+    //     survive; and nothing documents that Core Motion keeps streaming at
+    //     100 Hz under one. Trading a keep-alive that demonstrably works for one
+    //     that might risks a whole gym capture, and gym captures are the
+    //     expensive thing in this project.
+    //
+    // SO THE FIX RUNS THE OTHER WAY: stop competing with the Workout app and BE
+    // the workout. The session drives an HKLiveWorkoutBuilder, and endWorkout()
+    // finishes and saves it, so the strength-training workout lands in Health
+    // with heart rate and energy and earns its ring credit. The lifter starts
+    // the workout here instead of in the Workout app, and there is no second
+    // session left to preempt.
+    //
+    // THE TRADEOFF, PLAINLY. The workflow changes: start the workout in this app.
+    // If the Workout app is opened first it still loses its session, and if it
+    // is opened DURING a recording it now preempts US and the capture can
+    // truncate. watchOS gives no way to prevent either — only to notice, which
+    // is what the delegate at the bottom of this file is for.
+    //
+    // WHAT WOULD FALSIFY THIS. If a capture holds ~100 Hz through a wrist-down
+    // set with no workout session of ours running, then the session is not
+    // load-bearing, none of the above matters, and the right fix is simply to
+    // stop starting one. That test costs one set and has never been run.
 
     private func requestHealthAuth() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        let types: Set = [HKObjectType.workoutType()]
-        healthStore.requestAuthorization(toShare: types, read: types) { _, _ in }
+        // Read is what HKLiveWorkoutDataSource collects; share is what the
+        // builder writes back as part of the saved workout. A denied type is not
+        // fatal — the workout still saves, just thinner — so nothing here gates
+        // recording, and the CSV never depends on any of it.
+        var share: Set<HKSampleType> = [HKObjectType.workoutType()]
+        var read: Set<HKObjectType> = [HKObjectType.workoutType()]
+        for id: HKQuantityTypeIdentifier in [.heartRate, .activeEnergyBurned,
+                                             .basalEnergyBurned,
+                                             .distanceWalkingRunning] {
+            guard let type = HKObjectType.quantityType(forIdentifier: id) else { continue }
+            share.insert(type)
+            read.insert(type)
+        }
+        healthStore.requestAuthorization(toShare: share, read: read) { _, _ in }
     }
 
-    // The keep-alive session spans the whole logging session, not one set.
-    // Starting is idempotent: if we already own a running session (from an
-    // earlier set), reuse it rather than spawning a second. We only ever end a
-    // session we started here — never one the Workout app owns.
-    private func startWorkout() {
-        guard HKHealthStore.isHealthDataAvailable(), workout == nil else { return }
+    /// Re-attach to a session this app left running — after a crash, or after
+    /// watchOS killed us between sets. This is the *only* thing HealthKit offers
+    /// that resembles "join a session you did not just create", and it is scoped
+    /// to our own app: it will never return the Workout app's session. Without
+    /// it, relaunching mid-gym-session would create a second session and strand
+    /// the first workout's record unsaved.
+    private func recoverWorkout() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        healthStore.recoverActiveWorkoutSession { [weak self] session, _ in
+            guard let self, let session else { return }
+            DispatchQueue.main.async {
+                // Only one primary session can exist, so if we already hold one
+                // this callback is stale — keep what we have.
+                guard self.workout == nil else { return }
+                session.delegate = self
+                self.workout = session
+                self.builder = session.associatedWorkoutBuilder()
+                self.workoutActive = session.state == .running
+                self.status = "rejoined workout in progress"
+            }
+        }
+    }
+
+    /// Start the keep-alive session, which is also the workout that gets saved.
+    /// One session spans the whole gym session, not one set, so this is
+    /// idempotent — an already-running session is reused, never doubled.
+    func startWorkout() {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            setStatus("no HealthKit — recording may stop when the screen sleeps")
+            return
+        }
+        guard workout == nil else { return }
         let config = HKWorkoutConfiguration()
         config.activityType = .traditionalStrengthTraining
         config.locationType = .indoor
         do {
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: config)
-            session.startActivity(with: Date())
+            // Delegate BEFORE startActivity, or a session that is refused or
+            // stolen in the first instants reports it to nobody.
+            session.delegate = self
+            let live = session.associatedWorkoutBuilder()
+            live.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore,
+                                                      workoutConfiguration: config)
+            let now = Date()
+            session.startActivity(with: now)
+            // Best effort. If collection never begins we lose the Health record,
+            // not the capture — the CSV is written from Core Motion and touches
+            // none of this.
+            live.beginCollection(withStart: now) { _, _ in }
             workout = session
-            DispatchQueue.main.async { self.workoutActive = true }
+            builder = live
+            workoutActive = true
+            setStatus("workout started here — don't start one in the Workout app")
         } catch {
-            status = "workout session failed (recording may suspend)"
+            setStatus("workout session failed (recording may suspend)")
         }
     }
 
-    /// End the keep-alive workout. Called only by the explicit End Workout
-    /// control, never by finish(). No-op if we do not own a session.
+    /// End the session and save the workout to Health. Called only by the
+    /// explicit End Workout control, never by save() — one workout spans many
+    /// sets. No-op if we hold no session.
+    ///
+    /// Saving is the whole point of the C4 change: the lifter gave up starting a
+    /// workout in the Workout app, so this has to give them the record back.
     func endWorkout() {
-        guard workout != nil else { return }
-        workout?.end()
+        guard let session = workout else { return }
+        let live = builder
         workout = nil
-        DispatchQueue.main.async { self.workoutActive = false }
+        builder = nil
+        workoutActive = false
+        let end = Date()
+        session.end()
+        guard let live else { return }
+        live.endCollection(withEnd: end) { [weak self] _, _ in
+            live.finishWorkout { _, error in
+                self?.setStatus(error == nil ? "workout saved to Health"
+                                             : "workout ended, save failed")
+            }
+        }
+    }
+
+    /// `status` is `@Published`, so it must be touched on the main queue — and
+    /// HealthKit's delegate and completion callbacks arrive on arbitrary
+    /// background queues. Stays synchronous when already on main so that
+    /// save()'s `status += ...` still appends to the message before it.
+    private func setStatus(_ text: String) {
+        if Thread.isMainThread { status = text }
+        else { DispatchQueue.main.async { self.status = text } }
     }
 
     // MARK: - CSV
@@ -271,6 +423,50 @@ final class MotionRecorder: NSObject, ObservableObject {
         }
         WCSession.default.transferFile(url, metadata: ["name": name])
         status = "sent \(name) — \(sampleCount) samples"
+    }
+}
+
+/// The session used to run with no delegate at all, which meant losing it was
+/// completely silent: `workoutActive` stayed true, the UI stayed green, and the
+/// capture just stopped part way through a set with no explanation. Since only
+/// one primary workout session exists per device, "lost" is the normal outcome
+/// of the lifter opening the Workout app mid-set — the same collision that used
+/// to run in our favour, now running against us. It cannot be prevented. It can
+/// be announced, which is all these two methods do.
+///
+/// Both are called on an anonymous background queue, so every line here hops to
+/// main before touching `@Published` state.
+extension MotionRecorder: HKWorkoutSessionDelegate {
+
+    func workoutSession(_ session: HKWorkoutSession,
+                        didChangeTo toState: HKWorkoutSessionState,
+                        from fromState: HKWorkoutSessionState,
+                        date: Date) {
+        guard toState == .ended || toState == .stopped else { return }
+        DispatchQueue.main.async {
+            // endWorkout() clears `workout` first, so a session we ended
+            // ourselves fails this check and stays quiet.
+            guard self.workout === session else { return }
+            self.workout = nil
+            self.builder = nil
+            self.workoutActive = false
+            if self.phase != .idle {
+                self.status = "WORKOUT LOST — capture may stop early"
+                WKInterfaceDevice.current().play(.failure)
+            }
+        }
+    }
+
+    func workoutSession(_ session: HKWorkoutSession, didFailWithError error: Error) {
+        let taken = (error as NSError).domain == HKErrorDomain
+            && (error as NSError).code == HKError.Code.errorAnotherWorkoutSessionStarted.rawValue
+        DispatchQueue.main.async {
+            self.workoutActive = false
+            self.status = taken
+                ? "another app took the workout session"
+                : "workout error: \(error.localizedDescription)"
+            if self.phase != .idle { WKInterfaceDevice.current().play(.failure) }
+        }
     }
 }
 

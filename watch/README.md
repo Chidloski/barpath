@@ -66,14 +66,64 @@ timestamp** and let the pipeline use `dt = diff(t)`. Do not resample.
 
 - **Watch app** — records, and holds a `HKWorkoutSession` for the duration so
   watchOS keeps the app (and the sensors) alive when your wrist drops mid-set.
-  Without it, capture silently stops when the screen sleeps.
+  Without it, capture silently stops when the screen sleeps. **Start that
+  session from this app, not the Workout app** — see below.
 - **iPhone app** — receives each finished log over `WatchConnectivity` and
   writes it to its Documents folder, which is exposed to the Files app. Grab
   it from **Files → On My iPhone → BarpathLogger**, or plug the phone into the
   Mac and pull it from the container.
 
+### The workout session, and why it replaces the Workout app
+
+**watchOS allows exactly one workout session on the device.** `HKError`'s own
+wording for the collision: `errorAnotherWorkoutSessionStarted` is "Another
+primary workout session has started or is already ongoing by this or another
+application." So this app and the Workout app cannot both hold one, and until
+2026-07-30 pressing **Calibrate** created a session unconditionally — which
+ended whatever workout you had started before walking into the gym. Nothing said
+so, because the session had no delegate attached and nobody was listening.
+
+**There is no way to coexist.** All three escapes were checked against the
+watchOS 26.5 SDK headers and none exist:
+
+- *Join the Workout app's session.* No API. `recoverActiveWorkoutSession` is
+  documented as "Recovers an active workout session after a client crash" — it
+  gives **your** app back **your** session. `workoutSessionMirroringStartHandler`
+  is cross-*device* within one app. Nothing even reports that another app holds
+  a session, so the collision cannot be detected, let alone joined.
+- *Start no session and lean on theirs.* Background execution is granted per
+  app, not per device. Their session keeps their app alive, not ours.
+- *`WKExtendedRuntimeSession` instead.* Rejected without testing, deliberately:
+  it needs a `WKBackgroundModes` key this app does not have and Apple gates to
+  mindfulness / physical-therapy apps, the ungated session types are invalidated
+  with `resignedFrontmost` (exactly the wrist-drop case we must survive), and
+  nothing documents that Core Motion keeps streaming at 100 Hz under one.
+  Swapping a keep-alive that works for one that might costs gym captures.
+
+**So the app stopped competing and became the workout.** The session drives an
+`HKLiveWorkoutBuilder`, and **End Workout & Save** finishes it into Health with
+heart rate and energy, as a Traditional Strength Training workout with ring
+credit. Start it from the app; there is then no second session to preempt.
+
+*The tradeoff.* This is a workflow change, not a repair — the collision is still
+there, it is just no longer provoked. If you open the Workout app **during** a
+recording it preempts *us*, Core Motion stops the next time your wrist drops, and
+the capture truncates. That cannot be prevented, only noticed: the session now
+has a delegate, so the watch shows **NO WORKOUT — may stop early** in red and
+plays a failure haptic instead of failing silently.
+
+*What would falsify all of this:* record a wrist-down set with **no** workout
+session running and check `log["fs"]` and the sample count. If it holds ~100 Hz
+to the end, the session is not load-bearing and the app should simply stop
+starting one. That test costs one set and has never been run.
+
 ## Usage (on the fly)
 
+0. **Start Workout** (idle screen) — instead of starting one in the Workout app.
+   Once per gym session, not per set. If you forget, **Calibrate** starts one for
+   you and says so on the status line; losing a capture to a suspended app is the
+   worse failure. At the end of the session, **End Workout & Save** writes it to
+   Health.
 1. Type the movement name (e.g. `deadlift_80`).
 2. **Calibrate** — starts recording. Hold the bar still ~3 s (racked / on the
    floor). This is the *opening anchor*; it must be at the start and genuinely
@@ -123,7 +173,9 @@ these sources in.
    - Both targets get **WatchConnectivity** automatically (no toggle).
 4. **Info.plist keys**
    - Watch: `NSMotionUsageDescription`, `NSHealthShareUsageDescription`,
-     `NSHealthUpdateUsageDescription`.
+     `NSHealthUpdateUsageDescription`. Both HealthKit strings are load-bearing
+     now, not formalities — the app writes a real workout and reads heart rate
+     and energy into it.
    - Phone: `UIFileSharingEnabled = YES` and
      `LSSupportsOpeningDocumentsInPlace = YES` (so logs show in the Files app).
 5. Set the deployment targets to your OS versions, pick your team for signing,
@@ -143,13 +195,16 @@ update path, not first-time setup.
    scheme (not the phone app) and your watch as the destination. That installs
    the phone app and the embedded watch app in one shot; you do not need a
    separate phone install.
-3. **First launch on the watch: expect a permissions prompt.** Nothing new is
-   requested — raw gyro is covered by the existing `NSMotionUsageDescription` —
-   but if you reinstall rather than update, motion and HealthKit will ask again.
-4. **Check it took.** On the watch, the "Finish Set" button is now **orange**
-   rather than red, and pressing it shows a `HOLD STILL / closing anchor`
-   countdown instead of saving immediately. If you still get an instant save,
-   the old build is running.
+3. **First launch on the watch: expect a HealthKit prompt, and grant it.** The
+   app now asks for **heart rate**, **active/resting energy** and **walking +
+   running distance** on top of Workouts, because it saves a real workout rather
+   than holding an unsaved session. Denying them does not stop recording — the
+   keep-alive and the CSV are unaffected — it only thins the saved workout.
+4. **Check it took.** Two things. On the idle screen there is now a **Start
+   Workout** button (and, once running, "End Workout & Save"); if the only
+   button is Calibrate, the old build is running. And the "Finish Set" button is
+   **orange** rather than red, showing a `HOLD STILL / closing anchor` countdown
+   instead of saving immediately.
 5. **Check the phase column arrived.** `head -1` the CSV: the header should end
    `...,gx,gy,gz,phase`, and `io.check_log` will tell you if the closing hold ran
    for less than 2 s.
@@ -168,7 +223,10 @@ If the install fails, in this order — this is what cost time last time:
 ## Sanity check before a real set
 
 Record a 10 s clip holding the watch still on a table — press Calibrate, Start
-Set, Finish Set, and let the closing hold run out. Then:
+Set, Finish Set, and let the closing hold run out. Then press **End Workout &
+Save**: Calibrate starts a workout session if none is running, and it stays
+running until you end it, so a bench-test clip otherwise leaves a strength
+workout accruing in Health all afternoon. Then:
 
 ```python
 from src import io

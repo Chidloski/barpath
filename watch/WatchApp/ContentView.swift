@@ -20,10 +20,27 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .tint(.blue)
+
+                    // C4. watchOS allows exactly one workout session on the
+                    // device, so this app and the Workout app cannot both hold
+                    // one — starting ours used to end theirs, invisibly, on
+                    // every Calibrate. The session is now started here on
+                    // purpose and saved to Health on End, so it replaces the
+                    // Workout app for a lifting session rather than fighting it.
+                    // See the HealthKit section of MotionRecorder.swift.
                     if rec.workoutActive {
-                        Button("End Workout", role: .destructive) { rec.endWorkout() }
+                        Text("workout running — this app owns it")
+                            .font(.caption2).foregroundStyle(.green)
+                        Button("End Workout & Save", role: .destructive) { rec.endWorkout() }
                             .frame(maxWidth: .infinity)
+                    } else {
+                        Button("Start Workout") { rec.startWorkout() }
+                            .frame(maxWidth: .infinity).tint(.pink)
+                        Text("start it here, not in the Workout app")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
+
                     if !rec.status.isEmpty {
                         Text(rec.status).font(.footnote).foregroundStyle(.secondary)
                     }
@@ -56,6 +73,17 @@ struct ContentView: View {
                     Text("saves itself").font(.caption2).foregroundStyle(.secondary)
                     Button("Save now") { rec.save() }
                         .frame(maxWidth: .infinity).tint(.gray)
+                }
+
+                // The keep-alive can vanish mid-set — the Workout app being
+                // opened during a recording preempts our session, and watchOS
+                // offers no way to stop it. Core Motion then stops as soon as
+                // the wrist drops and the capture truncates with no other sign.
+                // Before the session had a delegate this was completely silent.
+                if rec.phase != .idle && !rec.workoutActive {
+                    Text("NO WORKOUT — may stop early")
+                        .font(.caption2).foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
                 }
             }
             .padding()

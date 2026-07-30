@@ -437,3 +437,105 @@ def plot_bias_models(variants: dict, closure: dict, traces: dict):
 
     fig.tight_layout()
     return fig
+
+
+def plot_scorecard(results: dict, truths: dict, roms: dict):
+    """How well the pipeline currently performs, per lift, on what evidence.
+
+    `results` maps "lift (stem)" -> `pipeline.run` dict for one representative
+    capture; `truths` maps the same key -> `vs_truth` where a video exists;
+    `roms` maps lift -> list of every per-rep vertical ROM in that lift, in m.
+
+    Written as a scorecard rather than a diagnostic, because the recurring
+    failure in this project is a number that looks good in isolation. So each
+    row carries what it is allowed to conclude, and the bottom row is entirely
+    about what is NOT known — which is most of it.
+    """
+    from . import truth as truth_mod
+
+    labels = list(results)
+    fig, axes = plt.subplots(3, len(labels), figsize=(5.0 * len(labels), 11.5),
+                             gridspec_kw={"height_ratios": [2.0, 1.0, 1.0]})
+
+    for col, label in enumerate(labels):
+        r = results[label]
+        lift = label.split()[0]
+        reps = r["reps"]
+
+        # --- row 0: the product, as step 9 would draw it -------------------
+        ax = axes[0, col]
+        axis = np.real(r["axis"]) if "axis" in r else np.array([1.0, 0.0])
+        for i, rep in enumerate(reps):
+            along = (rep[:, :2] @ axis) * 100
+            ax.plot(along - along[0], rep[:, 2] * 100,
+                    lw=2.2 if i == 0 else 1.2, alpha=1.0 if i == 0 else 0.7)
+        ax.set_aspect(1.0 / STRETCH)
+        ax.set_xticks([])
+        ax.set_title(label, fontsize=11, fontweight="bold")
+        ax.set_xlabel("fore-aft (stretched 4x, unlabelled by design)", fontsize=8)
+        if col == 0:
+            ax.set_ylabel("what the pipeline would show you\nheight (cm)",
+                          fontsize=9)
+        # The trap this project keeps falling into. Bench and squat draw a
+        # clean, plausible bar path and NOTHING can check it; deadlift draws an
+        # obvious mess and is the only lift with external truth. Plausibility
+        # is not evidence, and it is exactly how a broken pipeline convinces
+        # somebody it works (CLAUDE.md, the deadlift-first rule).
+        if label not in truths:
+            ax.text(0.5, 0.02, "looks plausible. that is not evidence —\n"
+                               "nothing external checks this lift",
+                    ha="center", va="bottom", fontsize=8, color="crimson",
+                    transform=ax.transAxes)
+
+        # --- row 1: error against video, per rep ---------------------------
+        ax = axes[1, col]
+        t = truths.get(label)
+        if t is None:
+            ax.text(0.5, 0.5, "NO VIDEO TRUTH\n\nbench tracking raises;\n"
+                              "squat tracks at ~0.40 NCC.\nNothing external "
+                              "measures\nthis lift's error.",
+                    ha="center", va="center", fontsize=9, color="crimson",
+                    transform=ax.transAxes)
+            ax.set_xticks([]); ax.set_yticks([])
+        else:
+            n = np.arange(1, len(t["per_rep"]) + 1)
+            ax.bar(n - 0.2, [p["pipeline_h_rms"] for p in t["per_rep"]], 0.38,
+                   label="horizontal", color="#c0392b")
+            ax.bar(n + 0.2, [p["pipeline_v_rms"] for p in t["per_rep"]], 0.38,
+                   label="vertical", color="#2c7fb8")
+            ax.axhline(1.0, color="#c0392b", ls="--", lw=1.2)
+            ax.axhline(3.0, color="#2c7fb8", ls="--", lw=1.2)
+            ax.set_xlabel("rep", fontsize=8)
+            ax.legend(fontsize=7, loc="upper right")
+            note = "dashed = spec (1 cm / 3 cm)"
+            if t.get("video_rom_flags"):
+                note += "\ntruth FLAGGED: video scale wrong on this capture"
+            ax.text(0.02, 0.02, note, fontsize=7, transform=ax.transAxes,
+                    va="bottom", color="0.35")
+        if col == 0:
+            ax.set_ylabel("error vs video\nper rep, cm rms", fontsize=9)
+
+        # --- row 2: what IS checkable on every lift ------------------------
+        ax = axes[2, col]
+        vals = np.array(roms.get(lift, [])) * 100
+        lo, hi = truth_mod.VERTICAL_ROM_M[lift]
+        ax.axhspan(lo * 100, hi * 100, color="0.92")
+        ax.axhline(hi * 100, color="0.35", lw=1.4)
+        ax.axhline(lo * 100, color="0.35", lw=1.0, ls="--")
+        if len(vals):
+            ax.scatter(np.arange(len(vals)), vals, s=26,
+                       c=["#c0392b" if (v < lo * 100 or v > hi * 100) else "#2c7fb8"
+                          for v in vals])
+        ax.set_xticks([])
+        ax.set_xlabel(f"every rep of every {lift} capture", fontsize=8)
+        if col == 0:
+            ax.set_ylabel("vertical ROM, cm\n(the only check bench/squat have)",
+                          fontsize=9)
+
+    fig.suptitle(
+        "How the pipeline is performing — one column per lift\n"
+        "Row 1 is the product. Row 2 is how wrong it is, where anything can "
+        "say so. Row 3 is the only external check that covers all three.",
+        fontsize=12)
+    fig.tight_layout(rect=(0.015, 0, 1, 0.955))
+    return fig

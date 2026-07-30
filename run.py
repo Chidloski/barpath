@@ -9,6 +9,7 @@
     python run.py --rom                # per-rep vertical ROM against the bounds
     python run.py --anchors            # C6: attitude before and after a set
     python run.py --bias               # B6: constant-bias corrections vs the video
+    python run.py --scorecard          # how well the pipeline performs, per lift
 
 --truth is slow: it decodes each clip. It only produces numbers on deadlift,
 which is the only lift with trustworthy video truth — the others report why.
@@ -266,6 +267,50 @@ def draw_bias_models() -> int:
     return 0
 
 
+def draw_scorecard() -> int:
+    """How well the pipeline currently performs, per lift, on what evidence."""
+    import matplotlib
+    matplotlib.use("Agg")
+    from src import metrics, plot, truth
+
+    raw = ROOT / "data" / "raw"
+    results, truths, roms = {}, {}, {}
+
+    # Every rep of every capture feeds the ROM row; the other two rows use one
+    # representative capture per lift, the same ones the stage diagram uses.
+    for path in sorted(raw.glob("*.csv")):
+        try:
+            lift = truth.lift_of(path)
+        except ValueError:
+            continue
+        roms.setdefault(lift, []).extend(pipeline.run(path)["rep_rom_m"])
+
+    for lift, stem in STAGE_CAPTURES:
+        path = next(raw.glob(f"{stem}*.csv"), None)
+        if path is None:
+            print(f"{stem} not in data/raw/ — skipping")
+            continue
+        video = pipeline.find_video(path, ROOT / "data" / "video")
+        label = f"{lift}  ({stem})"
+        result = pipeline.run(path)
+        results[label] = result
+        if video is not None and lift == "deadlift":
+            truths[label] = metrics.vs_truth(result, video)
+            m = truths[label]
+            print(f"{stem}: horizontal {m['pipeline_h_rms']:.2f} cm rms, "
+                  f"vertical {m['pipeline_v_rms']:.2f} cm rms, "
+                  f"{len(m['video_rom_flags'])} truth rep(s) flagged")
+
+    if not results:
+        print("no captures found for the scorecard")
+        return 1
+
+    out = ROOT / "analysis" / "26_pipeline_scorecard.png"
+    plot.plot_scorecard(results, truths, roms).savefig(out, dpi=105)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -279,6 +324,8 @@ def main(argv: list[str]) -> int:
         return draw_anchors()
     if "--bias" in argv:
         return draw_bias_models()
+    if "--scorecard" in argv:
+        return draw_scorecard()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:

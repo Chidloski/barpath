@@ -606,3 +606,34 @@ makes #14 a prerequisite rather than a side quest), and integrating across the
 impact using the known rest state on both sides instead of through it. Bench and
 squat need neither — they have no impact, and their per-rep residual is already
 at the sensor's noise floor.
+
+## Where the pipeline stands (2026-07-30)
+- `21_pipeline_stages.png` — regenerated on the current pipeline. `run.py --stages`.
+- `26_pipeline_scorecard.png` — how well it performs, per lift. `run.py --scorecard`.
+
+Read the two together: 21 is how the pipeline works, 26 is how well.
+
+**The scorecard's uncomfortable shape is the point.** Row 1 is the product —
+what step 9 would draw. Squat and bench produce clean, tightly-overlaid,
+entirely plausible bar paths. Deadlift produces a mess of rectangles that
+nobody would mistake for a bar path.
+
+That ordering is exactly backwards from the evidence. Deadlift is the only lift
+with external truth, and row 2 says what that truth says: **2–8 cm of horizontal
+error per rep against a 1 cm spec, and 2–7 cm vertical against 3 cm.** Bench and
+squat have no video truth at all — bench tracking raises, squat tracks at ~0.40
+median NCC — so their clean-looking output is unfalsified, not verified. Row 1
+labels them as such, because "it looks plausible" is precisely how this project
+would convince itself a broken pipeline works, and is why CLAUDE.md says to
+validate on deadlift first.
+
+Row 3 is the one check that reaches all three lifts: per-rep vertical ROM
+against `truth.VERTICAL_ROM_M`, every rep of every capture. All inside the bands
+except the two known defects — `bench_spoto_90x5_1`'s spurious sixth window and
+`squat_160x1`'s 18 cm fragment.
+
+**What 21 shows on the current pipeline.** Rows 3 and 4 are the drift: vertical
+velocity ramps to −6 m/s on the deadlift and position spans **57.7 m** against a
+0.6 m lift, so the video-truth line drawn beside it is visually flat. Row 5 is
+what step 7 buys back — and on deadlift the per-rep curves disagree with each
+other in the floor-resting portion, which is where B6 found the error enters.
