@@ -527,3 +527,82 @@ the impact, over a few hundred milliseconds, and it is right. The deficit is
 what the rest of the rep does. Step 7's detrend hides it entirely, which is why
 vertical ROM comes out at a plausible 53–61 cm either way — and it is the
 sharpest available statement of why the detrend is carrying vertical.
+
+## B6 — the constant-bias family is dead, and the error is an impulse (2026-07-30)
+- `25_b6_bias_models.png` — three panels. Regenerate with `python run.py --bias`.
+
+B6's stated first move was the per-rep zero-mean-acceleration constraint, and it
+looked like the right one. A rep starts and ends at rest, so its mean world
+acceleration must be zero — **velocity closure is physically true where step 7's
+position closure is measurably false** (A3: the real deadlift bar misses closing
+horizontally by 1.9–4.3 cm). Replacing a known-false assumption with a known-true
+one is exactly what B3 was looking for.
+
+**It makes things much worse** (left panel), horizontal rms against video:
+
+| variant | deadlift_155x6_1 / _2 / 180x3 |
+|---|---|
+| shipping | **5.05 / 9.19 / 15.44** |
+| zero-mean acceleration per rep | 19.63 / 27.14 / 6.55 |
+| zero-mean, no position detrend | 136.07 / 94.80 / 34.64 |
+| constant bias from rest-to-rest velocity closure | 15.50 / 11.64 / 29.12 |
+
+A useful control first: per-rep re-integration from v=0 with the existing
+detrend reproduces the shipping numbers to the digit. It has to — the two differ
+by a linear-in-t term and the detrend removes exactly that — and it confirms the
+comparison is measuring the constraint rather than the rebuild.
+
+**Why, and it rules out the family rather than one attempt** (middle panel). A
+constant bias `b` leaves `b·T²/8` of position error after a linear detrend
+(residual `½b(t²−Tt)`, worst at `t = T/2`). Invert it against what was measured:
+
+| capture | bias implied by the measured error | bias the closure estimates | ratio |
+|---|---|---|---|
+| deadlift_155x6_1 | 0.0037 g | 0.0266 g | 7.1× |
+| deadlift_155x6_2 | 0.0047 g | 0.0089 g | 1.9× |
+| deadlift_180x3 | 0.0016 g | 0.0076 g | 4.6× |
+
+The signal does not contain a constant bias of the estimated size. If it did,
+0.0266 g over a 3.4 s rep would leave **37.7 cm** of vertical error after the
+detrend and the measured vertical is 5.24 cm. So the closure constraint is
+absorbing an error that is **localised**, and representing it as a constant
+spreads it over the whole rep — injecting a parabola larger than the error it
+removes. That is also why TASKS.md's oracle cap holds at ~30%: a constant-bias
+model cannot represent an impulse.
+
+**Where the localised error is, shown directly** (right panel). Cumulative
+vertical velocity through one rest-to-rest interval, on all three captures. The
+bar is validated at rest at both ends (`segment.rest_instants`, |v| < 0.10 m/s
+on video), so the trace must return to zero. It rises through the pull to
++0.8 m/s, falls through the descent to −1.2, and is smooth and physical
+throughout — then at the floor impact it rings violently for several hundred
+milliseconds and settles **0.4–1.5 m/s short of zero**.
+
+The error is injected at the impact and in the ringing that follows it, not
+distributed through the rep. The ringing is the signature to chase: the watch is
+not rigidly coupled to the bar, so it keeps moving after the bar has stopped and
+the accelerometer faithfully records motion the bar did not make. That is #14,
+strap resonance, which P6 already suspected for `deadlift_180x3` on independent
+evidence.
+
+**One capture dissents, informatively.** `deadlift_180x3` is the only one the
+zero-mean constraint helps, 15.4 → 6.6 cm. It is also the capture that over-reads
+its impact velocity step by 58–72% (B5). A constraint that removes part of an
+unusually large impact error helping exactly there is consistent with the
+diagnosis, not against it.
+
+**Correction to C6, from the same measurement.** C6 reported deadlift vertical
+momentum closing at −0.05 to −2.36 m/s, negative on 15 of 15 reps, measured over
+impact-to-impact rep windows. Those are the wrong windows: every rep boundary
+sits **exactly 10 ms after its impact**, one sample into a 2–3 sample spike, so
+part of one impulse falls outside the window and the figure inherits the boundary
+placement. Measured between validated rest instants it is **−0.37 to −1.48 m/s,
+negative on 8 of 9** intervals, with one +1.19. The defect is real and the
+direction holds; the range overstated it.
+
+**What B6 should do instead.** Not a constant, and not a per-rep constant. The
+two live candidates are modelling the impact and its ringing directly (which
+makes #14 a prerequisite rather than a side quest), and integrating across the
+impact using the known rest state on both sides instead of through it. Bench and
+squat need neither — they have no impact, and their per-rep residual is already
+at the sensor's noise floor.

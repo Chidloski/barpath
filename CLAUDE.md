@@ -287,19 +287,35 @@ corrupted. The residual points the same way rep after rep (direction coherence
 0.60–0.88), which is P3's signature exactly: error that repeats with the rep and
 which a rep-to-rep comparison therefore preserves perfectly.
 
-**And vertical momentum does not close.** Deadlift windows run impact to impact
-with exactly one impact each, so ∫a_z dt across a window must be zero. It is
-**−0.05 to −2.36 m/s, negative on 15 of 15 reps**, median about −1.5. The
-reconstruction loses ~1.5 m/s of upward impulse every rep, on the axis this
-project has assumed was fine.
+**And vertical momentum does not close.** Measured between
+`segment.rest_instants`, which are validated against video at |v| < 0.10 m/s so
+the bar really is at rest at both ends: ∫a_z dt between them must be zero and is
+**−0.37 to −1.48 m/s, negative on 8 of 9 intervals**. The reconstruction loses
+about a metre per second of upward impulse every rep, on the axis this project
+has assumed was fine.
+
+*Corrected 2026-07-30, later the same day.* This first read −0.05 to −2.36 m/s
+on 15 of 15, measured over impact-to-impact rep windows. Those are the wrong
+windows: every rep boundary sits exactly 10 ms after its impact, one sample into
+a 2–3 sample spike, so part of one impulse falls outside and the number inherits
+the boundary placement. The defect and its direction survive; the range
+overstated it.
 
 This does not contradict B5's 1.04. That ratio is the velocity STEP measured
 locally across the impact against video, over a few hundred milliseconds, and it
-is right. The deficit is in what the rest of the rep does. Step 7's detrend
-hides it completely, which is why vertical ROM comes out at a plausible 53–61 cm
-either way — and it is the sharpest available statement of why "the detrend is
-carrying vertical entirely". *Evidence:* `analysis/24`, gated in
-`tests/test_real_data.py`.
+is right. Step 7's detrend hides the deficit completely, which is why vertical
+ROM comes out at a plausible 53–61 cm either way — and it is the sharpest
+available statement of why "the detrend is carrying vertical entirely".
+
+**B6 then found where the deficit is injected, and it is not distributed.**
+Cumulative vertical velocity across a rest-to-rest interval is smooth and
+physical through the pull and the descent, then rings violently for several
+hundred milliseconds at the floor impact and settles short. The ringing is the
+watch still moving when the bar has stopped — strap compliance, i.e. #14, which
+is therefore on the critical path rather than a side quest. **Every
+constant-bias correction tried against this makes it worse**, because a constant
+cannot represent an impulse: see P3 and `analysis/25`.
+*Evidence:* `analysis/24` and `25`, gated in `tests/test_real_data.py`.
 
 **P4 — There is almost no gyro bias to calibrate.** Rewritten 2026-07-30, after
 a stationary capture measured what no on-wrist capture could.

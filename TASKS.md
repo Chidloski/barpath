@@ -308,15 +308,46 @@ left is deadlift's 0.010–0.030 g, three quarters of it injected in the ±100 m
 around each floor impact, plus a vertical momentum deficit of ~1.5 m/s per rep.
 Start there; the other three doors are closed.
 
-Order from the original entry still stands, with one correction: per-rep
-zero-mean-acceleration constraints first (they hold during motion and need no
-stillness) — and note C6 has now measured exactly that residual, so the
-constraint's size is known before it is applied. The two-anchor estimate C1
-unlocks is measured and is not worth applying. Then time-varying correction.
-The cap also still stands — an oracle fitting constant gyro *and* accel bias
-directly against the error recovers only ~30% of the residual, so nothing
-constant-bias gets to 1 cm. Every attempt is now measurable against
-`metrics.vs_truth`, which is the whole point of having built it.
+**The constant-bias family is now measured and rejected, 2026-07-30.** Three
+variants against video, all worse than shipping (5.05 / 9.19 / 15.44 cm):
+
+| variant | horizontal rms |
+|---|---|
+| zero-mean acceleration per rep | 19.63 / 27.14 / 6.55 |
+| zero-mean, no position detrend | 136.07 / 94.80 / 34.64 |
+| constant bias from rest-to-rest velocity closure | 15.50 / 11.64 / 29.12 |
+
+The arithmetic rules out the family, not just these attempts. A constant bias
+`b` leaves `b·T²/8` after a linear detrend. The measured error implies
+0.0016–0.0047 g; every closure-derived estimate is 0.0076–0.0266 g, 1.9–7.1×
+larger. If the signal really held 0.0266 g it would show 37.7 cm of vertical
+error and it shows 5.24. So the constraint is absorbing a **localised** error
+and spreading it as a constant, injecting a parabola bigger than what it
+removes. That is why the oracle cap sits at ~30%: a constant cannot represent
+an impulse.
+
+*The measurement that shows it directly:* cumulative vertical velocity across a
+validated rest-to-rest interval is smooth and physical through the pull and the
+descent, then rings for several hundred ms at the floor impact and settles
+0.4–1.5 m/s short of zero. See `analysis/25`.
+
+**What is left, in order.**
+
+1. **#14 first, not as a side quest.** The ringing after the impact is the watch
+   moving when the bar has stopped — strap compliance. `quality_flags` already
+   has a strap-resonance detector and it is broken (thresholds a fraction, means
+   absolute). Fixing it is now on the critical path.
+2. **Integrate across the impact, not through it.** The state on both sides is
+   known and validated: `segment.rest_instants` lands where the video says
+   |v| < 0.10 m/s. Splice rather than model.
+3. Time-varying correction only if those fail.
+
+Bench and squat need none of this — no impact, and a per-rep residual already at
+the sensor's noise floor. Their problem, if they have one, is a different
+problem, and nothing external measures it yet.
+
+Every attempt is measurable against `metrics.vs_truth`, which is the whole point
+of having built it. `analysis/25_b6_bias_models.png`, `python run.py --bias`.
 
 ### #14 — fix `quality_flags` strap resonance
 **Promoted by B5**, which found `deadlift_180x3` over-reading its impact

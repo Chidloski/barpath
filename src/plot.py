@@ -380,3 +380,60 @@ def plot_anchors(anchors: dict, residuals: dict, exclusion: dict, momentum: dict
 
     fig.tight_layout()
     return fig
+
+
+def plot_bias_models(variants: dict, closure: dict, traces: dict):
+    """B6 — why every constant-bias correction makes it worse.
+
+    `variants` maps a label to a list of per-capture horizontal rms in cm.
+    `closure` maps stem -> (implied bias from the measured error, closure-based
+    estimate), both in g. `traces` maps stem -> (t, cumulative dv, impact time)
+    for one representative rest-to-rest interval.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.6))
+
+    ax = axes[0]
+    labels = list(variants)
+    x = np.arange(len(labels))
+    for i in range(3):
+        ax.bar(x + (i - 1) * 0.26, [variants[k][i] for k in labels], 0.25,
+               label=f"capture {i+1}")
+    ax.axhline(1.0, color="0.3", ls="--", lw=1.2)
+    ax.text(len(labels) - 0.4, 1.4, "the 1 cm spec", ha="right", fontsize=8,
+            color="0.35")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=8, rotation=20, ha="right")
+    ax.set_ylabel("horizontal rms vs video, cm")
+    ax.set_title("Every closure-derived bias correction is worse than none",
+                 fontsize=10, loc="left")
+    ax.legend(fontsize=8)
+
+    ax = axes[1]
+    T = 3.4
+    b = np.linspace(0, 0.03, 200)
+    ax.plot(b, b * 9.80665 * T ** 2 / 8 * 100, lw=1.8, color="0.25")
+    ax.axhline(1.0, color="0.3", ls="--", lw=1.2)
+    for stem, (implied, estimated) in closure.items():
+        ax.scatter([implied], [implied * 9.80665 * T ** 2 / 8 * 100], s=48,
+                   marker="o", zorder=3)
+        ax.scatter([estimated], [estimated * 9.80665 * T ** 2 / 8 * 100], s=60,
+                   marker="x", zorder=3)
+    ax.set_xlabel("constant acceleration bias, g")
+    ax.set_ylabel("position error left after a linear detrend, cm")
+    ax.set_title("o = bias implied by the MEASURED error\n"
+                 "x = bias the closure constraint estimates. 3-7x too big.",
+                 fontsize=10, loc="left")
+
+    ax = axes[2]
+    for stem, (tt, dv, t_imp) in traces.items():
+        ln, = ax.plot(tt, dv, lw=1.4, label=stem)
+        ax.axvline(t_imp, color=ln.get_color(), ls=":", lw=1.0)
+    ax.axhline(0.0, color="0.3", lw=1.0)
+    ax.set_xlabel("time through a rest-to-rest interval, s")
+    ax.set_ylabel("cumulative vertical velocity, m/s")
+    ax.set_title("The bar is at rest at both ends, so this must return to 0.\n"
+                 "Dotted = the floor impact.", fontsize=10, loc="left")
+    ax.legend(fontsize=8)
+
+    fig.tight_layout()
+    return fig

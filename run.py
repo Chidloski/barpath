@@ -8,6 +8,7 @@
     python run.py --stages             # draw the pipeline stage by stage
     python run.py --rom                # per-rep vertical ROM against the bounds
     python run.py --anchors            # C6: attitude before and after a set
+    python run.py --bias               # B6: constant-bias corrections vs the video
 
 --truth is slow: it decodes each clip. It only produces numbers on deadlift,
 which is the only lift with trustworthy video truth — the others report why.
@@ -191,6 +192,80 @@ def draw_anchors() -> int:
     return 0
 
 
+B6_VARIANTS = ["shipping", "zero-mean accel\nper rep",
+               "zero-mean, no\nposition detrend", "bias from rest-to-rest\nclosure"]
+
+
+def draw_bias_models() -> int:
+    """B6 — measure each constant-bias correction against the video."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import correct, integrate, io, metrics, plot, segment
+
+    raw = ROOT / "data" / "raw"
+    variants: dict[str, list] = {k: [] for k in B6_VARIANTS}
+    closure, traces = {}, {}
+
+    for path in sorted(raw.glob("deadlift*.csv")):
+        video = pipeline.find_video(path, ROOT / "data" / "video")
+        if video is None:
+            continue
+        base = pipeline.run(path, video=video)
+        log, t, world = base["log"], base["log"]["t"], base["world_accel"]
+        stem = path.stem.split("_2026")[0]
+
+        rest = segment.rest_instants(log)
+        segs = [world[a:b].mean(axis=0) for a, b in zip(rest, rest[1:])]
+        bias = np.mean(segs, axis=0) if segs else np.zeros(3)
+
+        def build(offset, per_rep_mean, axes):
+            reps = []
+            for a, b in base["bounds"]:
+                acc = world[a:b] - offset
+                if per_rep_mean:
+                    acc = acc - acc.mean(axis=0)
+                _, p = integrate.integrate(acc, log["dt"][a:b])
+                if axes:
+                    p = correct.detrend_rep(p, 0, len(p), t[a:b], axes=axes)
+                reps.append(p)
+            return metrics.vs_truth({**base, "reps": reps}, video)
+
+        variants[B6_VARIANTS[0]].append(base["vs_truth"]["pipeline_h_rms"])
+        variants[B6_VARIANTS[1]].append(build(0.0, True, (0, 1, 2))["pipeline_h_rms"])
+        variants[B6_VARIANTS[2]].append(build(0.0, True, ())["pipeline_h_rms"])
+        variants[B6_VARIANTS[3]].append(build(bias, False, (0, 1, 2))["pipeline_h_rms"])
+
+        # The bias the MEASURED error implies, against the one closure estimates.
+        T = float(np.median([t[min(b, len(t) - 1)] - t[a] for a, b in base["bounds"]]))
+        measured_cm = base["vs_truth"]["pipeline_v_rms"]
+        implied = measured_cm / 100 * 8 / T ** 2 / io.G
+        closure[stem] = (implied, float(abs(bias[2])) / io.G)
+
+        if len(rest) >= 2:
+            a, b = int(rest[0]), int(rest[1])
+            imp = [k for k in segment.impact_anchors(log) if a <= k < b]
+            traces[stem] = (t[a:b] - t[a],
+                            np.concatenate([[0.0], np.cumsum(
+                                world[a:b - 1, 2] * log["dt"][a:b - 1])]),
+                            float(t[imp[0]] - t[a]) if imp else 0.0)
+
+    if not closure:
+        print("no deadlift captures with video for the B6 comparison")
+        return 1
+
+    for k, v in variants.items():
+        print(f"{k.replace(chr(10), ' '):34s} " + " / ".join(f"{x:6.2f}" for x in v))
+    for stem, (implied, estimated) in closure.items():
+        print(f"{stem:22s} measured error implies {implied:.4f} g; "
+              f"closure estimates {estimated:.4f} g ({estimated/implied:.1f}x)")
+
+    out = ROOT / "analysis" / "25_b6_bias_models.png"
+    plot.plot_bias_models(variants, closure, traces).savefig(out, dpi=105)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -202,6 +277,8 @@ def main(argv: list[str]) -> int:
         return draw_rom()
     if "--anchors" in argv:
         return draw_anchors()
+    if "--bias" in argv:
+        return draw_bias_models()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:

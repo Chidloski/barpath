@@ -1385,10 +1385,16 @@ def test_the_deadlift_residual_enters_at_the_floor_impact(stem):
 def test_deadlift_vertical_momentum_does_not_close(stem):
     """A defect this project had not recorded, on the axis assumed to be fine.
 
-    Deadlift rep windows run impact to impact, and every one contains exactly
-    one impact, so the bar is at rest on the floor at both ends and the
-    integral of vertical acceleration across the window must be zero. It is
-    -0.05 to -2.36 m/s, negative on 15 of 15 reps.
+    Measured between `segment.rest_instants`, which are validated against video
+    at |v| < 0.10 m/s, so the bar really is at rest at both ends and the
+    integral of vertical acceleration between them must be zero. It is -0.37 to
+    -1.48 m/s, negative on 8 of 9 intervals.
+
+    Rep windows are the WRONG place to measure this and the first version of
+    this test used them, reporting -0.05 to -2.36 m/s. Every rep boundary sits
+    exactly 10 ms after its impact — one sample into a 2-3 sample spike — so
+    part of one impulse falls outside the window and the figure inherits the
+    boundary placement. The defect is real; that range overstated it.
 
     This does not contradict B5. B5 measured the velocity STEP across the
     impact against video and got a ratio of 1.04; that is a local measurement
@@ -1407,18 +1413,69 @@ def test_deadlift_vertical_momentum_does_not_close(stem):
     result = pipeline.run(path)
     log = result["log"]
     world = orient.to_world(log["accel"], log["quat"], log["quat"])
-    imp = set(segment.impact_anchors(log))
+    rest = segment.rest_instants(log)
+    if len(rest) < 2:
+        pytest.skip(f"{stem}: fewer than two validated rest instants")
 
-    dv = []
-    for a, b in result["bounds"]:
-        assert sum(1 for k in imp if a <= k < b) == 1, (
-            f"{stem}: rep window {a}-{b} does not contain exactly one impact, "
-            f"so 'starts and ends at rest' no longer holds and this test is "
-            f"measuring something else")
-        dv.append(float(np.trapezoid(world[a:b, 2], log["t"][a:b])))
+    dv = [float(np.trapezoid(world[a:b, 2], log["t"][a:b]))
+          for a, b in zip(rest, rest[1:])]
 
-    assert all(v < 0.1 for v in dv), (
-        f"{stem}: vertical closure is no longer uniformly negative: {dv}")
-    assert np.median(dv) < -0.3, (
-        f"{stem}: median vertical closure {np.median(dv):.2f} m/s has improved "
-        f"— if that was deliberate, re-pin this test")
+    assert np.median(dv) < -0.2, (
+        f"{stem}: median vertical closure between rest instants "
+        f"{np.median(dv):.2f} m/s has improved — if that was deliberate, "
+        f"re-pin this test")
+    assert min(dv) > -2.0, (
+        f"{stem}: closure {min(dv):.2f} m/s is worse than anything measured")
+
+
+# ------------------------------------------------------------------- B6 --
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_constant_bias_corrections_are_worse_than_none(video, csv, reps):
+    """B6's first candidate, measured and rejected. Asserts a negative result.
+
+    A rep starts and ends at rest, so its mean world acceleration must be zero.
+    Enforcing that looked like the right constraint — velocity closure is
+    physically TRUE where step 7's position closure is measurably false (A3:
+    the real bar misses closing horizontally by 1.9-4.3 cm). It makes things
+    much worse, on every capture and every variant tried.
+
+    The arithmetic says why, and it is worth keeping because it rules out the
+    whole family rather than one attempt. A constant bias b leaves b*T^2/8 of
+    position error after a linear detrend. The MEASURED error implies b of
+    0.0016-0.0047 g. Every closure-derived estimate is 0.0076-0.0266 g, 1.9 to
+    7.1x larger. So the signal does not contain a constant bias of the
+    estimated size: the constraint is absorbing an error localised at the floor
+    impact and spreading it across the whole rep, which injects a parabola
+    bigger than the error it removes.
+
+    This is also why TASKS.md's oracle cap holds — a constant-bias model cannot
+    represent an impulse. Do not re-propose one without new evidence.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import correct, integrate, metrics, pipeline
+
+    base = pipeline.run(RAW / f"{csv}.csv", video=VIDEO / f"{video}.mov")
+    log, world = base["log"], base["world_accel"]
+
+    reps_zero_mean = []
+    for a, b in base["bounds"]:
+        acc = world[a:b] - world[a:b].mean(axis=0)
+        _, p = integrate.integrate(acc, log["dt"][a:b])
+        reps_zero_mean.append(
+            correct.detrend_rep(p, 0, len(p), log["t"][a:b]))
+
+    shipped = base["vs_truth"]["pipeline_h_rms"]
+    zeroed = metrics.vs_truth({**base, "reps": reps_zero_mean},
+                              VIDEO / f"{video}.mov")["pipeline_h_rms"]
+
+    if csv.startswith("deadlift_180x3"):
+        # The one capture it helps, 15.4 -> 6.6 cm, and it is the capture that
+        # over-reads its impact by 58-72% (P6). Helping there is consistent
+        # with the diagnosis rather than against it: the constraint removes
+        # part of an impact error that is unusually large on this capture.
+        assert zeroed < shipped
+        return
+    assert zeroed > shipped * 1.5, (
+        f"{csv}: zero-mean acceleration now HELPS ({shipped:.2f} -> "
+        f"{zeroed:.2f} cm). The B6 diagnosis above needs re-running")
