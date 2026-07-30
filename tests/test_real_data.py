@@ -1233,10 +1233,17 @@ TWO_ANCHOR = [p for p in CAPTURES if p.stem.split("_2026")[0] in {
 def test_a_working_set_does_not_wreck_core_motions_attitude(path):
     """The answer C1 was built to get, and it is "no lasting damage".
 
-    Measured 2026-07-30: 0.05 deg at the opening anchor, 0.14 deg at the
-    closing anchor, across 40-55 s of loaded lifting with 20 g impacts in it.
-    Gyro-only propagation over the same span drifts 0.35-1.49 deg, so Core
-    Motion's fusion is doing real work and winning.
+    Measured 2026-07-30: tilt error bounds at 0.05 deg at the opening anchor
+    and 0.14 deg at the closing anchor, across 40-55 s of loaded lifting with
+    20 g impacts in it. Gyro-only propagation over the same span drifts
+    0.35-1.49 deg, so Core Motion's fusion is doing real work and winning.
+
+    Deliberately asserts only the two ends, never `change_deg`. The watch is
+    not in the same posture at both anchors — 3.5 to 161 deg between them — so
+    the body-frame accel bias projects differently at each, and the change
+    moves for reasons that have nothing to do with the attitude. Both figures
+    are upper bounds for the same reason: 0.0025 g of accel bias is
+    g*sin(0.143 deg), which is the closing-anchor median itself.
 
     The ceiling is 0.5 deg, well above the 0.27 deg worst case, because this
     gate exists to catch a REGIME change — a set that leaves the attitude

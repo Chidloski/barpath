@@ -235,9 +235,22 @@ Four results, in descending order of how much they change what we believe:
 ### C6 — the two anchors, measured
 `calibrate.anchor_tilt`. The measurement C1 was built for, on the seven captures
 that carry both holds. **A set does no lasting damage to Core Motion's
-attitude**: 0.05° at the opening anchor, 0.14° at the closing anchor, worst case
-0.27°, across 39–56 s with 20 g impacts in it. Gyro-only propagation over the
-same span drifts 0.35–1.49°, so the fusion is working, not being corrupted.
+attitude**: tilt error bounds at 0.05° at the opening anchor and 0.14° at the
+closing anchor, worst case 0.27°, across 39–56 s with 20 g impacts in it.
+Gyro-only propagation over the same span drifts 0.35–1.49°, so the fusion is
+working, not being corrupted.
+
+*Two limits, both found by asking whether the watch is in the same posture at
+both anchors. It is not — it rotates 3.5–161° between them, mostly yaw.*
+
+- **These are upper bounds and the change between them means nothing.** The
+  residual is tilt leak plus body-frame accel bias rotated into the world, and
+  0.0025 g of accel bias is exactly g·sin(0.143°) — the closing-anchor median.
+  True tilt is between zero and 0.14°.
+- **Yaw is unobservable.** Gravity constrains roll and pitch only, and the
+  logger uses `.xArbitraryZVertical`. Bounded indirectly at 0.0–1.4° per set,
+  which is 2.4 mm on a 10 cm excursion — below spec, so the question closes
+  anyway.
 
 Four consequences:
 

@@ -260,12 +260,33 @@ def anchor_tilt(log: dict, world_accel: np.ndarray, span_s: float = 1.5) -> dict
     the same span. The fusion is correcting, and winning, THROUGH a set with
     20 g impacts in it.
 
-    Read the limit as carefully as the result. The anchors sample the attitude
-    at the two moments it is most likely to be right — still, and with no
-    linear acceleration to corrupt the gravity reference. A good number here
-    does NOT say the attitude holds during a rep, and P3's error lives during
-    the rep. This measures that a set does no LASTING damage, which is a
-    different and smaller claim than the one C1 was hoped to settle.
+    THREE LIMITS, and they matter more than the result.
+
+    1. `open_deg` and `close_deg` are UPPER BOUNDS on tilt error, not
+       measurements of it. The world-frame residual is the tilt leak plus the
+       body-frame accel bias rotated into the world, and 0.0025 g of accel bias
+       — what a watch on a table shows — is g*sin(0.143 deg), which is the
+       closing-anchor median itself. The true tilt could be zero.
+
+    2. `change_deg` is not a result. It is returned because it is the obvious
+       thing to look at, and it should not be read as degradation across the
+       set: the watch is not in the same posture at the two anchors (measured,
+       3.5-161 deg between them), so the accel-bias term projects differently
+       at each end and moves this number on its own.
+
+    3. This is TILT only — two of three degrees of freedom. Gravity says
+       nothing about yaw, and the logger requests `.xArbitraryZVertical`, so no
+       absolute yaw reference exists anywhere in the system. Yaw error is
+       unobservable here; it is bounded indirectly at 0.0-1.4 deg per set by
+       the yaw part of `gyro_only_deg`, which is 2.4 mm on a 10 cm excursion
+       and so below the spec.
+
+    And the standing limit on the design: the anchors sample the attitude at
+    the two moments it is most likely to be right — still, with no linear
+    acceleration to corrupt the gravity reference. A good number here does NOT
+    say the attitude holds during a rep, and P3's error lives during the rep.
+    This measures that a set does no LASTING damage, which is a different and
+    smaller claim than the one C1 was hoped to settle.
     """
     holds = hold_windows(log, span_s)
     if holds["open"] is None or holds["close"] is None:

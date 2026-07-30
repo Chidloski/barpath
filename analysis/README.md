@@ -449,6 +449,28 @@ Over 39–56 s of loaded lifting with 20 g impacts in it. Propagating the logged
 gyro alone from the opening anchor drifts 0.35–1.49°, so Core Motion's fusion is
 doing real work and winning — through the impacts, not despite them.
 
+**Two limits on how far that table can be read, both from the watch not being in
+the same posture at the two anchors.** It rotates 3.5–161° between them, mostly
+yaw:
+
+*The tilt figures are upper bounds, and the change between them is not a
+result.* The world residual is the tilt leak plus the body-frame accel bias
+rotated into the world, so a posture change alters the bias term's contribution
+at each end. And 0.0025 g of accel bias is g·sin(0.143°) — the closing-anchor
+median itself. The body-frame residual is 0.0012–0.0050 g at both anchors, at
+that floor throughout. True tilt error is between zero and 0.14° and nothing
+here separates them. The conclusion is unaffected, since it is small either way;
+an earlier version of this section read the 0.05 → 0.14 as degradation and that
+was wrong.
+
+*Only two of three degrees of freedom are measured.* Gravity constrains roll and
+pitch. The logger requests `.xArbitraryZVertical`, so no absolute yaw reference
+exists anywhere in the system and yaw error is unobservable. It is bounded
+indirectly by the gyro-vs-Core-Motion yaw divergence, 0.0–1.4° per set. That is
+enough to close it: 1.4° of frame rotation moves a point on a 10 cm excursion by
+2.4 mm, under the 1 cm spec — and it is not the 180° disagreement P2 reports on
+fore-aft sign, so yaw does not explain that either.
+
 **This confirms B1 on the evidence B1 asked for.** `calibrate.py`'s docstring
 named this exact test: two anchors 40 s apart, a baseline over which real
 rotation cancels and bias does not. 0.69° over ~50 s is **0.014 °/s** of

@@ -373,11 +373,32 @@ working set — 20 g impacts, fast rotation, its gravity reference corrupted by
 the lift's own acceleration. C1's two-anchor protocol was built to answer it and
 **C6 measured it on 2026-07-30. The answer is that a set does no lasting damage.**
 
-Across all seven captures with both holds, the attitude error at a still hold is
-**0.05° at the opening anchor and 0.14° at the closing anchor**, worst case
-0.27°, over 39–56 s of loaded lifting. Propagating the logged gyro alone across
-the same span drifts **0.35–1.49°**, median 0.69 — so Core Motion's fusion is
-doing real work and winning, through the impacts rather than despite them.
+Across all seven captures with both holds, the attitude error at a still hold
+**bounds at 0.05° at the opening anchor and 0.14° at the closing anchor**, worst
+case 0.27°, over 39–56 s of loaded lifting. Propagating the logged gyro alone
+across the same span drifts **0.35–1.49°**, median 0.69 — so Core Motion's
+fusion is doing real work and winning, through the impacts rather than despite
+them.
+
+**Read these as upper bounds, not measurements, and do not read the change
+between them at all.** The world-frame residual is the tilt leak PLUS the
+body-frame accel bias rotated into the world, and the watch is not in the same
+posture at the two anchors — measured, it rotates by 3.5–161°, mostly yaw. So
+the bias term projects differently at each end. Decisively: 0.0025 g of accel
+bias is g·sin(0.143°), which is the closing-anchor median itself. The body-frame
+residual is 0.0012–0.0050 g at both anchors, i.e. at that floor throughout. The
+true tilt error is somewhere between zero and 0.14°, and nothing here separates
+the two. The conclusion survives — it is small either way — but "it degraded
+from 0.05 to 0.14 across the set" does not, and was claimed here in error.
+
+**And this measures two of the three attitude degrees of freedom.** Gravity
+constrains roll and pitch. It says nothing about yaw, and the logger requests
+`.xArbitraryZVertical`, so no absolute yaw reference exists anywhere in the
+system. Yaw error is therefore unobservable here — bounded only indirectly, by
+the gyro-vs-Core-Motion yaw divergence of 0.0–1.4° per set. That bound is small
+enough to close the question: a 1.4° frame rotation moves a point on a 10 cm
+excursion by 2.4 mm, under the 1 cm spec, and it is nothing like the 180°
+disagreement P2 reports on fore-aft sign.
 
 Two things follow, and the second matters more.
 
