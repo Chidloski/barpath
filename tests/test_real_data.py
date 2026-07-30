@@ -489,17 +489,28 @@ def test_deadlift_tracking_is_clean_enough_to_trust(video, csv, reps):
 @needs_data
 @pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
 def test_pipeline_runs_end_to_end_without_raising(path):
-    """The driver must survive stages that are not implemented.
+    """All nine steps run, and that is a statement about coverage only.
 
-    Three functions still raise NotImplementedError, so the pipeline genuinely
-    cannot complete. It must record that and return the eight stages that did
-    work — throwing would lose all of them, and a partial result you can see is
-    worth more than an exception.
+    This used to assert the OPPOSITE — `result["blocked"]` non-empty, because
+    `project.project_to_plane` and `project.confidence` raised
+    `NotImplementedError` and the driver's job was to record that rather than
+    throw. Step 8 was implemented on 2026-07-30 and the premise inverted: 17 of
+    17 captures now complete.
+
+    Do not read that as progress toward the spec. The pipeline is still 5-15x
+    outside its horizontal target where anything can measure it (P2), the
+    display axis's sign is unresolved (B4), and 8 of 17 sets do not earn
+    `project.confidence` at all. A completing pipeline is not a working one, and
+    this gate deliberately asserts nothing about quality — `vs_truth` and the
+    ROM bounds do that.
     """
     from src import pipeline
 
     result = pipeline.run(path)
-    assert result["blocked"], "unimplemented stages must be reported, not hidden"
+    assert not result["blocked"], (
+        f"{path.stem}: stages blocked again — {result['blocked']}. Step 8 was "
+        f"implemented; if something now raises, the driver is right to record "
+        f"it but this gate needs re-pinning")
     xfail_if_miscounted(path)
     assert len(result["bounds"]) == truth_reps(path)
     assert result["position"].shape == (len(result["log"]["t"]), 3)

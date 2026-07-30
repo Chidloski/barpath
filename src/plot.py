@@ -13,9 +13,27 @@ Display rules that follow from the spec:
     cannot support.
   * Low-confidence sets are drawn WITHOUT the stretch. Stretching noise is
     how you invent faults.
+
+What "confident" means here, because it is narrower than the word
+--------------------------------------------------------------------
+`project.confidence` decides the flag, and it can only test whether the
+DISPLAY AXIS is identifiable. It cannot test whether the path drawn along that
+axis is right, and on real captures the path is 5-15x outside spec (P2) with
+its fore-aft sign unresolved (B4). So a stretched plot is not a certified plot;
+it is one whose axis is not obviously meaningless. Every function here that
+draws a bar path therefore says on its face what external evidence exists for
+that lift, and nothing here reads the absence of a low-confidence label as an
+endorsement.
+
+Everything that draws a path goes through `project.project_to_plane`. Both
+`plot_stages` and `plot_scorecard` used to project by hand — `rep[:, :2] @
+axis` — which is how step 8 came to be the only stage in the pipeline that had
+never run while its output was on screen in two figures.
 """
 
 from __future__ import annotations
+
+import textwrap
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -186,15 +204,7 @@ def plot_stages(results: dict, truth_paths: dict | None = None):
 
         # --- row 5: the product --------------------------------------------
         ax = axes[5, col]
-        axis = np.real(r["axis"]) if "axis" in r else np.array([1.0, 0.0])
-        for i, rep in enumerate(reps):
-            along = (rep[:, :2] @ axis) * 100
-            ax.plot(along - along[0], rep[:, 2] * 100,
-                    lw=2.0 if i == 0 else 1.2, alpha=1.0 if i == 0 else 0.75)
-        ax.set_aspect(1.0 / STRETCH)
-        ax.set_xticks([])                    # deliberate: no horizontal scale
-        ax.set_xlabel("fore-aft (stretched 4x, unlabelled by design)",
-                      fontsize=8)
+        _draw_planar(ax, r)
         if "vs_truth" in r:
             ax.text(0.02, 0.03,
                     f"horizontal error {r['vs_truth']['pipeline_h_rms']:.1f} cm rms "
@@ -216,6 +226,47 @@ def plot_stages(results: dict, truth_paths: dict | None = None):
                  fontsize=12)
     fig.tight_layout(rect=(0.015, 0, 1, 0.965))
     return fig
+
+
+def _draw_planar(ax, result, lw_first=2.0, lw_rest=1.2):
+    """Step 8's output, drawn under step 9's rules. In cm.
+
+    One place, so that the stretch and the no-label rule cannot drift apart
+    between figures — they did, and worse, both figures projected by hand and
+    stretched unconditionally, so `project.project_to_plane` and
+    `project.confidence` sat unimplemented while their results were on screen.
+    """
+    from . import project
+
+    reps = result["reps"]
+    planar = result.get("planar")
+    if planar is None:
+        # No axis at all (no reps): fall back to world x so the panel is not
+        # blank, and label it, rather than pretending it is a projection.
+        planar = project.project_to_plane(reps, np.array([1.0, 0.0])) if reps else []
+
+    for i, p in enumerate(planar):
+        ax.plot(p[:, 0] * 100, p[:, 1] * 100,
+                lw=lw_first if i == 0 else lw_rest,
+                alpha=1.0 if i == 0 else 0.75)
+
+    # The display rule, honoured rather than assumed. Default False when the
+    # flag is missing: refusing to stretch costs a reader nothing, and
+    # stretching an unvetted axis is the failure the rule exists to prevent.
+    confident = bool(result.get("confident", False))
+    ax.set_aspect(1.0 / STRETCH if confident else 1.0)
+    ax.set_xticks([])                        # deliberate: no horizontal scale
+
+    label = ("fore-aft (stretched 4x, unlabelled by design)" if confident else
+             "fore-aft, NOT stretched — low confidence (unlabelled by design)")
+    # The reason goes under the panel, not inside it. A low-confidence panel is
+    # narrow by construction — that is what withholding the stretch does — so
+    # there is no interior room, and a verdict without its reason is the kind
+    # of unexplained claim this project is trying to stop making.
+    for why in result.get("confidence_reasons", []):
+        label += "\n" + textwrap.fill(why, 46)
+    ax.set_xlabel(label, fontsize=8)
+    return ax
 
 
 def _pause(ax, result):
@@ -460,19 +511,11 @@ def plot_scorecard(results: dict, truths: dict, roms: dict):
     for col, label in enumerate(labels):
         r = results[label]
         lift = label.split()[0]
-        reps = r["reps"]
 
-        # --- row 0: the product, as step 9 would draw it -------------------
+        # --- row 0: the product, as step 9 draws it ------------------------
         ax = axes[0, col]
-        axis = np.real(r["axis"]) if "axis" in r else np.array([1.0, 0.0])
-        for i, rep in enumerate(reps):
-            along = (rep[:, :2] @ axis) * 100
-            ax.plot(along - along[0], rep[:, 2] * 100,
-                    lw=2.2 if i == 0 else 1.2, alpha=1.0 if i == 0 else 0.7)
-        ax.set_aspect(1.0 / STRETCH)
-        ax.set_xticks([])
+        _draw_planar(ax, r, lw_first=2.2)
         ax.set_title(label, fontsize=11, fontweight="bold")
-        ax.set_xlabel("fore-aft (stretched 4x, unlabelled by design)", fontsize=8)
         if col == 0:
             ax.set_ylabel("what the pipeline would show you\nheight (cm)",
                           fontsize=9)

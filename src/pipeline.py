@@ -14,11 +14,18 @@ sampling-irregularity, quaternion-norm and high-g warnings never reached a
 human. `check_log` fires on `deadlift_180x3` and nobody had ever been told.
 
 Stages that are not implemented used to be invisible. `correct.apply_offset`,
-`project.project_to_plane` and `project.confidence` all raise
-`NotImplementedError`, so the pipeline genuinely cannot complete. `run` records
-that as a blocked stage and returns everything it did manage, rather than
-throwing and losing the eight stages that worked. A partial result you can see
+`project.project_to_plane` and `project.confidence` all raised
+`NotImplementedError`, so the pipeline genuinely could not complete. `run`
+records that as a blocked stage and returns everything it did manage, rather
+than throwing and losing the stages that worked. A partial result you can see
 is worth more than an exception.
+
+**As of 2026-07-30 nothing raises, and all nine steps run.** That is a
+statement about coverage and about nothing else. `blocked` now empties on every
+capture in `data/raw/` that segments at all, and the pipeline is still 5-15x
+outside its horizontal spec (P2) with a display axis whose sign it cannot
+resolve (B4). A completing pipeline is not a working one; read `confident` and
+the vs-video numbers, not the absence of blocked entries.
 
 The result dict is deliberately fat. Every intermediate stays in it, because
 the recurring failure in this project has been a stage that looked fine from
@@ -170,24 +177,27 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None,
         result["warnings"].extend(truth.rom_flags(lift, result["rep_rom_m"]))
 
     # 8 --- display axis -----------------------------------------------------
+    #
+    # `confident` gates plot.py's 4x horizontal stretch and NOTHING else. It
+    # asks whether the axis is identifiable, not whether the path along it is
+    # right — see project.confidence, which is explicit that no function of a
+    # ratio and an excursion can ask the second question. The sign of the axis
+    # remains unresolved (B4), so a confident set can still be drawn mirrored.
     if reps:
         axis, ratio, excursion = project.principal_axis(reps)
         result["axis"] = axis
-        result["axis_ratio"] = float(np.real(ratio))
-        result["excursion"] = float(np.real(excursion))
-        try:
-            result["planar"] = project.project_to_plane(reps, axis)
-        except NotImplementedError:
-            result["blocked"].append("step 8 project_to_plane: not implemented")
-        try:
-            result["confident"] = project.confidence(result["axis_ratio"],
-                                                     result["excursion"])
-        except NotImplementedError:
-            result["blocked"].append("step 8 confidence: not implemented")
+        result["axis_ratio"] = ratio
+        result["excursion"] = excursion
+        result["planar"] = project.project_to_plane(reps, axis)
+        result["confidence_reasons"] = project.confidence_reasons(
+            ratio, excursion, n_reps=len(reps))
+        result["confident"] = not result["confidence_reasons"]
+    else:
+        result["blocked"].append("steps 8-9: no reps to project")
 
     # 9 --- plot -------------------------------------------------------------
-    if "planar" not in result:
-        result["blocked"].append("step 9 plot: needs step 8")
+    # `planar` is what step 9 consumes; rendering it is run.py's job, because a
+    # library function that imports matplotlib to return a dict is a trap.
 
     # A3 --- metrics. Not a pipeline step; the thing that judges the steps. ---
     if len(reps) >= 2:
@@ -240,6 +250,18 @@ def summary(result: dict) -> str:
     if "axis_ratio" in result:
         lines.append(f"  display axis ratio {result['axis_ratio']:.1f}, "
                      f"excursion {result['excursion'] * 100:.1f} cm")
+        # The verdict with its reason, never the verdict alone: "low
+        # confidence" is a conclusion and the reason is the evidence for it.
+        # And say what confidence does not cover, every time, because the
+        # failure this project keeps repeating is a pass mistaken for a proof.
+        if result["confident"]:
+            lines.append("  confident  axis is identifiable; the 4x stretch is "
+                         "allowed. This says NOTHING about accuracy — see "
+                         "project.confidence — and the axis SIGN is unresolved "
+                         "(B4), so the path may be drawn mirrored")
+        else:
+            for why in result["confidence_reasons"]:
+                lines.append(f"  LOW CONFIDENCE  {why}")
 
     report = metrics.summary(result.get("dispersion"), result.get("vs_truth"))
     if report:

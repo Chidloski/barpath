@@ -20,8 +20,13 @@ and ends in the same place.
 
 ## State
 
-The pipeline does not complete. It is being rebuilt after the original version
-passed every synthetic gate and failed in the gym by two orders of magnitude.
+All nine steps now run, on every capture — step 8 was implemented on
+2026-07-30 and nothing raises. **That is coverage, not correctness.** The
+reconstruction is still 5-15x outside its horizontal spec where anything can
+measure it, the display axis's sign is unresolved, and 8 of 17 sets do not earn
+enough axis confidence to be drawn stretched. It is being rebuilt after the
+original version passed every synthetic gate and failed in the gym by two
+orders of magnitude, and a completing pipeline is not a working one.
 
 `TASKS.md` is the working list — what is done, what is not, and the measurement
 behind each. `CLAUDE.md` holds the open problems. `analysis/README.md` holds the
@@ -56,8 +61,8 @@ of it injected in the 200 ms around each floor impact. See `CLAUDE.md` P4, P5
 and P6.
 
 Since A3 the failure has a measurement rather than an adjective. Against the
-video, per rep, on the three deadlifts: **horizontal 5.1, 9.2 and 15.4 cm rms
-against a 1 cm spec, and vertical 6.8, 8.7 and 3.2 cm against ±2–3 cm.** So
+video, per rep, on the three deadlifts: **horizontal 5.05, 9.19 and 15.44 cm rms
+against a 1 cm spec, and vertical 5.24, 6.60 and 5.24 cm against ±2–3 cm.** So
 5–15× out horizontally, and out on vertical too — which is new, because
 "vertical comes out fine" had been repeated for a while without anyone
 measuring it per rep.
@@ -69,6 +74,8 @@ measuring it per rep.
     python run.py --plot                 # and write diagnostics to analysis/
     python run.py --truth                # and measure against the video (A3)
     python run.py --stages               # draw the pipeline stage by stage
+    python run.py --paths                # step 9: the bar paths themselves
+    python run.py --scorecard            # how well it performs, per lift
     pytest tests/ -q
 
 `--stages` is the one to start with if you are new to this: `analysis/21` shows
@@ -96,9 +103,11 @@ cleanly when `data/raw/` is absent.
     src/synth.py               synthetic generator
     watch/                     Xcode project
 
-`correct.apply_offset`, `project.project_to_plane` and `project.confidence`
-still raise `NotImplementedError`. The driver reports them as blocked stages
-rather than throwing, so the eight stages that do work still produce output.
+Nothing raises `NotImplementedError` any more. `correct.apply_offset` is
+implemented but OFF by default — the wrist-to-bar offset `d` has never been
+measured and B2 showed it cannot be fitted from video. The driver still reports
+any stage it cannot run as blocked rather than throwing, on the principle that a
+partial result you can see beats an exception.
 
 ## What this project has learned the hard way
 
@@ -131,6 +140,11 @@ time that has cost this project time.
 Deadlift first. Not because the pipeline differs by lift — it does not — but
 because it is the only lift with external ground truth: the bar starts at plate
 radius and ends at a tape-measurable lockout, and the floor impact gives an
-unmistakable timing landmark that no other lift provides. Bench and squat offer
-nothing to check against but your own judgement of whether a curve looks
-plausible, which is exactly how you convince yourself a broken pipeline works.
+unmistakable timing landmark that no other lift provides.
+
+Bench and squat used to offer nothing but your own judgement of whether a curve
+looks plausible, which is exactly how you convince yourself a broken pipeline
+works. Since 2026-07-30 they have one weak external check — per-rep vertical ROM
+against `truth.VERTICAL_ROM_M`. It cannot see phase and constrains one axis, but
+it is not self-referential, and it caught `squat_160x1` reconstructing 18 cm of
+a 65 cm squat at a correct rep count of 1 of 1.

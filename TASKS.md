@@ -473,11 +473,31 @@ replace it". The floor-impact anchor was the obvious candidate and it lost.
 `axes` is now a parameter on `detrend_rep`/`detrend_set` so the next candidate
 can be measured against the same numbers rather than re-deriving them.
 
-### B4 — fix step 8
-`project_to_plane` and `confidence` raise. `principal_axis` uses `np.linalg.eig`
-on a symmetric matrix instead of `eigh`, and the docstring's sign resolution is
-unimplemented — so the path can silently mirror, which the docstring itself
-calls worse than no path.
+### B4 — step 8 implemented; the SIGN is still open  (2026-07-30)
+`project_to_plane` and `confidence` no longer raise, and `principal_axis` uses
+`eigh` — the `eig` call on a symmetric matrix was why every caller wrapped the
+result in `np.real`. All nine steps now run on all 17 captures.
+
+`confidence` is derived rather than tuned: `min_ratio(n_reps)` inverts
+Anderson's asymptotic angular error for a principal eigenvector to find the
+eigenvalue ratio that pins the axis to 20 degrees. The one judgement in it —
+effective sample size is the REP count, not the sample count — is stated as a
+judgement and checked by a bootstrap in `tests/test_projection.py`, which is
+written as a distribution statement because it does not hold on every capture.
+
+It vouches for 9 of 17 sets, and it discriminates without having been tuned to:
+it rejects both captures with a known segmentation defect
+(`bench_spoto_90x5_1`'s 91.6 cm excursion, `squat_160x1`'s single rep) and the
+two deadlifts with the worst measured error (35.9 and 30.0 cm excursion, 9.19
+and 15.44 cm rms), while accepting `deadlift_155x6_1`, the best at 5.05 cm.
+
+**Vouching for the axis is not vouching for the path**, and the code says so in
+three places. An error at rep frequency (P3) lands in the covariance as variance
+and makes the ratio look BETTER, so no function of ratio and excursion could
+detect it. `analysis/27_bar_paths.png` labels every panel with what external
+evidence exists for that lift.
+
+**Still open — the sign.**
 
 A3 confirmed the mirror is not hypothetical — on `deadlift_155x6_2` the axis
 came out backwards and had to be flipped against the video. It also found

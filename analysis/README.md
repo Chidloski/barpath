@@ -645,3 +645,40 @@ velocity ramps to −6 m/s on the deadlift and position spans **57.7 m** against
 0.6 m lift, so the video-truth line drawn beside it is visually flat. Row 5 is
 what step 7 buys back — and on deadlift the per-rep curves disagree with each
 other in the floor-resting portion, which is where B6 found the error enters.
+
+## Step 8 and 9 finally run (2026-07-30)
+- `27_bar_paths.png` — the product, every capture. `python run.py --paths`.
+
+`project.project_to_plane` and `project.confidence` raised `NotImplementedError`
+until now, so the pipeline had never completed and **every bar path anyone had
+looked at was projected by hand inside the plot code**. Both figures that showed
+one — `21_pipeline_stages` row 5 and `26_pipeline_scorecard` row 0 — did
+`rep[:, :2] @ axis` themselves. Step 8 was the only stage whose output was on
+screen while the stage had never executed.
+
+`principal_axis` also called `np.linalg.eig` on a symmetric covariance instead
+of `eigh`, which is why every caller wrapped the result in `np.real`. A
+workaround that hid the wrong routine being called.
+
+**`confidence` is derived, not tuned.** `min_ratio(n_reps)` inverts Anderson's
+asymptotic angular error for a principal eigenvector to get the eigenvalue ratio
+that pins the display axis to 20°: 10.1 at one rep, 3.8 at four, 3.0 at six. The
+one judgement is that the effective sample size is the REP count rather than the
+sample count — the samples in a rep are one smooth excursion at 100 Hz, not
+independent draws. That is stated as a judgement and checked by a bootstrap in
+`tests/test_projection.py`, written as a distribution statement because it does
+not hold on every capture.
+
+**It vouches for 9 of 17 sets, and discriminates without having been tuned to.**
+It rejects both captures with an independently known segmentation defect —
+`bench_spoto_90x5_1` (91.6 cm excursion) and `squat_160x1` (one rep) — and the
+two deadlifts with the worst measured error (35.9 and 30.0 cm excursion, 9.19
+and 15.44 cm rms), while accepting `deadlift_155x6_1`, the best at 5.05 cm.
+
+**Vouching for the axis is not vouching for the path.** An error at rep
+frequency (P3) lands in the covariance as variance and makes the ratio look
+*better*, so no function of ratio and excursion could detect it. Every panel of
+27 is therefore labelled with what external evidence exists for that lift —
+"NO external horizontal check" on bench and squat, the measured rms on deadlift
+— and low-confidence sets are drawn without the 4× stretch, because stretching
+noise is how you invent faults.

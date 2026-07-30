@@ -10,6 +10,7 @@
     python run.py --anchors            # C6: attitude before and after a set
     python run.py --bias               # B6: constant-bias corrections vs the video
     python run.py --scorecard          # how well the pipeline performs, per lift
+    python run.py --paths              # step 9: the bar path itself
 
 --truth is slow: it decodes each clip. It only produces numbers on deadlift,
 which is the only lift with trustworthy video truth — the others report why.
@@ -23,6 +24,13 @@ point of it is the comparison.
 of motion against what the lifter can actually move a bar through. Also slow —
 it decodes the deadlift clips to check the video against the same bounds, which
 is where it found that two of the three are mis-scaled.
+
+--paths writes analysis/27_bar_paths.png: steps 8 and 9 applied to every
+capture in data/raw, which is the product this project exists to make. Read the
+subtitles before reading the shapes — a panel drawn without the 4x stretch has
+an axis project.confidence would not vouch for, and a panel drawn WITH it has
+an identifiable axis and no accuracy claim whatever. Nothing here is inside
+spec; see P2.
 
 --anchors writes analysis/24_c6_two_anchors.png: Core Motion's attitude error at
 the still holds bracketing each set, the per-rep residual that the anchors
@@ -79,6 +87,81 @@ def draw_stages() -> int:
     out = ROOT / "analysis" / "21_pipeline_stages.png"
     plot.plot_stages(results, truths).savefig(out, dpi=105)
     print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_paths() -> int:
+    """Step 9 — the bar path, for every capture that segments.
+
+    The first time this pipeline has rendered its own product: steps 8 and 9
+    both raised until 2026-07-30, and every bar path anybody had looked at was
+    projected by hand inside plot.plot_stages.
+
+    Deliberately every capture rather than one per lift. The scorecard already
+    shows a representative of each; what this is for is seeing how often the
+    axis is not vouched for at all, which one capture per lift hides.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from src import plot, truth
+
+    raw = ROOT / "data" / "raw"
+    runs = []
+    for path in sorted(raw.glob("*.csv")):
+        try:
+            truth.lift_of(path)
+        except ValueError:
+            continue                      # stationary diagnostics have no reps
+        result = pipeline.run(path)
+        if "planar" in result:
+            runs.append((path.stem.split("_2026")[0], result))
+
+    if not runs:
+        print("no captures with reps to draw")
+        return 1
+
+    cols = 5
+    rows = -(-len(runs) // cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(3.4 * cols, 5.6 * rows))
+    axes = np.atleast_1d(axes).ravel()
+
+    n_confident = 0
+    for ax, (stem, result) in zip(axes, runs):
+        n_confident += bool(result["confident"])
+        # Say what checked this lift, in the title, every time. A drawn path
+        # that nothing external has measured is the thing this project keeps
+        # mistaking for a working one — so it goes where the name is, not in a
+        # corner a reader can skip.
+        note = ("5-15 cm rms vs video, spec 1 cm"
+                if stem.startswith("deadlift")
+                else "NO external horizontal check")
+        plot.plot_paths(result["planar"], confident=result["confident"],
+                        title=f"{stem}\n{note}", ax=ax)
+        ax.set_title(ax.get_title(), fontsize=8, color="0.15")
+        # Outside the axes: aspect is locked, so a narrow panel has no interior
+        # room and an overlaid legend hides the path it is labelling.
+        ax.legend(fontsize=6, frameon=False, loc="center left",
+                  bbox_to_anchor=(1.0, 0.5))
+        print(f"{stem:22s} ratio {result['axis_ratio']:6.2f}  excursion "
+              f"{result['excursion']*100:6.2f} cm  confident "
+              f"{result['confident']}"
+              + ("" if result["confident"]
+                 else "  <- " + "; ".join(result["confidence_reasons"])))
+    for ax in axes[len(runs):]:
+        ax.axis("off")
+
+    fig.suptitle(
+        f"Step 9, every capture. {n_confident} of {len(runs)} sets have an axis "
+        f"project.confidence will vouch for.\n"
+        f"Vouching for the AXIS is not vouching for the PATH: horizontal error "
+        f"is 5-15x outside spec where anything measures it (P2), and the axis "
+        f"SIGN is unresolved (B4), so any panel may be mirrored.", fontsize=11)
+    out = ROOT / "analysis" / "27_bar_paths.png"
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(out, dpi=105)
+    print(f"\nwrote {out.relative_to(ROOT)}")
     return 0
 
 
@@ -318,6 +401,8 @@ def main(argv: list[str]) -> int:
 
     if "--stages" in argv:
         return draw_stages()
+    if "--paths" in argv:
+        return draw_paths()
     if "--rom" in argv:
         return draw_rom()
     if "--anchors" in argv:
