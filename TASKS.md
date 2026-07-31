@@ -418,11 +418,39 @@ track.** `vs_truth` refuses squat.
 
 `analysis/29_bench_video_truth.png`, `tests/test_video_truth.py`.
 
-**What this unlocks and does not do: P1's bench phase question.** Windows on
-bench could never be checked for phase because bench had no external time
-reference. It has one now, so "does each IMU rep window contain the video's
-rep?" is answerable for the first time. Not done here — it is a different
-problem and wants its own diff.
+**What this unlocked: P1's bench phase question**, which C9 answered the same
+day. See the next entry.
+
+### C9 — bench rep-window phase, measured for the first time
+`tests/test_real_data.py`, `analysis/30_bench_window_phase.png`. The half of P1
+that CLAUDE.md called the one that matters, on the lift that just acquired an
+external clock.
+
+**Bench windows are in phase: 15 of 15 hold exactly one video chest touch**, at
+0.567–0.648 through the window. The failure mode is 0.0/1.0 — that is where
+deadlift's old 44/44 segmenter actually sat, holding the descent of one rep and
+the ascent of the next — and nothing is near it.
+
+**The touch sits at ~0.60, not 0.50, and that is the bar rather than a bias.**
+Checked rather than argued: measured in the video alone, with no IMU and no
+sync, the descent takes **0.573 / 0.590 / 0.582** of a rep against the IMU
+windows' **0.593 / 0.613 / 0.619**. A bench descent is controlled and a press is
+not — 1.6–1.9 s down against 1.2–1.3 s up. The modalities agree to 0.02–0.04 of
+a rep, i.e. 60–100 ms.
+
+**It survives C8's weakest point rather than depending on it.** `bench_sync`'s
+peak is weakly isolated with rivals one rep period away, but a whole-period
+error is invisible to a phase test *by construction* — a periodic set looks
+identical shifted by one rep. So the ambiguity the sync cannot resolve is
+exactly the one that cannot corrupt this. A fractional-period error would show
+and does not: the three agree to 0.03 despite offsets of +0.040, −2.320 and
+−0.585 s.
+
+**What it does not say.** It fixes where the window sits relative to the bar,
+not whether the path reconstructed inside it is right — that is P2's
+2.63–3.67 cm. And it says nothing about squat, which has no external anchor of
+any kind and is now the only lift whose phase is unverified. Squat's fix is the
+capture protocol, not code.
 
 ---
 
@@ -470,9 +498,9 @@ bench capture held, and a gate pins that containment.
 both spurious windows sat inside `phase == 1`. The C3 column marks the closing
 hold, not the end of lifting.
 
-**This fixes count and extent, not phase.** Whether a bench or squat window
-starts where the rep starts is still unverified, and a window half a rep out of
-step has the right count, duration and amplitude.
+**This fixes count and extent, not phase.** A window half a rep out of step has
+the right count, duration and amplitude, so none of the above could see phase.
+*C9 then measured it: bench is in phase, 15 of 15. Squat is still unverified.*
 
 ### B6 — attack the acceleration error itself  ← next, and C6 aimed it
 A3 puts the error upstream of the detrend and gives it a shape: a smooth arch

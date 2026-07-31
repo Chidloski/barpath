@@ -374,9 +374,47 @@ DEADLIFTS = [
     ("deadlift_180x3_20260728", "deadlift_180x3_20260728_121739", 3),
 ]
 
+# The bench captures whose video clock sync resolves — see metrics.bench_sync.
+# The other four correlate 0.37-0.51 and raise, so they cannot be phase-tested.
+BENCH_SYNCED = [
+    ("bench_spoto_90x5_1_20260730", 5),
+    ("bench_spoto_90x5_2_20260730", 5),
+    ("bench_spoto_90x5_3_20260730", 5),
+]
+
 
 def _has(video: str, csv: str) -> bool:
     return (VIDEO / f"{video}.mov").exists() and (RAW / f"{csv}.csv").exists()
+
+
+def _csv_for(stem: str) -> Path | None:
+    return next(RAW.glob(f"{stem}_*.csv"), None) if RAW.is_dir() else None
+
+
+def _bench_video_events(path: dict, third: float = 3.0) -> tuple[list, list]:
+    """Chest touches and lockouts from the tracked height. Video clock.
+
+    A bench rep is one descent and one press, so the reps are the height
+    minima. `third` keeps only extrema in the outer third of the travel, and
+    0.8 s of refractory merges the frame-to-frame jitter around a turnaround.
+    """
+    from src import truth
+
+    t = path["t"]
+    h = truth._smooth(path["height"], 15)
+    span = h.max() - h.min()
+
+    def extrema(sign, keep):
+        s = sign * h
+        out: list[int] = []
+        for i in range(1, len(s) - 1):
+            if s[i] <= s[i - 1] and s[i] <= s[i + 1] and keep(h[i]):
+                if not out or t[i] - t[out[-1]] > 0.8:
+                    out.append(i)
+        return [float(t[i]) for i in out]
+
+    return (extrema(+1, lambda x: x < h.min() + span / third),
+            extrema(-1, lambda x: x > h.max() - span / third))
 
 
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
@@ -608,6 +646,125 @@ def test_rep_windows_are_in_phase_with_the_video(video, csv, reps):
             f"{csv} rep {n} [{t0:.1f},{t1:.1f}] contains {len(inside)} lockouts, "
             f"expected 1 — the window is out of phase with the bar"
         )
+
+
+# Measured 2026-07-31 (C9), the first time bench phase could be measured at all.
+# The video's chest touch lands at this fraction through each IMU rep window.
+# A window HALF A REP out of step would put it near 0.0 or 1.0; these sit near
+# 0.6 because a bench rep is genuinely asymmetric, which the next test proves
+# from the video alone. Bands are +/-0.08 around the measured medians.
+BENCH_TOUCH_PHASE = {
+    "bench_spoto_90x5_1_20260730": 0.593,
+    "bench_spoto_90x5_2_20260730": 0.613,
+    "bench_spoto_90x5_3_20260730": 0.619,
+}
+
+
+@pytest.mark.parametrize("video,reps", BENCH_SYNCED, ids=[b[0] for b in BENCH_SYNCED])
+def test_bench_rep_windows_are_in_phase_with_the_video(video, reps):
+    """Bench windows hold exactly one chest touch, at ~0.6 through the window.
+
+    **This is the first measurement of bench phase in the project.** Until C8
+    gave bench a video clock sync there was no external time reference on this
+    lift at all, and CLAUDE.md's P1 recorded the question as unverifiable. It
+    is the half of P1 that matters: counting was clean at 52/52 and window
+    extent was clean, while phase was untested — and phase is exactly what a
+    clean count hides. The old segmenter scored a perfect 44/44 on deadlift
+    while every window ran half a rep out of step.
+
+    `_full_cycles` intends a bench window to run lockout -> descend -> chest ->
+    press -> lockout, so the touch belongs strictly inside, one per window. Out
+    of phase would mean 0 or 2 touches, or one sitting at the very edge.
+
+    Result: **15 of 15 windows, one touch each, phase 0.567-0.648.** Bench
+    windows are in phase. Note what this does NOT say — it constrains where the
+    window sits relative to the bar, not whether the reconstructed PATH inside
+    it is right, which is P2's 2.63-3.67 cm.
+
+    On the sync's known weakness: `bench_sync`'s peak is only weakly isolated,
+    its rivals one rep period away. A whole-rep-period error is invisible here
+    BY CONSTRUCTION, because a periodic set looks the same shifted by one rep —
+    so this test is robust to exactly the ambiguity bench_sync cannot resolve.
+    A FRACTIONAL-period error would show up, and does not: all three captures
+    agree to 0.03 despite offsets of +0.040, -2.320 and -0.585 s.
+    """
+    csv_path = _csv_for(video)
+    if not (VIDEO / f"{video}.mov").exists() or csv_path is None:
+        pytest.skip(f"{video} not present")
+    from src import metrics, pipeline, truth
+
+    result = pipeline.run(csv_path)
+    path = truth.bar_path(VIDEO / f"{video}.mov")
+    offset = metrics.bench_sync(path, result["log"],
+                                result["velocity"][:, 2])["offset"]
+    touches, _ = _bench_video_events(path)
+
+    t = result["log"]["t"]
+    bounds = result["bounds"]
+    assert len(bounds) == reps
+
+    phases = []
+    for n, (a, b) in enumerate(bounds, 1):
+        t0, t1 = float(t[a]), float(t[b - 1])
+        inside = [(x + offset - t0) / (t1 - t0)
+                  for x in touches if t0 <= x + offset <= t1]
+        assert len(inside) == 1, (
+            f"{video} rep {n} [{t0:.1f},{t1:.1f}] contains {len(inside)} chest "
+            f"touches, expected 1 — the window is out of phase with the bar")
+        phases.append(inside[0])
+
+    want = BENCH_TOUCH_PHASE[video]
+    got = float(np.median(phases))
+    assert abs(got - want) < 0.08, (
+        f"{video}: chest touch at {got:.3f} through the window against "
+        f"{want:.3f} when C9 measured it")
+    assert 0.15 < min(phases) and max(phases) < 0.85, (
+        f"{video}: a touch sits at the window edge ({min(phases):.2f}-"
+        f"{max(phases):.2f}) — that is the half-a-rep-out failure mode")
+
+
+@pytest.mark.parametrize("video,reps", BENCH_SYNCED, ids=[b[0] for b in BENCH_SYNCED])
+def test_a_bench_rep_really_is_asymmetric(video, reps):
+    """0.6 is the bar's own behaviour, not a segmentation bias. Video only.
+
+    The test above finds the chest touch ~60% of the way through each IMU
+    window rather than at the 50% a symmetric rep would give. That 0.1 gap is
+    either a real property of benching or a systematic error in where the
+    windows sit, and the two are not distinguishable from the IMU.
+
+    So measure it in the video alone — no IMU, no sync, no reconstruction.
+    Lockout to touch, over lockout to lockout. The descent takes **0.573,
+    0.590 and 0.582** of a rep by median, against the IMU windows' 0.593, 0.613
+    and 0.619. They agree to 0.02-0.04 of a rep, which on a 2.8 s rep is
+    60-100 ms.
+
+    A bench descent is controlled and a press is not: 1.6-1.9 s down against
+    1.2-1.3 s up, measured here. The asymmetry is real and the segmenter is
+    tracking it.
+
+    *Rep 1 of every set is excluded from the median rather than fitted around:
+    it reads 0.69-0.73 because the "descent" there starts at the unrack, which
+    includes the lift-off and settle. That is a property of the video landmark,
+    not of the rep.*
+    """
+    if not (VIDEO / f"{video}.mov").exists():
+        pytest.skip(f"{video} not present")
+    from src import truth
+
+    path = truth.bar_path(VIDEO / f"{video}.mov")
+    touches, lockouts = _bench_video_events(path)
+
+    fracs = []
+    for x in touches:
+        before = [y for y in lockouts if y < x]
+        after = [y for y in lockouts if y > x]
+        if before and after:
+            fracs.append((x - before[-1]) / (after[0] - before[-1]))
+
+    assert len(fracs) >= reps - 1
+    assert 0.50 < float(np.median(fracs)) < 0.68, (
+        f"{video}: the video says the descent is {np.median(fracs):.3f} of a "
+        f"rep — if this moved, the ~0.6 phase above needs re-explaining")
 
 
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])

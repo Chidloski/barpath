@@ -149,8 +149,10 @@ say 10 and 44 reps. Both are correct as of when they were taken.
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
 
-**P1 — Counting and extent are both clean at 52/52; the phase question is
-untouched and is the one that matters.** Rewritten 2026-07-31 by C5.
+**P1 — Counting and extent are clean at 52/52; phase is now verified on
+deadlift and bench, and open only on squat.** Rewritten 2026-07-31 by C5, and
+again the same day by C9, which answered the phase question this heading used
+to call untouched. Bench: 15 of 15 windows in phase. See *Window extent* below.
 
 *Counting:* A1 closed this at 44/44 with zero false positives, against the old
 stationary detector's 0 of 14 bench and 1 of 15 squat. That was true on the ten
@@ -186,13 +188,28 @@ deadlift windows. **Squat still has no phase anchor** and still segments on
 integrated velocity carrying 145 cm of in-band error against a 69 cm signal, so
 its phase stays unverified until P3 is fixed.
 
-**Bench acquired one on 2026-07-31 and it has not been used yet.** C8 tracks the
-bench plate on video and aligns it to the IMU clock via `metrics.bench_sync`, so
-"does each IMU rep window contain the video's rep?" is answerable on the three
-captures whose sync is identified. Nobody has asked it. That is the single
-cheapest way to close the half of P1 that matters, and the answer could go
-either way — the segmenter scored 44/44 while being half a rep out of step
-before, so a clean count here predicts nothing.
+**Bench acquired one on 2026-07-31 (C8) and C9 used it the same day. Bench
+windows are IN PHASE.** All **15 of 15** windows on the three synced captures
+hold exactly one video chest touch, and the touch falls 0.567–0.648 of the way
+through — nowhere near the 0.0/1.0 that the half-a-rep-out failure mode would
+give, and which is where deadlift's old 44/44 segmenter actually sat.
+
+The touch sits at ~0.60 rather than 0.50, and that is the bar's behaviour, not
+a bias: measured in the **video alone**, with no IMU and no sync, the descent
+takes 0.573/0.590/0.582 of a rep, against the IMU windows' 0.593/0.613/0.619.
+A bench descent is controlled and a press is not — 1.6–1.9 s down against
+1.2–1.3 s up. The two modalities agree to 0.02–0.04 of a rep, i.e. 60–100 ms.
+
+Note this survives `bench_sync`'s known weakness rather than depending on it. A
+whole-rep-period sync error is invisible to a phase test by construction, since
+a periodic set looks the same shifted by one rep — so the ambiguity bench_sync
+cannot resolve is exactly the one that cannot corrupt this. A *fractional*-period
+error would show, and does not: all three agree to 0.03 despite offsets of
++0.040, −2.320 and −0.585 s.
+
+**Squat's phase is still unverified and now the only unverified case.** It has
+no external anchor of any kind, and two of its four 2026-07-30 captures do not
+track. *Evidence:* `analysis/30`, `tests/test_real_data.py`.
 
 But they now have a *partial* external check: per-rep vertical ROM against
 `truth.VERTICAL_ROM_M`. It cannot see phase either — a window half a rep out of

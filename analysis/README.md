@@ -115,7 +115,12 @@ error signal, which is why 44/44 counts coexisted with wrong phase.
 Deadlift boundaries now come from floor impacts alone (raw acceleration
 magnitude, no attitude, no integration, matched to video at 13.5 ms rms). All
 15 windows contain exactly one video lockout. Bench and squat still segment on
-the corrupted velocity and their phase remains unverified.
+the corrupted velocity.
+
+*Updated 2026-07-31 (C9): that is not the same as their phase being wrong.
+Bench segments on the corrupted velocity and comes out IN PHASE anyway — 15 of
+15 windows hold exactly one chest touch. Squat remains unverified. See the C9
+section.*
 
 ## The sign inversion (2026-07-29)
 **Core Motion's `userAcceleration` is the negative of physical acceleration.**
@@ -785,9 +790,9 @@ where the rep starts. A window half a rep out of step has the right count, the
 right duration and the right amplitude.
 
 *Written as "unverifiable until those lifts get an external anchor". Bench got
-one the next day: C8's video sync puts a bench clip on the IMU clock, which is
-exactly the anchor this sentence was waiting for. The question is now open
-rather than closed, and nobody has run it. Squat's half stands.*
+one within the day — C8's video sync — and C9 then ran the test: bench windows
+are in phase, 15 of 15. See the C9 section. Squat's half stands, and squat is
+now the only lift whose phase is unverified.*
 
 ## C8 — bench video truth (2026-07-31)
 
@@ -847,3 +852,41 @@ fore-aft signal is a few centimetres and looks much the same rep to rep, so
 mis-pairing reps barely moves it. It is a magnitude comparison between two paths
 that happen to be paired in time. Phase evidence comes from `17` and the
 lockout-containment gate, not from this number.
+
+## C9 — bench rep-window phase (2026-07-31)
+
+- `30_bench_window_phase.png` — the question P1 called the one that matters,
+  answered for bench. **Top row:** the tracked bar height on the IMU clock, with
+  the IMU's own rep windows shaded. Every window contains exactly one chest
+  touch (red), sitting past the middle. **Bottom:** where the touch falls in
+  each window (blue) against the descent fraction measured in the video alone
+  (green), with 0.0 and 1.0 marked — that is the half-a-rep-out failure mode,
+  and it is where deadlift's old 44/44 segmenter actually sat.
+
+**The result.** 15 of 15 windows, one touch each, phase 0.567–0.648. Bench
+windows are in phase with the bar.
+
+**Why 0.60 and not 0.50, checked rather than rationalised.** The obvious worry
+is a systematic late bias in where the windows sit. So measure the same quantity
+in the video with no IMU, no sync and no reconstruction: lockout to touch, over
+lockout to lockout. It reads **0.573 / 0.590 / 0.582** against the IMU windows'
+**0.593 / 0.613 / 0.619**. A bench descent is controlled and a press is not —
+1.6–1.9 s down against 1.2–1.3 s up — and the segmenter is tracking that. The
+two agree to 0.02–0.04 of a rep, which is 60–100 ms on a 2.8 s rep.
+
+*Rep 1 of every set reads 0.69–0.73 and is excluded from the medians rather than
+explained away: its "descent" starts at the unrack, so it includes the lift-off
+and settle. That is a property of the video landmark, not of the rep.*
+
+**This survives C8's weakest point instead of depending on it.** `bench_sync`'s
+peak is only weakly isolated, its rivals one rep period away — but a
+whole-rep-period error is invisible to a phase test **by construction**, since a
+periodic set looks identical shifted by one rep. The ambiguity the sync cannot
+resolve is exactly the one that cannot corrupt this measurement. A
+fractional-period error *would* show, and does not: the three captures agree to
+0.03 despite offsets of +0.040, −2.320 and −0.585 s.
+
+**What it does not say.** It constrains where the window sits relative to the
+bar, not whether the reconstructed path inside it is right — that is P2's
+2.63–3.67 cm. And it says nothing about squat, which has no external anchor of
+any kind and is now the only lift whose phase is unverified.

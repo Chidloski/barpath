@@ -40,10 +40,12 @@ Rep segmentation is the other, and it is back to **52/52** with zero false
 positives. The 2026-07-30 captures broke it to 51/52 — `bench_spoto_90x5_1`
 counted the re-rack as a sixth rep of a five-rep set — and C5 fixed that on
 2026-07-31 along with a squat single whose window had landed on the re-rack.
-Counts and window *extent* are now clean on all 17 captures. **Window phase on
-bench and squat is still unverified**, and a window half a rep out of step has
-the right count, the right duration and the right amplitude, so do not read
-52/52 as more than it says.
+Counts and window *extent* are now clean on all 17 captures. Phase used to be
+unverified on both bench and squat; C9 measured bench on 2026-07-31 and **15 of
+15 windows hold exactly one video chest touch**, 0.567–0.648 through the window
+against a 0.0/1.0 failure mode. **Squat's phase is still unverified** — it has
+no external anchor — and a window half a rep out of step has the right count,
+duration and amplitude, so do not read 52/52 as more than it says.
 
 The same 2026-07-30 session showed the video ground truth is trustworthy on
 timing and horizontal but **not on vertical scale**: per-rep ROM across three
