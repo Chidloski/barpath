@@ -12,8 +12,9 @@
     python run.py --scorecard          # how well the pipeline performs, per lift
     python run.py --paths              # step 9: the bar path itself
 
---truth is slow: it decodes each clip. It only produces numbers on deadlift,
-which is the only lift with trustworthy video truth — the others report why.
+--truth is slow: it decodes each clip. It produces numbers on deadlift, and
+since C8 on the bench captures whose sync is identified (3 of 7). Squat and the
+remaining benches report why instead.
 
 --stages writes analysis/21_pipeline_stages.png: one column per lift, one row
 per stage, from raw acceleration to the bar path. It ignores any paths given
@@ -68,8 +69,10 @@ def draw_stages() -> int:
             print(f"{stem} not in data/raw/ — skipping")
             continue
         video = pipeline.find_video(path, ROOT / "data" / "video")
-        # Only deadlift has trustworthy video truth; see src/README.md.
-        use = video if label == "deadlift" else None
+        # Deadlift and bench have video truth; squat does not. See src/README.md.
+        # A bench whose correlation misses the sync floor still raises, and
+        # pipeline.run records that in result["blocked"] rather than dying.
+        use = video if label in ("deadlift", "bench") else None
         results[f"{label}  ({stem})"] = pipeline.run(path, video=use)
 
         if use is not None:
@@ -183,9 +186,13 @@ def draw_rom() -> int:
         recon[path.stem] = (lift, result["rep_rom_m"])
 
         clip = pipeline.find_video(path, ROOT / "data" / "video")
-        if clip is None or lift != "deadlift":
-            continue                      # only deadlift video is trackable
-        m = metrics.vs_truth(result, clip)
+        if clip is None or lift == "squat":
+            continue                      # squat video is not truth
+        try:
+            m = metrics.vs_truth(result, clip)
+        except ValueError as e:           # a bench below the sync floor
+            print(f"{path.stem}: no video ROM — {e}")
+            continue
         video[path.stem] = [r["video_rom_cm"] / 100 for r in m["per_rep"]
                             if r["covered"]]
         flags = m["video_rom_flags"]
@@ -377,8 +384,12 @@ def draw_scorecard() -> int:
         label = f"{lift}  ({stem})"
         result = pipeline.run(path)
         results[label] = result
-        if video is not None and lift == "deadlift":
-            truths[label] = metrics.vs_truth(result, video)
+        if video is not None and lift != "squat":
+            try:
+                truths[label] = metrics.vs_truth(result, video)
+            except ValueError as e:       # a bench below the sync floor
+                print(f"{stem}: no video truth — {e}")
+                continue
             m = truths[label]
             print(f"{stem}: horizontal {m['pipeline_h_rms']:.2f} cm rms, "
                   f"vertical {m['pipeline_v_rms']:.2f} cm rms, "

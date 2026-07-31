@@ -45,14 +45,39 @@ Limits, honestly
   11-16 ms. But the 49-70 cm of travel this used to quote as a sign of health is
   the symptom: it is one lifter, one lift, three captures, and a real deadlift
   ROM does not vary by 19 cm. See `VERTICAL_ROM_M`.
-- **Squat: tracks, but only indicatively.** Median NCC ~0.40 because the plate
-  clips the top of frame at lockout and the template only partly matches. A
-  warning is raised. Needs a wider shot, not code.
-- **Bench: does not work automatically and RAISES.** The plate is small, sits
-  against a dark ceiling and abuts the lifter-and-bench silhouette, which is a
-  larger dark blob, so the matched filter prefers the clutter. It tracked
-  motionless background at 0.907 median NCC reporting 0.0 cm of travel before
-  `validate` existed. Pass `seed_yx` to place it by hand.
+- **Squat: not truth, and `metrics.vs_truth` refuses it.** The 2026-07-27
+  captures track at median NCC ~0.40 because the plate clips the top of frame
+  at lockout and the template only partly matches; a warning is raised. The
+  four from 2026-07-30 are worse: two raise outright and two report ~12.5 cm of
+  travel against a 45-76 cm band. `find_plate`'s in-frame fix (below) stopped
+  three of those crashing with a numpy broadcast error, which is worth having
+  and is **not** the same as making them trackable — it converted a crash into
+  an honest refusal. Needs a wider shot, not code.
+- **Bench: works, from a HAND-PLACED seed.** See `SEEDS`. All seven bench
+  captures now track at 0.75-0.95 median NCC with 21.8-29.8 cm of whole-clip
+  vertical travel, inside `VERTICAL_ROM_M["bench"]`, and the video's own rep
+  count matches the label on 7 of 7. Auto-seeding still does not work and is not
+  close: the plate is small, sits against a dark ceiling and abuts the
+  lifter-and-bench silhouette, which is a larger dark blob, so the dark-disc
+  matched filter prefers the clutter. It tracked motionless background at 0.907
+  median NCC reporting 0.0 cm of travel before `validate` existed. Four
+  automatic seeders were tried on 2026-07-31 and all four preferred the clutter
+  — dark disc, circular-edge (radial gradient) matched filter, dark disc
+  weighted by temporal motion energy, and a dark-annulus rim filter. This is not
+  a tuning problem; the plate is simply not the darkest or the most circular
+  thing in a bench frame.
+- **The template must fit INSIDE the plate.** `track`'s default `half=48` makes
+  a 97x97 px template, which is larger than the inscribed square of a bench
+  plate (r~48 px, so `template_half` returns 31 — the inscribed 33 less a 2 px
+  margin, then truncated). The corners then hold
+  static ceiling, and the tracker part-anchors to the gym instead of the bar:
+  on `bench_90x4_1` whole-clip travel reads 16.8 cm at half=48, 22.4 at 40,
+  30.9 at 32 and 31.0 at 24. Only the last two are a bench ROM. `SEEDS` sets
+  `half` from the seed radius for this reason. Note deadlift is over the same
+  line (r=64 gives an inscribed half of 43, against the 48 in use) and has NOT
+  been changed, because moving it would move every A3 number pinned in
+  `tests/test_real_data.py`; whether it would help is untested and is a lead,
+  not a finding.
 - Lens distortion is uncorrected. A phone wide lens bows straight lines, and
   the bar crosses much of the frame vertically. It is one candidate for the
   scale error below, and it wants a checkerboard, or at least a plumb line.
@@ -127,6 +152,39 @@ PLATE_DIAMETER_M = {"bench": 0.425, "squat": 0.450, "deadlift": 0.445}
 # an unmeasured per-capture scale error, `vs_truth` flags it, and P2's 5-15 cm
 # SPREAD is partly this rather than the IMU.
 VERTICAL_ROM_M = {"bench": (0.20, 0.35), "squat": (0.45, 0.76), "deadlift": (0.40, 0.61)}
+
+# Hand-placed seeds, one per bench capture: (frame, centre y, centre x, radius).
+#
+# Coordinates are in the DECODED frame at the default `scale=0.5`, so they are
+# half what you would read off the original video. Read off by eye on 2026-07-31
+# from a frame with the bar out of the rack, by drawing the circle back over the
+# frame and adjusting until it sat on the plate rim. There is no cleverness here
+# and none is claimed: four automatic seeders were tried first and all four
+# preferred the bench-and-lifter silhouette (see the module docstring).
+#
+# `radius` is doing the load-bearing work, because it is the pixels-to-metres
+# scale. Its uncertainty is about +/-2 px on ~48, i.e. ~4% on every bench
+# distance reported anywhere downstream, and NOTHING checks it except
+# `VERTICAL_ROM_M`. Treat a bench number as carrying that 4% on top of whatever
+# else is wrong with it.
+#
+# The one piece of internal evidence that the radii are not arbitrary: within a
+# session the camera and the plate do not change, and the readings agree.
+# 2026-07-27 gives 48/48/47/48 px; 2026-07-30 gives 51/51/51. Between the two
+# sessions they differ because the phone was closer on the second day, which is
+# also visible in the frames.
+#
+# A capture that is not in this table still RAISES rather than being seeded by
+# guesswork — that is the whole point of the table being explicit.
+SEEDS = {
+    "bench_90x4_1_20260727": (530, 192, 197, 48),
+    "bench_90x4_2_20260727": (562, 176, 200, 48),
+    "bench_90x4_3_20260727": (628, 176, 202, 47),
+    "bench_92.5x2_20260727": (1216, 178, 198, 48),
+    "bench_spoto_90x5_1_20260730": (690, 65, 115, 51),
+    "bench_spoto_90x5_2_20260730": (763, 66, 104, 51),
+    "bench_spoto_90x5_3_20260730": (685, 55, 112, 51),
+}
 
 
 def lift_of(name: str | Path) -> str:
@@ -264,14 +322,34 @@ def find_plate(frame: np.ndarray, radii=range(40, 110, 4)) -> tuple[int, int, in
     ceiling — so seed it from a frame where the bar is down. The radius it
     returns is what sets the pixels-to-metres scale, so the seed frame is doing
     double duty and is worth choosing well.
+
+    Only centres where the whole disc lies inside the frame are considered, and
+    that is a correctness fix rather than tidiness. `fftconvolve(mode="same")`
+    zero-pads, so a disc hanging off the edge is scored against blackness and
+    scores well for being half outside the picture — which is not a measurement
+    of anything. On the three 2026-07-30 squats it won outright: r=108 centred
+    12, 16 and 38 px from the left edge of a 180 px wide frame. `track` then
+    sliced `cx - half : cx + half + 1` with a negative start, numpy wrapped it,
+    the template came back EMPTY, and `ncc_map` died with
+
+        ValueError: operands could not be broadcast together with shapes (0,) (186,105)
+
+    which says nothing about the real fault. Three of the four 2026-07-30 squat
+    videos could not be tracked at all because of it. The constraint leaves the
+    2026-07-27 squats and all three deadlifts on exactly the seed they had.
     """
     best = (0, 0, 0, -np.inf)
+    h, w = frame.shape
     for r in radii:
+        if 2 * r + 1 > min(h, w):
+            continue
         c = fftconvolve(-(frame - frame.mean()), _disc(r)[::-1, ::-1], mode="same")
-        i = int(np.argmax(c))
-        y, x = np.unravel_index(i, c.shape)
-        if c[y, x] > best[3]:
-            best = (int(y), int(x), int(r), float(c[y, x]))
+        inside = np.full_like(c, -np.inf)
+        inside[r:h - r, r:w - r] = c[r:h - r, r:w - r]
+        i = int(np.argmax(inside))
+        y, x = np.unravel_index(i, inside.shape)
+        if inside[y, x] > best[3]:
+            best = (int(y), int(x), int(r), float(inside[y, x]))
     return best
 
 
@@ -283,7 +361,22 @@ def track(stack: np.ndarray, seed: int, cy: int, cx: int,
     Template matching rather than optical flow: the plate is rigid, high
     contrast and barely rotates, and a fixed template cannot accumulate the
     drift that frame-to-frame differencing does.
+
+    `half` sets the template size and it matters more than it looks. The
+    template must lie INSIDE the plate; a plate of radius r inscribes a square
+    of half-width r/sqrt(2), and anything larger puts static background in the
+    corners so the tracker part-anchors to the gym. Measured on `bench_90x4_1`:
+    whole-clip travel 16.8 / 22.4 / 30.9 / 31.0 cm at half = 48 / 40 / 32 / 24,
+    against a real bench ROM of ~29 cm. See the module docstring.
     """
+    if not (half <= cy < stack.shape[1] - half and half <= cx < stack.shape[2] - half):
+        raise ValueError(
+            f"template box of half-width {half} centred at (y={cy}, x={cx}) does "
+            f"not fit inside the {stack.shape[1]}x{stack.shape[2]} frame. The "
+            f"seed is off the picture — find_plate has locked onto an edge "
+            f"artefact, or a hand-placed seed_yx is in full-resolution "
+            f"coordinates rather than decoded ones."
+        )
     tpl = stack[seed, cy - half:cy + half + 1, cx - half:cx + half + 1].copy()
     out = np.full((len(stack), 3), np.nan)
     margin = half + search
@@ -312,10 +405,28 @@ MIN_TRAVEL_M = 0.10   # a tracked barbell moves. Less than this means it did not
 GOOD_SCORE = 0.60     # median NCC a clean deadlift track gives; squats sit at 0.40.
 
 
+def template_half(radius: int, cap: int = 48) -> int:
+    """Template half-width for a plate of `radius` px: the inscribed square.
+
+    A square of half-width r/sqrt(2) is the largest that fits inside a circle of
+    radius r, so this is the largest template guaranteed to contain no
+    background.
+
+    Applied only where it has been measured, which is bench (`SEEDS`). Deadlift
+    is over the same line — r=64 px inscribes 43, against the 48 in use — and is
+    deliberately left alone: it tracks at 0.83-0.94 median NCC as it is, and
+    every A3 number in `tests/test_real_data.py` is pinned against the current
+    track, one of them (`VIDEO_ROM_CM`) to within 1 cm. Whether shrinking
+    deadlift's template helps is an untested lead, not a finding.
+    """
+    return int(min(cap, radius / np.sqrt(2) - 2))
+
+
 def bar_path(video: str | Path, scale: float = 0.5,
              seed_time: float | None = None,
              seed_yx: tuple[int, int] | None = None,
              seed_radius: int | None = None,
+             half: int | None = None,
              check: bool = True,
              diameter_m: float | None = None) -> dict:
     """Track the plate and return the bar path in metres.
@@ -323,13 +434,24 @@ def bar_path(video: str | Path, scale: float = 0.5,
     Automatic on deadlifts: the plate sits isolated against a bright floor, so
     `find_plate` locks onto it unaided and no seeding is needed.
 
-    NOT automatic on bench. There the plate is small, against a dark ceiling,
-    and adjacent to the lifter-and-bench silhouette, which is a larger dark
-    blob — so the matched filter prefers the clutter. It reported a confident
-    0.907 median NCC while tracking a static background patch, and the bar
-    "moved" 0.0 cm. Pass `seed_yx` (and `seed_radius`) to place it by hand
-    there; the coordinates are in the DECODED frame, so at `scale=0.5` they are
-    half the pixel positions you would read off the original video.
+    NOT automatic on bench, and unattended bench captures are served by the
+    hand-placed `SEEDS` table instead — looked up by the video's stem when no
+    seed is passed. There the plate is small, against a dark ceiling, and
+    adjacent to the lifter-and-bench silhouette, which is a larger dark blob, so
+    the matched filter prefers the clutter. It reported a confident 0.907 median
+    NCC while tracking a static background patch, and the bar "moved" 0.0 cm. A
+    bench clip that is NOT in `SEEDS` still falls through to `find_plate` and so
+    still fails loudly; nothing here guesses.
+
+    `seed_yx`/`seed_radius` place the template by hand. The coordinates are in
+    the DECODED frame, so at `scale=0.5` they are half the pixel positions you
+    would read off the original video.
+
+    `half` is the template half-width, defaulting to `track`'s 48 except for a
+    `SEEDS` capture, where it is `template_half(radius)` — the inscribed square
+    of the plate. A larger template holds static background in its corners and
+    drags the track toward the gym: on `bench_90x4_1` that is the difference
+    between 16.8 cm of reported travel and 30.9 cm.
 
     `check` raises when the tracked bar barely moves. That silent-confident
     failure is the one worth being loud about: a high score means the template
@@ -341,6 +463,14 @@ def bar_path(video: str | Path, scale: float = 0.5,
     somebody else's plate.
     """
     stack, fps, _ = frames(video, scale)
+
+    stem = Path(video).stem
+    if seed_time is None and seed_yx is None and stem in SEEDS:
+        f, sy, sx, sr = SEEDS[stem]
+        seed_time, seed_yx, seed_radius = f / fps, (sy, sx), sr
+        if half is None:
+            half = template_half(sr)
+
     if seed_time is not None:
         seed = int(seed_time * fps)
     elif seed_yx is not None:
@@ -355,7 +485,7 @@ def bar_path(video: str | Path, scale: float = 0.5,
     else:
         cy, cx, radius, _ = find_plate(stack[seed])
 
-    raw = track(stack, seed, cy, cx)
+    raw = track(stack, seed, cy, cx, **({} if half is None else {"half": half}))
 
     m_per_px = (diameter_m if diameter_m is not None
                 else plate_diameter(video)) / (2 * radius)
@@ -444,6 +574,39 @@ def landings(path: dict, floor_m: float = 0.05, refractory_s: float = 1.5,
             if not out or t[i] - out[-1] > refractory_s:
                 out.append(float(t[i]))
     return np.array(out)
+
+
+# A `rack_impact` used to live here: the last moment the tracked bar's 2-D speed
+# exceeded a threshold, meant as the video half of a bench re-rack landmark, to
+# be paired with the IMU's last transient above 3 g and used as an INDEPENDENT
+# check on `metrics.bench_sync`. It was removed on 2026-07-31 when it was tested
+# on deadlift, where the true offset is known from landings matched to floor
+# impacts. The anchor missed by +615, +660 and +510 ms — a systematic half-second
+# bias, in the same direction every time, because the video's "last motion" and
+# the IMU's "last transient" are not the same event. A check wrong by 0.6 s
+# cannot bound a quantity that matters at 0.1 s. It is recorded here rather than
+# silently dropped because on bench it appeared to DISAGREE with the correlation
+# by 53-706 ms, which read as evidence against the sync until the deadlift
+# control showed the error was the anchor's own. See `metrics.bench_sync` and
+# `analysis/29`.
+
+
+def _smooth(y: np.ndarray, n: int) -> np.ndarray:
+    """Odd-length moving average, NaNs interpolated and the ends edge-padded.
+
+    Edge padding rather than `mode="same"`, which zero-pads: the tracked height
+    is 0.2-0.6 m, so a zero-padded end reads as the bar falling half a metre in
+    one frame — a fake velocity spike at both ends of every clip. That bit the
+    since-deleted `rack_impact`, which is why the padding is spelled out here;
+    the current caller is `metrics.bench_sync`, whose correlation would key on
+    the same artefact.
+    """
+    y = np.asarray(y, float)
+    ok = np.isfinite(y)
+    filled = np.interp(np.arange(len(y)), np.flatnonzero(ok), y[ok])
+    pad = n // 2
+    padded = np.r_[np.full(pad, filled[0]), filled, np.full(pad, filled[-1])]
+    return np.convolve(padded, np.ones(n) / n, mode="valid")
 
 
 def sync(video_events: np.ndarray, imu_events: np.ndarray) -> dict:

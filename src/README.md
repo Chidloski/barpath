@@ -31,6 +31,14 @@ rms per rep on the three deadlifts, against a 1 cm spec, and 5.24/6.60/5.24 cm
 vertical against ±2–3 cm. It also showed the horizontal error is a smooth arch
 at rep frequency rather than noise. See `analysis/19`.
 
+Since 2026-07-31 that list is no longer deadlift-only. Bench adds **3.67, 2.69
+and 2.63 cm** horizontal on the three captures whose sync is identified —
+still outside the 1 cm spec, but by 2.6–3.7× where deadlift is out by 5–15×.
+Read those through `metrics.bench_sync`'s docstring: the clock alignment is a
+cross-correlation calibrated on deadlift rather than a landmark match, so bench
+carries no sync residual and its vertical inherits ~1 cm from the sync itself.
+See `analysis/29`.
+
 Note what that leans on, and how it turned out. The plates were measured on
 2026-07-30 — 425 mm notched, 445 mm bumper, 450 mm calibrated — replacing a
 single assumed 450. Correcting deadlift to the bumper moved those numbers by
@@ -48,18 +56,26 @@ against something other than a guess.
 
 ## Current state, per lift
 
-| lift | plate | works? | median NCC | per-rep ROM | notes |
+| lift | plate | works? | median NCC | travel | notes |
 |---|---|---|---|---|---|
-| deadlift | 445 mm bumper | **timing yes, vertical no** | 0.83–0.94 | 59.1 / **66.8** / **47.6** cm | sync 11–16 ms rms, drift <0.25%; ROM spread 19 cm on a 61 cm ceiling |
-| squat | 450 mm calibrated | tracks, **warns** | ~0.40 | — | plate clips top of frame at lockout |
-| bench | 425 mm notched | **raises** | — | — | needs a manual seed |
+| deadlift | 445 mm bumper | **timing yes, vertical no** | 0.83–0.94 | 59.1 / **66.8** / **47.6** cm | automatic; sync 11–16 ms rms, drift <0.25%; ROM spread 19 cm on a 61 cm ceiling |
+| bench | 425 mm notched | **yes, from a hand seed** | 0.75–0.95 | 21.8–29.8 cm | `truth.SEEDS`; 3 of 7 clear the sync floor, 4 raise; radius carries ~4% scale |
+| squat | 450 mm calibrated | **no — `vs_truth` refuses** | ~0.40 | 2 raise, 2 at ~12.5 cm | plate clips top of frame at lockout |
 
 Deadlift's row used to read "yes, unattended" without qualification. It tracks
 unattended and it syncs to the IMU, and on two of three captures its vertical
 scale is wrong — see drawback 1.
 
-Pinned by tests in `tests/test_real_data.py` so the state cannot regress
-unnoticed.
+Bench's row read **raises** until 2026-07-31. Two things changed it: a
+hand-placed seed per capture, and a template sized to fit inside the plate
+rather than `track`'s default 97×97 px, which was holding static ceiling in its
+corners and part-anchoring the tracker to the gym. Squat's row got worse rather
+than better, and the ordering of this table changed with it — deadlift is no
+longer the only lift with truth, and squat is now the only one without.
+
+Pinned by tests in `tests/test_video_truth.py` (the referee itself) and
+`tests/test_real_data.py` (the pipeline judged through it) so the state cannot
+regress unnoticed.
 
 ## Usage
 
@@ -73,12 +89,27 @@ fit = truth.sync(truth.landings(path), imu_impact_times)
 t_imu = truth.to_imu_time(path, fit)
 ```
 
-Bench needs the template placed by hand — coordinates are in the **decoded**
-frame, so at the default `scale=0.5` they are half what you read off the video:
+Bench needs the template placed by hand, but you do not have to place it — the
+seven captures are already in `truth.SEEDS`, and `bar_path` looks the stem up,
+so a bench clip is called exactly like a deadlift one. A capture that is not in
+the table still raises rather than being seeded by guesswork.
+
+To seed a NEW bench capture, read the plate centre and radius off a frame with
+the bar out of the rack and add a row. Coordinates are in the **decoded** frame,
+so at the default `scale=0.5` they are half what you read off the video, and
+`half` is derived from the radius by `truth.template_half`:
 
 ```python
-path = truth.bar_path(video, seed_yx=(195, 187), seed_radius=37)
+# What a SEEDS row means, spelled out: (frame, cy, cx, radius)
+truth.SEEDS["bench_90x4_1_20260727"]     # -> (530, 192, 197, 48)
+
+# The same thing passed explicitly, which is what bar_path does internally:
+path = truth.bar_path(video, seed_yx=(192, 197), seed_radius=48,
+                      half=truth.template_half(48))   # half -> 31
 ```
+
+**`seed_radius` is the pixels-to-metres scale**, not just a search hint. Read it
+carelessly and every distance from that capture is wrong by the same fraction.
 
 Requires `ffmpeg` on PATH. No new Python dependencies.
 
@@ -113,18 +144,37 @@ and passes, because the sanity floor is 40 cm and nothing justifies raising it.
 the bar crosses most of the frame vertically. The leading candidate for
 drawback 1, and still without a number of its own.
 
-**3. Bench does not seed automatically.** The plate is small, sits against a
-dark ceiling, and abuts the lifter-and-bench silhouette — a larger dark blob
-than the plate — so the dark-disc matched filter prefers the clutter. Widening
-the radius search does not help; it is not a radius problem. Before `validate()`
-existed this returned a confident 0.907 median NCC while tracking motionless
-background, reporting 0.0 cm of travel. **A high NCC means the template kept
-matching something, not that it matched the plate.**
+**3. Bench does not seed automatically — it is seeded by hand.** The plate is
+small, sits against a dark ceiling, and abuts the lifter-and-bench silhouette —
+a larger dark blob than the plate — so the dark-disc matched filter prefers the
+clutter. Widening the radius search does not help; it is not a radius problem.
+Four seeders were tried on 2026-07-31 — dark disc, circular-edge radial
+gradient, dark disc weighted by temporal motion energy, and a dark-annulus rim
+filter — and **all four preferred the clutter**, which is why improvement 4
+below is struck out. `truth.SEEDS` carries one hand-read `(frame, cy, cx,
+radius)` per capture instead, and all seven now track.
 
-**4. Squat tracking is indicative only.** NCC ~0.40 against 0.83–0.94 for a
-clean deadlift, because the plate leaves the top of frame at lockout and the
-template only partly matches. A warning is raised. Do not use squat output as
-truth.
+Before `validate()` existed the auto path returned a confident 0.907 median NCC
+while tracking motionless background, reporting 0.0 cm of travel. **A high NCC
+means the template kept matching something, not that it matched the plate** —
+which is doubly worth remembering now the seed is placed by hand, since a hand
+placed until the score looks good proves exactly nothing. The bench gates in
+`tests/test_video_truth.py` therefore assert travel and rep count, not NCC.
+
+The hand-read `radius` is also the pixels-to-metres scale, at about ±2 px on
+~48 — **~4% on every bench distance**, checked by nothing but `VERTICAL_ROM_M`.
+That is larger than the plate-diameter correction that drawback 1 chased, which
+turned out to be worth under 1%.
+
+**4. Squat is not truth, and `metrics.vs_truth` refuses it.** The 2026-07-27
+captures track at NCC ~0.40 against 0.83–0.94 for a clean deadlift, because the
+plate leaves the top of frame at lockout; a warning is raised. The four from
+2026-07-30 are worse — two raise, two report ~12.5 cm of travel against a
+45–76 cm band. `find_plate` was fixed on 2026-07-31 so that a disc hanging off
+the frame edge cannot win by being scored against zero-padding, which stopped
+three of those dying with a numpy broadcast error. **That converted a crash
+into an honest refusal; it did not make squat trackable.** Do not use squat
+output as truth.
 
 **5. It tracks the plate, not the bar centre.** Fine while the bar stays level —
 it is rigid — but a tilted lockout moves the plate differently from the centre.
@@ -160,17 +210,22 @@ Roughly in value-per-effort order.
 1. **Measure a plate.** Removes drawback 1 entirely. Thirty seconds with a tape.
 2. **Re-frame the next captures.** Step the camera back so the whole plate stays
    in shot at squat lockout, and so the bench plate clears the bench silhouette.
-   Converts squat and bench from "indicative"/"broken" to truth with **no code
-   at all**. This is the single highest-value change available.
+   Converts squat from "indicative" to truth with **no code at all**, and would
+   let bench drop its hand seeds. Still the highest-value capture change, though
+   no longer the highest-value change overall — bench became truth in code on
+   2026-07-31, which is what that claim was written against.
 3. **Film a plumb line or doorframe** from the same position, once. Enough to
    estimate lens distortion and put a number on drawback 2.
 
 **Small code:**
 
-4. **Edge-based circle detection** instead of the intensity blob. The plate has a
-   strong circular *edge* regardless of whether its interior is darker than the
-   background, which is exactly what breaks on bench. Would likely make bench
-   automatic without re-shooting.
+4. ~~**Edge-based circle detection** instead of the intensity blob. Would likely
+   make bench automatic without re-shooting.~~ **Tried on 2026-07-31 and it does
+   not.** A circular-edge radial-gradient matched filter was one of four seeders
+   built and tested; it preferred the bench-and-lifter silhouette like the other
+   three. The reasoning above was sound and the measurement disagreed: the plate
+   is not the most circular thing in a bench frame either. Kept rather than
+   deleted because it is the obvious idea and someone will have it again.
 5. **Check the auto-seed margin** — reject when the best disc response is not
    clearly ahead of the runner-up, rather than trusting it silently.
 6. **Track the bar sleeve** rather than the plate face. Immune to plate changes

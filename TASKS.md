@@ -43,9 +43,10 @@ Phase error later found by A2 and fixed — see below.
 ### A2 — video ground truth `374392b` `f6ff01c` `09c6bfc`
 `src/truth.py`. Plate tracked from footage; first external truth for the
 horizontal axis. Video landings match IMU floor impacts 6/6, 6/6, 3/3 at
-**11–16 ms rms**, clock drift <0.25%. Deadlift is automatic and unattended;
-squat warns; bench raises and needs a manual seed. Full detail and ten
-drawbacks in `src/README.md`.
+**11–16 ms rms**, clock drift <0.25%. Deadlift is automatic and unattended.
+Bench and squat were "warns" and "raises" here until C8 — see that entry; the
+short version is that bench is truth now and squat is further from it than this
+line implied. Full detail and ten drawbacks in `src/README.md`.
 
 ### #13 — rep-window phase, on deadlift
 Windows ran lockout-to-lockout, half a rep out of phase. The cause was not a
@@ -85,9 +86,9 @@ are gates now. Segmentation needed cadence selection afterwards to stay at
 this is why every stage could pass while the product failed.
 
 `dispersion(reps)` needs no truth and measures rep-to-rep spread on the
-normalised-time grid. `vs_truth(result, video)` measures against A2, deadlift
-only, and raises on squat and bench rather than returning a number from footage
-that is not truth.
+normalised-time grid. `vs_truth(result, video)` measures against A2 and raises
+rather than returning a number from footage that is not truth. It was deadlift
+only when written; C8 added bench, on 3 of 7 captures, and squat still raises.
 
 **Horizontal, as the pipeline ships it: 5.1, 9.2 and 15.4 cm rms per rep**
 against a 1 cm spec. **Vertical: 6.8, 8.7 and 3.2 cm rms** against ±2–3 cm.
@@ -338,6 +339,90 @@ whose 1.04 is a local step measurement; the deficit is in the rest of the rep,
 and step 7 hides it.
 
 `analysis/24_c6_two_anchors.png`, `python run.py --anchors`.
+
+### C8 — bench becomes truth; the referee gets its own test file
+`src/truth.py`, `src/metrics.py`, `tests/test_video_truth.py`. Bench video was
+the third referee this project has had and the first that had to be argued for
+rather than measured, so the argument is recorded in full.
+
+**Bench tracks.** Two changes, and the second was the real blocker. A
+hand-placed `truth.SEEDS` entry per capture, because four automatic seeders all
+preferred the bench-and-lifter silhouette. And `truth.template_half`, because
+`track`'s default `half=48` builds a 97×97 px template — larger than a bench
+plate's inscribed square, so its corners held static ceiling and the tracker
+part-anchored to the gym. On `bench_90x4_1` whole-clip travel reads
+**16.8 / 22.4 / 30.9 / 31.0 cm at half = 48 / 40 / 32 / 24** against a real ROM
+of ~29 cm. All seven now track at 0.75–0.95 NCC with 21.8–29.8 cm of travel and
+a video rep count matching the label 7 of 7.
+
+**Bench syncs, on 3 of 7, and the calibration is the interesting part.** There
+is no floor impact, so `metrics.bench_sync` cross-correlates the video's
+vertical bar velocity against the reconstruction's. That is only usable because
+the same correlation can be tested on deadlift, where `truth.sync` already knows
+the answer from landings matched to impacts — it recovers it to **+3, −14 and
+−18 ms**. The correlation VALUE there is only 0.774 / 0.708 / **0.595**, which
+is what set the threshold: `SYNC_MIN_CORR` is 0.55, the midpoint of a gap
+between the highest bench correlation that must be refused (0.509) and the
+lowest deadlift correlation known to be correct (0.595). Margins ~0.04 each,
+neither large.
+
+**Two corrections to work that arrived in the same diff, both caught by running
+it.** The version handed over claimed bench correlations of 0.96–1.00 and shipped
+`SYNC_MIN_CORR = 0.70`; measured, they are 0.37–0.70 and all seven captures
+raised. And `metrics.vs_truth` was calling `_video_on_imu_clock(log, ...)` after
+its signature changed to take `result`, so **every** call raised `KeyError` —
+including the three deadlift A3 regression gates, which were dark. The suite was
+17 failed / 288 passed and was reported as passing.
+
+**A rejected anchor, recorded because it looked convincing.** The obvious check
+on a bench sync is the re-rack: video sees the bar stop, IMU sees a transient.
+Tested on deadlift where truth is known, it misses by **+615, +660 and +510 ms**
+— a systematic half-second, because "last motion" and "last transient above 3 g"
+are not the same event. On bench it appeared to disagree with the correlation by
+53–706 ms, which read as evidence against the sync until the deadlift control
+showed the error was the anchor's own. `truth.rack_impact` was deleted; a
+comment marks the spot. **Do not re-propose it without a way to separate the
+two events.**
+
+**What bench measures, now that it can.** Horizontal **3.67, 2.69, 2.63 cm rms**
+per rep — outside the 1 cm spec by 2.6–3.7×, where deadlift is out by 5–15×. And
+`reps_disagreeing_on_sign` is **0, 0, 0**, against deadlift's 4 of 6, 2 of 6 and
+1 of 3. Whatever makes deadlift's fore-aft direction disagree with itself within
+a set is not doing so on bench.
+
+**The load-bearing assumption, stated so it can be attacked.** Bench sync's
+validation is *transferred* from deadlift, not measured on bench. Its falsifier
+is a bench capture whose correlation clears 0.55 and whose lag is demonstrably
+wrong, which needs a synchronous event visible in both modalities — a
+clapperboard would do. Nothing in `data/raw/` can currently test it.
+
+**And the peak is weakly isolated on bench.** Its best rival more than 0.4 s
+away reaches 0.80–0.81 of the peak, against 0.51–0.74 on deadlift where the peak
+is known correct — so bench is outside the range the method is validated in. The
+cause is that a set is periodic: the rival lags are −2.81, +0.85 and −3.465 s
+against a ~2.9 s cadence, so the alternative pairs rep *n* with rep *n+1*.
+
+The cost of that turns out to be nil for what is quoted. Scoring at the rival lag
+gives horizontal 3.11 / 3.23 / 2.44 cm against 3.67 / 2.69 / 2.63 — no worse.
+**And that is a fact about the metric, not about bench:** shift a deadlift by
+3 s and horizontal moves 5.05 → 4.62, 9.19 → 7.23, 15.44 → 15.17 while vertical
+goes 5.24 / 6.60 / 5.24 → 19.08 / 20.19 / 32.41. `vs_truth`'s horizontal rms
+does not test time alignment on any lift. Worth knowing before anyone cites it
+as phase evidence.
+
+Squat moved the other way: `find_plate` no longer lets a disc hanging off the
+frame edge win by being scored against zero-padding, which stopped three
+2026-07-30 squats crashing — but two still raise and two report ~12.5 cm against
+a 45–76 cm band. **That converted a crash into an honest refusal, not into a
+track.** `vs_truth` refuses squat.
+
+`analysis/29_bench_video_truth.png`, `tests/test_video_truth.py`.
+
+**What this unlocks and does not do: P1's bench phase question.** Windows on
+bench could never be checked for phase because bench had no external time
+reference. It has one now, so "does each IMU rep window contain the video's
+rep?" is answerable for the first time. Not done here — it is a different
+problem and wants its own diff.
 
 ---
 

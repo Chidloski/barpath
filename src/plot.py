@@ -519,11 +519,14 @@ def plot_scorecard(results: dict, truths: dict, roms: dict):
         if col == 0:
             ax.set_ylabel("what the pipeline would show you\nheight (cm)",
                           fontsize=9)
-        # The trap this project keeps falling into. Bench and squat draw a
-        # clean, plausible bar path and NOTHING can check it; deadlift draws an
-        # obvious mess and is the only lift with external truth. Plausibility
-        # is not evidence, and it is exactly how a broken pipeline convinces
-        # somebody it works (CLAUDE.md, the deadlift-first rule).
+        # The trap this project keeps falling into: a lift draws a clean,
+        # plausible bar path and nothing can check it, while deadlift draws an
+        # obvious mess and has truth to be measured against. Plausibility is not
+        # evidence, and it is exactly how a broken pipeline convinces somebody
+        # it works (CLAUDE.md, the deadlift-first rule). Since C8 the unchecked
+        # set is squat plus the four bench captures whose sync does not resolve,
+        # rather than bench-and-squat wholesale — `truths` decides, so this
+        # follows automatically.
         if label not in truths:
             ax.text(0.5, 0.02, "looks plausible. that is not evidence —\n"
                                "nothing external checks this lift",
@@ -534,9 +537,10 @@ def plot_scorecard(results: dict, truths: dict, roms: dict):
         ax = axes[1, col]
         t = truths.get(label)
         if t is None:
-            ax.text(0.5, 0.5, "NO VIDEO TRUTH\n\nbench tracking raises;\n"
-                              "squat tracks at ~0.40 NCC.\nNothing external "
-                              "measures\nthis lift's error.",
+            ax.text(0.5, 0.5, "NO VIDEO TRUTH\n\nsquat tracks at ~0.40 NCC and\n"
+                              "clips frame at lockout; a bench\nlands here only "
+                              "if its sync\ndoes not resolve.\nNothing external "
+                              "measures\nthis capture's error.",
                     ha="center", va="center", fontsize=9, color="crimson",
                     transform=ax.transAxes)
             ax.set_xticks([]); ax.set_yticks([])

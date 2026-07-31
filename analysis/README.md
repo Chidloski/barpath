@@ -353,9 +353,13 @@ negative result: the scale assumption this project has flagged as a risk since
 
 **The reconstruction passes the bounds** (top row). Post-step-7 per-rep ROM is
 bench 24–31 cm, squat 61–68, deadlift 53–61 — inside every band, and tight
-within each capture. This is the first external check bench and squat have ever
-had; every other gate in the project needs floor impacts or trackable video and
-they have neither. It is weak, but it is not self-referential, and they clear it.
+within each capture. This was the first external check bench and squat had ever
+had; every other gate in the project needed floor impacts or trackable video and
+they had neither. It is weak, but it is not self-referential, and they clear it.
+
+*(As of C8, 2026-07-31, that is no longer bench's only external check — bench
+video tracks and syncs, so bench has a horizontal error measurement too. It
+remains squat's only one. See the C8 section.)*
 
 Where it is measured matters. Run the same check *before* step 7 and the
 numbers are absurd — `deadlift_155x6_1` climbs from 100 cm on rep 1 to 1939 cm
@@ -632,14 +636,18 @@ what step 9 would draw. Squat and bench produce clean, tightly-overlaid,
 entirely plausible bar paths. Deadlift produces a mess of rectangles that
 nobody would mistake for a bar path.
 
-That ordering is exactly backwards from the evidence. Deadlift is the only lift
-with external truth, and row 2 says what that truth says: **2–8 cm of horizontal
-error per rep against a 1 cm spec, and 2–7 cm vertical against 3 cm.** Bench and
-squat have no video truth at all — bench tracking raises, squat tracks at ~0.40
-median NCC — so their clean-looking output is unfalsified, not verified. Row 1
-labels them as such, because "it looks plausible" is precisely how this project
-would convince itself a broken pipeline works, and is why CLAUDE.md says to
-validate on deadlift first.
+That ordering is exactly backwards from the evidence. Deadlift is the lift with
+the best external truth, and row 2 says what that truth says: **2–8 cm of
+horizontal error per rep against a 1 cm spec, and 2–7 cm vertical against 3 cm.**
+When 27 was drawn, bench and squat had no video truth at all — bench tracking
+raised, squat tracked at ~0.40 median NCC — so their clean-looking output was
+unfalsified, not verified, and row 1 labels them as such. "It looks plausible"
+is precisely how this project would convince itself a broken pipeline works.
+
+**C8 changed that for bench on 2026-07-31, and the panel labels are now wrong
+for it.** Bench has a measured horizontal error of 2.63–3.67 cm on three of its
+seven captures; the "NO external horizontal check" annotation still applies to
+squat and to the four unsynced benches. Redraw 27 to pick up the change.
 
 Row 3 is the one check that reaches all three lifts: per-rep vertical ROM
 against `truth.VERTICAL_ROM_M`, every rep of every capture. When 27 was drawn,
@@ -773,6 +781,69 @@ the ten older captures.
 
 **What this does not do.** It fixes how many windows there are and how far each
 spans. It says nothing about **phase** — whether a bench or squat window starts
-where the rep starts — which remains unverified and unverifiable until those
-lifts get an external anchor. A window half a rep out of step has the right
-count, the right duration and the right amplitude.
+where the rep starts. A window half a rep out of step has the right count, the
+right duration and the right amplitude.
+
+*Written as "unverifiable until those lifts get an external anchor". Bench got
+one the next day: C8's video sync puts a bench clip on the IMU clock, which is
+exactly the anchor this sentence was waiting for. The question is now open
+rather than closed, and nobody has run it. Squat's half stands.*
+
+## C8 — bench video truth (2026-07-31)
+
+- `29_bench_video_truth.png` — three panels on why a bench clock sync can be
+  believed. **Left:** the correlation run on the three deadlifts, plotted
+  against the offset `truth.sync` already knows from landings matched to floor
+  impacts. The peak sits +3, −14 and −18 ms from it — the method recovers a
+  known answer, which is the whole licence for using it where there is no known
+  answer. Note the peaks are only 0.774, 0.708 and **0.595** high. **Middle:**
+  the same correlation on all seven bench captures. Three clear the floor,
+  four do not, and the four that do not are genuinely flat-topped — there is no
+  lag to read off them. **Right:** the gap the threshold lives in, 0.509 to
+  0.595, with `SYNC_MIN_CORR = 0.55` at its midpoint and ~0.04 of margin either
+  side. The dotted line is the 0.70 the function originally shipped with, which
+  rejects `deadlift_180x3` — a sync correct to 18 ms.
+
+**The rejected half, kept because it was convincing.** The intended independent
+check was the re-rack: video sees the bar stop dead, IMU sees a transient. On
+bench it disagreed with the correlation by 53–706 ms, which read as evidence
+against the sync. Run on deadlift, where the offset is known, the anchor itself
+misses by **+615, +660 and +510 ms** — a systematic half-second, because "last
+tracked motion" and "last acceleration transient above 3 g" are not the same
+event. The disagreement was almost entirely the check's own error.
+`truth.rack_impact` was deleted; a comment marks where it was.
+
+**What bench then measures.** Horizontal 3.67, 2.69 and 2.63 cm rms per rep,
+against deadlift's 5.05/9.19/15.44. And `reps_disagreeing_on_sign` is 0 on all
+fifteen bench reps, against 4 of 6, 2 of 6 and 1 of 3 on deadlift — the fore-aft
+instability in `19_a3_metrics.png` does not reproduce on bench.
+
+**Sensitivity, measured rather than argued.** Offsetting the fitted lag by
+±100 ms moves per-rep horizontal rms by 0.11, 0.27 and 0.33 cm, and vertical by
+0.83, 0.63 and 1.00 cm. So a sync error costs little horizontally and about a
+centimetre vertically — and the lag was fitted on the vertical channel, so bench
+vertical is the number to distrust.
+
+**The weakest part, found by reading the middle panel rather than the numbers.**
+The bench curves oscillate: their best rival more than 0.4 s from the peak
+reaches **0.80, 0.81, 0.80** of it, against **0.74, 0.66, 0.51** on the three
+deadlifts where the peak is known correct. Bench is outside the range the method
+has been shown to work in. The cause is structural — the rival lags are −2.81,
++0.85 and −3.465 s against a rep cadence near 2.9 s, so the alternative
+alignment pairs rep *n* with rep *n+1*, and touch-and-go reps genuinely do
+resemble each other. `bench_spoto_90x5_2`'s peak at −2.32 s, which looks like an
+outlier beside its siblings' +0.04 and −0.585, is this.
+
+**And what that costs, which is the useful part.** Scoring at the rival lag
+instead of the peak gives horizontal **3.11, 3.23 and 2.44 cm** against 3.67,
+2.69 and 2.63 — no worse, and *lower* on two of three. The bench horizontal
+number does not depend on resolving the ambiguity.
+
+That is not a bench excuse. Shift a **deadlift** by a full 3 s and its
+horizontal rms goes 5.05 → 4.62, 9.19 → 7.23, 15.44 → 15.17, while its vertical
+explodes from 5.24 / 6.60 / 5.24 to **19.08 / 20.19 / 32.41**. So:
+**`vs_truth`'s horizontal rms is not testing time alignment on any lift** — the
+fore-aft signal is a few centimetres and looks much the same rep to rep, so
+mis-pairing reps barely moves it. It is a magnitude comparison between two paths
+that happen to be paired in time. Phase evidence comes from `17` and the
+lockout-containment gate, not from this number.

@@ -449,26 +449,42 @@ def test_video_deadlift_rom_is_physical(video, csv, reps):
 
 
 @pytest.mark.parametrize("video", ["bench_90x4_1_20260727", "bench_92.5x2_20260727"])
-def test_bench_tracking_fails_loudly_rather_than_silently(video):
-    """Bench must raise, not return a confident wrong answer.
+def test_bench_auto_seeding_still_does_not_find_the_plate(video):
+    """Automatic seeding on bench misses the plate entirely. Pin how badly.
 
-    The plate there is small, sits against a dark ceiling and abuts the
-    lifter-and-bench silhouette, which is a larger dark blob — so find_plate
-    prefers the clutter. It tracked a motionless background patch for a whole
-    clip at 0.907 median NCC and reported 0.0 cm of bar travel, which would
-    have gone downstream as ground truth.
+    This replaces `test_bench_tracking_fails_loudly_rather_than_silently`,
+    which asserted that `bar_path` RAISES on bench. It no longer does:
+    `truth.SEEDS` carries a hand-placed seed per capture and all seven now
+    track. That test asked to be replaced by a real one rather than deleted
+    when a seed was wired in, and this is it — the underlying claim it was
+    really pinning was about the SEEDER, not about `bar_path`, and that claim
+    is unchanged.
 
-    This test pins the CURRENT state: automatic seeding does not work on bench.
-    When it does, or when a seed_yx is wired in, this test should be replaced
-    by a real one — not deleted.
+    So test the seeder directly. `find_plate` is a dark-disc matched filter,
+    and on a bench frame the plate is small, sits against a dark ceiling and
+    abuts the lifter-and-bench silhouette — a larger, darker, rounder blob. It
+    does not miss by a few pixels; it lands somewhere else in the frame.
+
+    Not a tuning problem, and four attempts on 2026-07-31 say so: dark disc,
+    circular-edge radial gradient, dark disc weighted by temporal motion
+    energy, and a dark-annulus rim filter all preferred the clutter. If this
+    test ever fails, auto-seeding has been solved and `truth.SEEDS` may be able
+    to go — check that before assuming a regression. The real bench tracking
+    gates live in tests/test_video_truth.py.
     """
-    path = VIDEO / f"{video}.mov"
-    if not path.exists():
+    if not (VIDEO / f"{video}.mov").exists():
         pytest.skip(f"{video} not present")
     from src import truth
 
-    with pytest.raises(ValueError, match="locked onto something static"):
-        truth.bar_path(path)
+    _, cy, cx, radius = truth.SEEDS[video]
+    stack, fps, _ = truth.frames(VIDEO / f"{video}.mov")
+    frame = stack[truth.SEEDS[video][0]]
+    y, x, _, _ = truth.find_plate(frame)
+
+    miss = float(np.hypot(y - cy, x - cx))
+    assert miss > radius, (
+        f"{video}: find_plate landed {miss:.0f} px from the hand seed, inside "
+        f"the {radius} px plate. Auto-seeding may now work — see the docstring")
 
 
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
@@ -764,27 +780,28 @@ def test_dispersion_is_finite_and_reported(path):
 
 
 @needs_data
-@pytest.mark.parametrize("stem", ["bench_90x4_1", "squat_130x5"])
+@pytest.mark.parametrize("stem", ["bench_spoto_90x5_1", "squat_130x5"])
 def test_dispersion_flatters_a_broken_pipeline(stem):
     """The caveat in dispersion's docstring, asserted rather than promised.
 
-    On bench and squat dispersion reports well under 2 cm of rep-to-rep spread
-    — comfortably inside the 1 cm-ish spec band — on lifts where NOTHING has
-    ever been verified, and where `vs_truth` refuses to produce a number at all
-    because the video is not trustworthy there. Both halves are asserted here,
-    because together they are the whole point: a good dispersion number and no
-    truth is exactly the state in which this project has twice convinced itself
-    a broken pipeline worked.
+    Dispersion reports well under 2 cm of rep-to-rep spread on bench and squat
+    — comfortably inside the 1 cm-ish spec band. The reason is structural:
+    error that repeats every rep lands in the mean rep and cancels out of every
+    deviation from it, so a pipeline dominated by P3 scores well here by
+    construction.
 
-    The reason is structural. Error that repeats every rep lands in the mean
-    rep and cancels out of every deviation from it, so a pipeline dominated by
-    P3 scores well here by construction.
+    **Rewritten 2026-07-31, and the point got sharper rather than weaker.**
+    This used to assert the good dispersion number alongside `vs_truth` REFUSING
+    to produce one, on the grounds that bench had no trustworthy video. Bench
+    now has one. So the second half is no longer "there is no truth to check
+    against" but the stronger "there IS, and it disagrees": on
+    `bench_spoto_90x5_1` dispersion says under 2 cm of spread while the video
+    says 3.67 cm of horizontal error. A metric needing no ground truth reported
+    inside spec on a capture measured to be outside it.
 
-    This used to assert `dispersion <= vs_truth` on a deadlift, on the reasoning
-    that dispersion must be the optimistic one. That was stronger than the
-    argument supports — the two measure different things and their ordering is
-    not guaranteed — and B3's endpoint median duly broke it by pulling the
-    truth error to 4.6 cm against 5.2 cm of spread.
+    Squat keeps the older form, because squat video genuinely is not truth —
+    see `test_vs_truth_refuses_squat`. Between them the two parametrisations
+    cover both failure modes: flattery with no referee, and flattery with one.
     """
     from src import metrics, pipeline
 
@@ -794,19 +811,41 @@ def test_dispersion_flatters_a_broken_pipeline(stem):
 
     result = pipeline.run(path)
     assert result["dispersion"]["horizontal_rms"] < 2.0
-    with pytest.raises(ValueError, match="deadlift-only"):
-        metrics.vs_truth(result, VIDEO / "deadlift_155x6_1_20260728.mov")
+
+    if stem.startswith("squat"):
+        with pytest.raises(ValueError, match="refuses squat"):
+            metrics.vs_truth(result, VIDEO / "deadlift_155x6_1_20260728.mov")
+        return
+
+    video = VIDEO / f"{path.stem.rsplit('_', 1)[0]}.mov"
+    if not video.exists():
+        pytest.skip(f"{video.name} not present")
+    m = metrics.vs_truth(result, video)
+    assert m["pipeline_h_rms"] > result["dispersion"]["horizontal_rms"], (
+        f"{stem}: dispersion {result['dispersion']['horizontal_rms']:.2f} cm no "
+        f"longer flatters the {m['pipeline_h_rms']:.2f} cm measured against "
+        f"video — check which one moved before relaxing this")
 
 
 @needs_data
-@pytest.mark.parametrize("stem", ["bench_90x4_1", "squat_130x5"])
-def test_vs_truth_refuses_lifts_without_usable_video(stem):
-    """Squat and bench are not truth, so vs_truth must raise rather than guess.
+@pytest.mark.parametrize("stem", ["squat_130x5", "squat_140x4_1"])
+def test_vs_truth_refuses_squat(stem):
+    """Squat is not truth, so vs_truth must raise rather than guess.
 
-    Squat tracks at median NCC ~0.40 with the plate leaving frame at lockout;
-    bench does not seed automatically at all. Returning a number from either
-    would invent the ground truth this module exists to supply — the exact
-    move that let a broken pipeline look validated for months.
+    Narrowed from bench-and-squat on 2026-07-31. Bench used to be refused on
+    the grounds that it "does not seed automatically", which was true of
+    `find_plate` and is no longer true of the shipped path — `truth.SEEDS`
+    seeds it by hand and `metrics.bench_sync` aligns it to the IMU clock. Bench
+    is scored now, on the three of seven captures whose correlation clears the
+    floor.
+
+    Squat's refusal stands and its reasons got worse rather than better. It
+    tracks at median NCC ~0.40 with the plate leaving the top of frame at
+    lockout, and of the four 2026-07-30 captures two do not track at all while
+    two report ~12.5 cm of travel against a 45-76 cm band. Returning a number
+    from that would invent the ground truth this module exists to supply — the
+    exact move that let a broken pipeline look validated for months. The fix is
+    a wider shot, not code.
     """
     from src import metrics, pipeline
 
@@ -815,7 +854,7 @@ def test_vs_truth_refuses_lifts_without_usable_video(stem):
         pytest.skip(f"{stem} not present")
 
     result = pipeline.run(path)
-    with pytest.raises(ValueError, match="deadlift-only"):
+    with pytest.raises(ValueError, match="refuses squat"):
         metrics.vs_truth(result, VIDEO / "deadlift_155x6_1_20260728.mov")
 
 

@@ -33,7 +33,8 @@ behind each. `CLAUDE.md` holds the open problems. `analysis/README.md` holds the
 plots and numbers.
 
 One thing works well and is verified against video: the IMU and the video agree
-on floor-impact **timing** to 11–16 ms.
+on floor-impact **timing** to 11–16 ms. The same cross-modal agreement is what
+calibrates the bench clock sync, which has no such landmark of its own.
 
 Rep segmentation is the other, and it is back to **52/52** with zero false
 positives. The 2026-07-30 captures broke it to 51/52 — `bench_spoto_90x5_1`
@@ -73,6 +74,13 @@ against a 1 cm spec, and vertical 5.24, 6.60 and 5.24 cm against ±2–3 cm.** S
 5–15× out horizontally, and out on vertical too — which is new, because
 "vertical comes out fine" had been repeated for a while without anyone
 measuring it per rep.
+
+C8 added bench to that list on 2026-07-31, on the three of seven captures whose
+video can be time-aligned to the IMU: **horizontal 3.67, 2.69 and 2.63 cm.**
+Still outside spec, by 2.6–3.7× rather than deadlift's 5–15×. One difference is
+worth more than the magnitude: deadlift's reconstruction disagrees with itself
+about which way "forward" is on 4 of 6, 2 of 6 and 1 of 3 reps, and bench does
+so on **none** of its fifteen.
 
 ## Quick start
 
@@ -136,23 +144,40 @@ integration window during a moving pull, to see it.
 **A metric that needs no ground truth will flatter you.** `metrics.dispersion`
 measures rep-to-rep spread, which is close to what the product is about and
 requires nothing external. It reports 0.7–1.3 cm on bench and squat — inside
-spec, on lifts where nothing has ever been verified. The reason is structural:
-the dominant error repeats every rep, so it lands in the mean rep and cancels
-out of every deviation from it. Where truth exists to check against, the same
-pipeline is 5–15× out. Self-consistency is not accuracy, and this is the third
-time that has cost this project time.
+spec. The reason is structural: the dominant error repeats every rep, so it
+lands in the mean rep and cancels out of every deviation from it. Where truth
+exists to check against, the same pipeline is 5–15× out. Self-consistency is not
+accuracy, and this is the third time that has cost this project time.
+
+Bench sharpened this on 2026-07-31 rather than softening it. The old form of the
+complaint was "inside spec on lifts where nothing has ever been verified".
+Bench is verified now, and dispersion still says under 2 cm on
+`bench_spoto_90x5_1` while the video says 3.67 cm. The flattery was never about
+the absence of a referee; it is a property of the metric.
 
 ## Validation order
 
 Deadlift first. Not because the pipeline differs by lift — it does not — but
-because it is the only lift with external ground truth: the bar starts at plate
+because it has the **best** external ground truth: the bar starts at plate
 radius and ends at a tape-measurable lockout, and the floor impact gives an
-unmistakable timing landmark that no other lift provides.
+unmistakable timing landmark that no other lift provides. It was the *only* lift
+with any until 2026-07-31.
 
-Bench and squat used to offer nothing but your own judgement of whether a curve
-looks plausible, which is exactly how you convince yourself a broken pipeline
-works. Since 2026-07-30 they have one weak external check — per-rep vertical ROM
-against `truth.VERTICAL_ROM_M`. It cannot see phase and constrains one axis, but
-it is not self-referential, and it caught `squat_160x1` reconstructing 18 cm of
-a 65 cm squat at a correct rep count of 1 of 1 — a defect C5 has since fixed,
-and one no count could have found.
+Bench second, and read the qualification before the number. It now tracks on
+video and aligns to the IMU clock, but from a hand-placed seed whose radius
+carries ~4% of scale, on 3 of 7 captures, through a sync whose accuracy is
+inferred from deadlift rather than measured on bench. That is a real referee and
+a weaker one; `metrics.bench_sync`'s docstring says exactly where it would
+break.
+
+Squat last, and not yet. It is now the only lift with no external horizontal
+check at all — the plate leaves the top of frame at lockout, two of the four
+2026-07-30 captures do not track, and `metrics.vs_truth` refuses it. What it has
+is the same weak check bench had first: per-rep vertical ROM against
+`truth.VERTICAL_ROM_M`, which cannot see phase and constrains one axis, but is
+not self-referential. That check caught `squat_160x1` reconstructing 18 cm of a
+65 cm squat at a correct rep count of 1 of 1 — a defect C5 has since fixed, and
+one no count could have found.
+
+Judging a curve by whether it looks plausible is how you convince yourself a
+broken pipeline works. Two of the three lifts no longer require it.

@@ -182,9 +182,17 @@ vertical gave them away.
 perfect 44/44 while every window ran lockout-to-lockout, half a rep out of step.
 Deadlift boundaries come from floor impacts, which use raw acceleration alone,
 match video to 13.5 ms, and put exactly one video lockout in each of the 15
-deadlift windows. **Bench and squat still have no phase anchor** and still
-segment on integrated velocity carrying 145 cm of in-band error against a 69 cm
-signal, so their phase stays unverified until P3 is fixed.
+deadlift windows. **Squat still has no phase anchor** and still segments on
+integrated velocity carrying 145 cm of in-band error against a 69 cm signal, so
+its phase stays unverified until P3 is fixed.
+
+**Bench acquired one on 2026-07-31 and it has not been used yet.** C8 tracks the
+bench plate on video and aligns it to the IMU clock via `metrics.bench_sync`, so
+"does each IMU rep window contain the video's rep?" is answerable on the three
+captures whose sync is identified. Nobody has asked it. That is the single
+cheapest way to close the half of P1 that matters, and the answer could go
+either way — the segmenter scored 44/44 while being half a rep out of step
+before, so a clean count here predicts nothing.
 
 But they now have a *partial* external check: per-rep vertical ROM against
 `truth.VERTICAL_ROM_M`. It cannot see phase either — a window half a rep out of
@@ -237,6 +245,30 @@ whole-set excursion — excursion counts between-rep divergence, which per-rep
 error does not. And **"vertical comes out fine" is false**; vertical was never
 measured per rep before A3 and it misses its own looser spec on all three
 captures.
+
+**A fourth measurement, 2026-07-31 (C8): bench is out by 2.6–3.7×, not 5–15×,
+and it agrees with itself about direction.** Horizontal **3.67, 2.69 and
+2.63 cm rms** on the three captures whose video sync is identified. Two things
+follow. The magnitude says the deadlift numbers are not the whole story of P2 —
+whatever dominates there is either weaker on bench or partly absent. And
+`reps_disagreeing_on_sign` is **0 of 5, 0 of 5, 0 of 5**, against deadlift's
+4 of 6, 2 of 6 and 1 of 3, which is the sharper contrast: the fore-aft
+instability P2 reports below is a deadlift phenomenon on the evidence held, not
+a pipeline-wide one. The obvious suspect is the floor impact, which P6 already
+locates as where three quarters of the deadlift per-rep error enters and which
+bench does not have. *Read the bench numbers through
+`metrics.bench_sync`'s docstring first* — hand seed, ~4% scale, 3 of 7 captures,
+and a sync calibrated on deadlift rather than verified on bench.
+
+**A caution about this whole metric, found while checking C8 and applying to
+every number in P2.** `vs_truth`'s horizontal rms is insensitive to gross time
+misalignment. Shift a deadlift's video by a full 3 s and horizontal rms moves
+5.05 → 4.62, 9.19 → 7.23, 15.44 → 15.17, while vertical explodes from
+5.24/6.60/5.24 to 19.08/20.19/32.41. The fore-aft signal is a few centimetres
+and looks much the same rep to rep, so mis-pairing reps barely moves it. **The
+horizontal numbers are magnitude comparisons, not evidence that the reps line
+up in time.** Phase evidence comes from `analysis/17` and the deadlift
+lockout-containment gate. This was always true and nobody had measured it.
 
 **A third correction, 2026-07-30: do not quote the spread.** The video's
 vertical scale is wrong per capture. Per-rep video ROM on the three deadlifts is
@@ -496,3 +528,17 @@ broken pipeline works. As of 2026-07-30 they offer one thing:
 `truth.VERTICAL_ROM_M` bounds their per-rep vertical travel. Do not oversell it
 — a bound is not a measurement, it constrains one axis, and it cannot see phase.
 It is still the difference between an unfalsifiable claim and a weak one.
+
+**Bench then went further, on 2026-07-31 (C8), and the qualifications matter
+more than the headline.** It has real video truth now: horizontal error of 3.67,
+2.69 and 2.63 cm rms per rep. But rank it below deadlift deliberately, on three
+counts. The seed is placed by hand and its radius *is* the pixels-to-metres
+scale, so every bench distance carries ~4% that nothing checks. Only 3 of 7
+captures have an identified clock sync. And that sync is a cross-correlation
+whose accuracy was measured on **deadlift** — where it recovers a known offset
+to 18 ms — and then assumed to hold on bench, which no bench capture can
+currently test. It is a referee; it is not the referee deadlift is.
+
+Squat is now the only lift with no external horizontal check, and its footage
+got worse rather than better: two of the four 2026-07-30 captures do not track
+at all. `metrics.vs_truth` refuses it. That wants a wider shot, not code.
