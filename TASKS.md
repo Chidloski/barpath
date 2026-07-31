@@ -705,8 +705,24 @@ Not code, and the highest value per effort available:
   66.8 / 47.6 cm against a 61 cm ceiling) and the plate cannot fix it, because
   it calibrates at the bottom of frame for travel reaching the top. The referee
   for P2 is mis-scaled and no amount of code repairs footage. See `analysis/23`.
-- **Step the camera back.** Squat clips the plate at lockout; bench sits the
-  plate against clutter. Both become usable truth with no code.
+- **Step the camera back.** Squat clips the plate at lockout, and two of the
+  four 2026-07-30 captures do not track at all — squat is now the only lift with
+  no external horizontal check, so this is what converts it to truth with no
+  code. Bench sits the plate against clutter; it is truth already (C8) but only
+  from a hand-placed seed in `truth.SEEDS`, and a clear plate would let
+  auto-seeding work and drop the ~4% scale uncertainty the hand-read radius
+  carries.
+- **A sessionless capture with 30+ s of wrist-down.** C7 deleted the
+  `HKWorkoutSession` after measuring that 100 Hz survives a dimmed frontmost app
+  for **20 s**. Nothing tests longer, and a real set plus setup is longer. This
+  is the falsifier for that decision and it has never been collected. If the
+  rate drops, every capture taken since C7 is suspect. See `watch/README.md`.
+- **Tape the wrist-to-bar offset `d`.** Watch centre to bar centre, in watch
+  axes, once. B2 showed `d` is *not* identifiable from the video — fitting it
+  against `vs_truth` is ill-conditioned because P3 is also a body-frame constant
+  swept by the same rotating forearm, and the optimiser returns 21, 60, 64 and
+  even 129 cm against a real 10–15 cm. Step 6 is implemented and off by default
+  purely for want of this number.
 - **Film a bench single.** Newly worth doing: C5's singleton rule ranks by
   displacement, and `bench_92.5x2`'s unrack moves the bar *further* than its
   reps, so a bench single is predicted to segment onto the unrack. No capture
