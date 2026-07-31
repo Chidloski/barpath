@@ -29,9 +29,9 @@ because SNR tests whether a mean is reproducible, not whether it is bias.
 ### A1 — rep segmentation `e8a8a0b` `efd5f5c`
 **44/44 reps across all 10 captures, zero false positives**, against the old
 stationarity segmenter's 0/14 bench and 1/15 squat. *(True as measured. The
-2026-07-30 session took it to **51/52** — see P1; `bench_spoto_90x5_1` counted
+2026-07-30 session took it to **71/72** — see P1; `bench_spoto_90x5_1` counted
 the re-rack as a sixth rep, and the variant token in its name had kept it out
-of the gates entirely. **C5 restored it to 52/52 on 2026-07-31.**)* Shape
+of the gates entirely. **C5 restored it to 72/72 on 2026-07-31.**)* Shape
 matching in a
 fixed-*duration* window, floor-impact anchors where the lift provides them
 (6/6, 6/6, 3/3), and lateness as the tie-break. Every rep window now contains
@@ -232,9 +232,9 @@ Four results, in descending order of how much they change what we believe:
    radius quantisation and tracker drift all tested and ruled out.
 2. **The reconstruction passes on all 17 captures** bar two known defects, and
    is more self-consistent on vertical ROM than the video judging it.
-3. **Rep counting went to 51/52, not 44/44** — `bench_spoto_90x5_1` counted the
+3. **Rep counting went to 71/72, not 44/44** — `bench_spoto_90x5_1` counted the
    re-rack, hidden by a regex that did not match the variant token in its name.
-   *Fixed by C5 on 2026-07-31; counting is 52/52.*
+   *Fixed by C5 on 2026-07-31; counting is 72/72.*
 4. **`squat_160x1` reconstructed 18.0 cm at a correct count of 1 of 1** — the
    first right-count-wrong-window failure any gate here has caught.
    *Fixed by C5; it reads 67.0 cm.*
@@ -593,7 +593,7 @@ B2 are where the error actually is; B3 dropped because measurement showed it
 worth 2–4 cm, not 15.
 
 ### C5 — DONE 2026-07-31. Both segmenter failures fixed, by two mechanisms
-Counting is **52/52** and every rep of all 17 captures sits inside its ROM band
+Counting is **72/72** and every rep of all 17 captures sits inside its ROM band
 bar `deadlift_180x3` rep 2 at 61.1 cm, which is inside the gate's slack and is a
 different problem. Fifteen captures are unchanged rep for rep. Four lines of
 behaviour changed; `WRONG_REP_COUNT` and `KNOWN_ROM_FAILURES` are now empty.

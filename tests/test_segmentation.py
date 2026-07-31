@@ -236,9 +236,9 @@ def test_only_a_single_has_a_degenerate_cluster():
 @needs_data
 @pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
 def test_every_window_spans_a_physically_possible_rep(path):
-    """Count AND extent, on every capture. C5's closing state: 52/52.
+    """Count AND extent, on every capture. C5's closing state: 72/72.
 
-    Counting was 51/52 and one capture counted right with the wrong window, so
+    Counting was 71/72 and one capture counted right with the wrong window, so
     both halves are asserted together. They fail independently — a count can be
     right while an extent is wrong (`squat_160x1`) and an extent can be right
     while a count is wrong (`bench_spoto_90x5_1`'s first four windows were all

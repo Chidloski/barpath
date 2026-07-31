@@ -678,6 +678,13 @@ def vs_truth(result: dict, video: str | Path) -> dict:
             # all. Any reconstruction that does not beat this is adding noise
             # rather than information. See `beats_null` below.
             "null_h_rms": float(np.sqrt((vid[:, 0] ** 2).mean()) * 100),
+            # The curves themselves, (along-axis, up) in metres, sign already
+            # applied. Carried so a plot can draw the comparison without
+            # re-projecting by hand — `plot`'s module docstring records what
+            # that cost last time: step 8 was on screen in two figures while
+            # the stage had never executed.
+            "curve_video": vid,
+            "curve_pipeline": pipe,
         })
 
     good = [r for r in per_rep if r["covered"]]

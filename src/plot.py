@@ -507,6 +507,63 @@ def plot_momentum_closure(groups: dict, traces: dict):
     return fig
 
 
+def plot_vs_truth_paths(results: dict, stretch: bool = True):
+    """The reconstruction drawn on top of the video's bar path, per capture.
+
+    `results` maps stem -> a `metrics.vs_truth` dict. Every capture with video
+    gets a panel; reps are overlaid, the video in grey and the pipeline in
+    colour, each rep start-aligned exactly as step 9 aligns them.
+
+    This is the figure that says what the error NUMBERS mean. "0.64 cm rms" and
+    "15.44 cm rms" are abstractions until you see that one is a bar path with a
+    wobble and the other does not resemble the movement at all.
+
+    The horizontal axis IS labelled here, which `plot_paths` refuses to do and
+    is right to refuse. The difference is that this panel shows the truth beside
+    the claim, so the reader can see how far the claim can be trusted; a
+    product plot shows only the claim.
+    """
+    stems = list(results)
+    cols = min(5, len(stems))
+    rows = -(-len(stems) // cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(3.5 * cols, 5.4 * rows),
+                             squeeze=False)
+    flat = axes.ravel()
+
+    for ax, stem in zip(flat, stems):
+        m = results[stem]
+        good = [r for r in m["per_rep"] if r.get("covered")]
+        for i, r in enumerate(good):
+            vid, pipe = r["curve_video"] * 100, r["curve_pipeline"] * 100
+            ax.plot(vid[:, 0], vid[:, 1], color="0.55", lw=2.0,
+                    label="video (truth)" if i == 0 else None, zorder=2)
+            ax.plot(pipe[:, 0], pipe[:, 1], lw=1.3, alpha=0.9,
+                    label="pipeline" if i == 0 else None, zorder=3)
+        if stretch:
+            ax.set_aspect(1.0 / STRETCH)
+        beats = m["beats_null"]
+        verdict = "beats" if beats > 1 else "LOSES TO"
+        ax.set_title(f"{stem}\n{m['pipeline_h_rms']:.2f} cm rms   "
+                     f"{verdict} flat line ({beats:.2f}x)",
+                     fontsize=8, color="0.15")
+        ax.set_xlabel("fore-aft (cm)", fontsize=8)
+        ax.set_ylabel("vertical (cm)", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=6, frameon=False, loc="best")
+    for ax in flat[len(stems):]:
+        ax.axis("off")
+
+    fig.suptitle(
+        "The reconstruction (colour) against the video (grey), every capture "
+        "that has truth. Reps start-aligned, fore-aft stretched 4x as step 9 "
+        "draws it.\nSquat is absent because vs_truth refuses it. Bench "
+        "distances carry ~4% from a hand-placed seed; read metrics.bench_sync "
+        "before quoting them.", fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    return fig
+
+
 def plot_splice_rejected(closure: dict, h_rms: dict, rom_trace: tuple,
                          rom_bound: float):
     """B6 — the impact splice does what it claims and loses anyway.

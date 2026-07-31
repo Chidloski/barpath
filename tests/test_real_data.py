@@ -44,11 +44,11 @@ needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
 
 # Captures whose rep COUNT is wrong. P1 recorded counting as closed at 44/44,
 # and it was, on the ten captures that existed on 2026-07-29. The 2026-07-30
-# session added seven more and took it to 51/52 — `bench_spoto_90x5_1` counted
+# session added seven more and took it to 71/72 — `bench_spoto_90x5_1` counted
 # the re-rack as a sixth rep, hidden by a REP_COUNT regex that did not match
 # the 'spoto' variant token.
 #
-# EMPTY as of 2026-07-31 (C5): counting is 52/52. The cause was
+# EMPTY as of 2026-07-31 (C5): counting is 72/72. The cause was
 # `segment._longest_cadence`'s tolerance of 1.6, which admitted the 4.50 s gap
 # between the last rep and the re-rack (4.50/2.86 = 1.573) and grew a run of
 # six that beat the true run of five on length. It is 1.45 now, the middle of a
@@ -682,7 +682,7 @@ def test_bench_rep_windows_are_in_phase_with_the_video(video, reps):
     **This is the first measurement of bench phase in the project.** Until C8
     gave bench a video clock sync there was no external time reference on this
     lift at all, and CLAUDE.md's P1 recorded the question as unverifiable. It
-    is the half of P1 that matters: counting was clean at 52/52 and window
+    is the half of P1 that matters: counting was clean at 72/72 and window
     extent was clean, while phase was untested — and phase is exactly what a
     clean count hides. The old segmenter scored a perfect 44/44 on deadlift
     while every window ran half a rep out of step.

@@ -138,7 +138,7 @@ The learning goal survives the lockout that used to enforce it, and it changes
 The milestone table is gone. Milestones 1–6 all passed and the project does
 not work; a schedule that reports success while the artefact fails is worse
 than no schedule. What survived it is real: the watch logger works, and
-`data/raw/` holds 17 captures, all labelled with rep counts and totalling 52
+`data/raw/` holds 17 captures, all labelled with rep counts and totalling 72
 reps (7 bench, 7 squat, 3 deadlift), plus two stationary diagnostic logs. The
 2026-07-30 session added seven of those and every one carries the C3 `phase`
 column, including a real 3.0 s closing hold. The room and warm-up captures were
@@ -149,20 +149,20 @@ say 10 and 44 reps. Both are correct as of when they were taken.
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
 
-**P1 — Counting and extent are clean at 52/52; phase is now verified on
+**P1 — Counting and extent are clean at 72/72; phase is now verified on
 deadlift and bench, and open only on squat.** Rewritten 2026-07-31 by C5, and
 again the same day by C9, which answered the phase question this heading used
 to call untouched. Bench: 15 of 15 windows in phase. See *Window extent* below.
 
 *Counting:* A1 closed this at 44/44 with zero false positives, against the old
 stationary detector's 0 of 14 bench and 1 of 15 squat. That was true on the ten
-captures then held. The 2026-07-30 session broke it to 51/52 —
+captures then held. The 2026-07-30 session broke it to 71/72 —
 `bench_spoto_90x5_1` segmented a 5-rep set into **6** windows, the re-rack
 counted as a rep — hidden because `REP_LABEL` did not match the `spoto` variant
 token, so `expected_reps` was `None` and every count gate silently skipped all
 three new benches.
 
-C5 fixed it on 2026-07-31 and counting is **52/52**. The cause was
+C5 fixed it on 2026-07-31 and counting is **72/72**. The cause was
 `segment._longest_cadence`'s cadence tolerance of 1.6: that capture's five reps
 sit 2.78–2.94 s apart and the first post-set movement follows 4.50 s after the
 last, so admitting it needs 4.50/2.86 = 1.573, which 1.6 allowed — growing a run

@@ -429,7 +429,7 @@ record of what the bounds were able to catch.
   `REP_LABEL`/`REP_COUNT` did not match the `spoto` variant token — so
   `expected_reps` was `None` and *every* count gate silently skipped all three
   of the 2026-07-30 benches. P1's "44/44 with zero false positives" was true
-  when measured, went to **51/52**, and is **52/52** since C5.
+  when measured, went to **71/72**, and is **72/72** since C5.
 - `squat_160x1` reconstructed **18.0 cm** for a single at 160 kg, a quarter of
   the ~65 cm the other squat captures give. The count was right, 1 of 1 — this
   is the failure mode P1 warns about, a window in the right number and the
@@ -672,7 +672,7 @@ Row 3 is the one check that reaches all three lifts: per-rep vertical ROM
 against `truth.VERTICAL_ROM_M`, every rep of every capture. When 27 was drawn,
 two captures fell outside the bands — `bench_spoto_90x5_1`'s spurious sixth
 window and `squat_160x1`'s 18 cm fragment. **C5 fixed both on 2026-07-31**, so
-all 52 reps now sit inside the bands bar `deadlift_180x3` rep 2 at 61.1 cm,
+all 72 reps now sit inside the bands bar `deadlift_180x3` rep 2 at 61.1 cm,
 which is inside the gate's 2 cm slack. Redraw 27 to see the current state.
 
 **What 21 shows on the current pipeline.** Rows 3 and 4 are the drift: vertical
@@ -740,7 +740,7 @@ noise is how you invent faults.
   defective captures, old windows above the axis and new below, each labelled
   with its centimetres of vertical.
 
-Counting is **52/52** and every rep of all 17 captures is inside its ROM band
+Counting is **72/72** and every rep of all 17 captures is inside its ROM band
 except `deadlift_180x3` rep 2 at 61.1 cm, which is inside the gate's slack and
 is a different problem. Fifteen captures are unchanged rep for rep.
 
@@ -1088,3 +1088,43 @@ bump survives it. Panel 3 shows it directly. Every correction localised in time
 inherits this, including the time-varying models B6 has left. **B6 is blocked on
 B3**, and B3's value is no longer its own 2–4 cm but that it unblocks
 everything after it.
+
+## The reconstruction against the truth, drawn (2026-07-31)
+
+- `33_reconstruction_vs_truth.png` — every capture with video, pipeline in
+  colour over the video in grey. `python run.py --vstruth`.
+
+The figure that says what the error NUMBERS mean. "0.64 cm rms" and "15.44 cm
+rms" are abstractions until you see that one is a bar path with a wobble in it
+and the other does not resemble the movement at all.
+
+Read it alongside `27_bar_paths.png`, which draws the same reconstructions with
+NO truth beside them — which is what a user would see. The pair is the argument
+for why this project measures: several panels in 27 look entirely plausible and
+are wrong by 5–15 cm.
+
+**What it shows that a table does not.** On deadlift the video traces cluster
+tightly while the pipeline draws 10–30 cm rectangles that wander fore-aft across
+the set — the `beats_null` numbers of 0.70/0.35/0.13 made visible. On bench the
+two families have broadly the same diagonal shape, and `bench_90x4_2` and `_3`
+genuinely track. The fore-aft axis is LABELLED here, which `plot_paths` refuses
+to do and is right to refuse: this panel shows the truth beside the claim, so a
+reader can see how far the claim goes, where a product plot shows only the claim.
+
+`metrics.vs_truth` now carries `curve_video` and `curve_pipeline` per rep so the
+plot draws the real comparison rather than re-projecting by hand — the mistake
+`plot.py`'s docstring records, where step 8 was on screen in two figures while
+the stage had never executed.
+
+## Capture inventory, corrected (2026-07-31)
+
+`data/raw/` holds **17 rep-labelled captures totalling 72 reps** — bench 7/29,
+deadlift 3/15, squat 7/28 — plus four diagnostic logs (two stationary, two drop
+tests). All 72 segment correctly.
+
+**This corrects a figure that had been wrong across six files.** The docs said
+52 reps and "52/52" counting. The arithmetic: 10 captures held 44 reps, the
+2026-07-30 session added 7 captures carrying 28 more, and 44 + 28 = 72. The
+44/44 figures from before that session are correct and are left alone; every
+post-session total was understated by 20 reps. Counting is **72/72** and the
+pre-C5 state was **71/72**.

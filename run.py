@@ -11,6 +11,7 @@
     python run.py --bias               # B6: constant-bias corrections vs the video
     python run.py --closure            # C11: vertical momentum, bench vs deadlift
     python run.py --splice             # B6: the impact splice, measured and rejected
+    python run.py --vstruth            # the reconstruction drawn on top of the video
     python run.py --scorecard          # how well the pipeline performs, per lift
     python run.py --paths              # step 9: the bar path itself
 
@@ -293,6 +294,45 @@ def draw_anchors() -> int:
 
     out = ROOT / "analysis" / "24_c6_two_anchors.png"
     plot.plot_anchors(anchors, lifts, exclusion, momentum).savefig(out, dpi=105)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_vs_truth() -> int:
+    """Every capture with video: the reconstruction drawn on top of the truth."""
+    import matplotlib
+    matplotlib.use("Agg")
+    from src import metrics, plot, truth
+
+    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
+    results = {}
+    for path in sorted(raw.glob("*.csv")):
+        try:
+            lift = truth.lift_of(path)
+        except ValueError:
+            continue
+        video = pipeline.find_video(path, vid)
+        if video is None or lift == "squat":
+            continue                      # vs_truth refuses squat; see its docstring
+        result = pipeline.run(path, video=video)
+        m = result.get("vs_truth")
+        if m is None:
+            print(f"{path.stem:34s} no comparison: "
+                  f"{'; '.join(result['blocked']) or 'unknown'}")
+            continue
+        stem = path.stem.split("_2026")[0]
+        results[stem] = m
+        print(f"{stem:22s} {m['n_compared']}/{m['n_reps']} reps  "
+              f"h {m['pipeline_h_rms']:5.2f} cm  v {m['pipeline_v_rms']:5.2f} cm  "
+              f"beats_null {m['beats_null']:.2f}  "
+              f"sign disagree {m['reps_disagreeing_on_sign']}/{m['n_compared']}")
+
+    if not results:
+        print("no captures with a usable video comparison")
+        return 1
+
+    out = ROOT / "analysis" / "33_reconstruction_vs_truth.png"
+    plot.plot_vs_truth_paths(results).savefig(out, dpi=105)
     print(f"wrote {out.relative_to(ROOT)}")
     return 0
 
@@ -633,6 +673,8 @@ def main(argv: list[str]) -> int:
         return draw_closure()
     if "--splice" in argv:
         return draw_splice()
+    if "--vstruth" in argv:
+        return draw_vs_truth()
     if "--scorecard" in argv:
         return draw_scorecard()
 
