@@ -333,10 +333,16 @@ Four consequences:
    rep, the sensor's own floor. Deadlift leaves 0.010–0.030 g, and ±100 ms
    around each impact — 6% of samples — carries three quarters of it.
 
-Plus a defect nobody had recorded: deadlift vertical momentum does not close,
-by −0.05 to −2.36 m/s per rep, negative on 15 of 15. Not a contradiction of B5,
-whose 1.04 is a local step measurement; the deficit is in the rest of the rep,
-and step 7 hides it.
+Plus a defect nobody had recorded: deadlift vertical momentum does not close.
+Not a contradiction of B5, whose 1.04 is a local step measurement; the deficit
+is in the rest of the rep, and step 7 hides it.
+
+*Two corrections since, both narrowing it rather than withdrawing it.* C6 first
+read −0.05 to −2.36 m/s on 15 of 15, measured over impact-to-impact rep windows;
+those windows put every boundary 10 ms after its impact, one sample into a 2–3
+sample spike, so the figure inherited the boundary placement. Measured between
+`segment.rest_instants` instead it is **−0.37 to −1.48 m/s on 8 of 9**. C11 then
+localised it: see B6.
 
 `analysis/24_c6_two_anchors.png`, `python run.py --anchors`.
 
@@ -512,6 +518,67 @@ not whether the path reconstructed inside it is right — that is P2's
 any kind and is now the only lift whose phase is unverified. Squat's fix is the
 capture protocol, not code.
 
+### C11 — the vertical deficit is the landing, and only the landing
+`src/metrics.py` (`momentum_closure`), `src/plot.py`, `run.py --closure`,
+`analysis/31_c11_momentum_closure.png`, `tests/test_real_data.py`. The
+impact-free control the C6 deficit had been waiting for since it was found.
+
+**The identity.** Between two instants where the bar's velocity is zero, the
+integral of its vertical acceleration must be zero. No model, no assumption
+about how lifting behaves, nothing tunable. It is also **immune to the defect
+that flags half the vertical numbers in this project** — the video's per-capture
+vertical scale can be 20% wrong and still cannot move a zero crossing, so the
+video is used only to say *when* the bar was still, never how far it went.
+
+| intervals | n | median | worst |
+|---|---|---|---|
+| bench, real lifting | 44 | −0.013 m/s | 0.102 |
+| deadlift, floor→lockout (the pull) | 8 | −0.010 m/s | 0.063 |
+| deadlift, interval containing a landing | 9 | −0.589 m/s | −1.428 |
+
+**The middle row is the result, and it took two wrong readings to see it.** Those
+are 55–66 cm loaded pulls *from the same captures as the failing row* — the dwell
+detector splits a deadlift rep at the lockout, so the concentric and the
+descent-plus-landing are measured separately. Same lift, same load, same wrist,
+same calibration, same thirty seconds of tape. Only the landing differs. That is
+a within-capture control, which the bench-vs-deadlift comparison this was built
+to make is not; bench then confirms it independently on a lift with no landing
+anywhere in it.
+
+*Both wrong readings are worth keeping.* They were first taken as "deadlift
+closes except across an impact" (over-claiming: it does, but the evidence had to
+be shown to contain lifting) and then as "the bar sitting on the floor"
+(under-claiming, from a max-|accel| of 0.6–1.1 g). **A 155 kg pull leaves the
+wrist's total acceleration barely above 1 g, indistinguishable from resting.**
+The video's bar travel is what separates them; peak acceleration cannot.
+
+**Where it enters.** Split each failing interval at the impact: before it the
+reconstruction tracks the video's descent velocity to +0.14…+0.71 m/s, small and
+of the *opposite* sign to the deficit. The error in the step across the impact is
+−0.11…−1.54 and tracks the interval total. Injected at the landing, not
+accumulated through the descent.
+
+**And B5 is reconciled, not contradicted.** B5's 1.04 is min-to-max AMPLITUDE
+within ±0.3 s and its docstring explicitly warns off net-change windows; C11
+measures the NET, which is what the identity constrains. Same 15 impacts:
+amplitude 1.10, net 0.41. **The spike's size is captured; where the velocity
+settles afterwards is not.** That is B6's ringing, promoted from a described
+wobble to the whole deficit, and it tells B6's splice what to preserve.
+
+**What this closes.** The integrator, the attitude and the calibration are not
+the problem on the vertical: 52 intervals of loaded lifting close at the
+sensor's own noise floor. Gated as a PASS in `test_bench_vertical_momentum_
+closes`, unusually for this file, so a regression in the one lift that works
+will fail the suite.
+
+### C11b — `beats_null` is executable
+`tests/test_real_data.py`. C10 measured the null model and nothing asserted on
+it. Now two gates: a per-capture non-regression floor at 20% headroom, and an
+xfail carrying the target (`beats_null > 1` everywhere) that reports 6 xfailed
+and 4 xpassed — the four benches that genuinely beat a flat line. The cheapest
+available guard against reporting a change as an improvement when it still loses
+to drawing nothing.
+
 ---
 
 ## To do
@@ -600,18 +667,47 @@ descent, then rings for several hundred ms at the floor impact and settles
 
 **What is left, in order.**
 
-1. **#14 first, not as a side quest.** The ringing after the impact is the watch
-   moving when the bar has stopped — strap compliance. `quality_flags` already
-   has a strap-resonance detector and it is broken (thresholds a fraction, means
-   absolute). Fixing it is now on the critical path.
-2. **Integrate across the impact, not through it.** The state on both sides is
+1. **Integrate across the impact, not through it.** The state on both sides is
    known and validated: `segment.rest_instants` lands where the video says
    |v| < 0.10 m/s. Splice rather than model.
-3. Time-varying correction only if those fail.
+2. Time-varying correction only if that fails.
 
-Bench and squat need none of this — no impact, and a per-rep residual already at
-the sensor's noise floor. Their problem, if they have one, is a different
-problem, and nothing external measures it yet.
+*Item 1 used to be "#14 first, not as a side quest", on the strap-resonance
+detector. That is withdrawn: #14's detector was REMOVED as undetectable at
+100 Hz — the post-impact spectrum has no repeatable peak (10–47.5 Hz across 15
+impacts, peak/median 2.7–12.5) and Nyquist is 50 Hz, so a watch-on-strap
+resonance aliases to an arbitrary bin. The ringing is real and is where the
+error enters; it is simply not resolvable as a resonance, and rejecting the rep
+was never the right response. The fix belongs in the reconstruction.*
+
+**C11 (2026-07-31) sharpened what the splice has to preserve, and confirmed the
+integrator does not need touching.** Measured between two moments the VIDEO says
+the bar was still — an identity with no tunable in it, and immune to the video's
+per-capture vertical scale error since a scale cannot move a zero crossing:
+
+| intervals | n | median closure | worst |
+|---|---|---|---|
+| bench, real lifting | 44 | −0.013 m/s | 0.102 |
+| deadlift, floor→lockout (the pull) | 8 | −0.010 m/s | 0.063 |
+| deadlift, interval containing a landing | 9 | −0.589 m/s | −1.428 |
+
+The middle row is the strongest: those are 55–66 cm loaded pulls **from the same
+captures as the failing row**, because the dwell detector splits a deadlift rep
+at the lockout. Same lift, load, wrist and calibration; only the landing differs.
+Bench then confirms it on a lift with no landing at all. As residual
+acceleration, 0.0019 g and 0.0008 g against 0.0300 g — the first two are the
+0.0025 g measured on a table.
+
+**And it reconciles with B5 rather than contradicting it.** B5's velocity-step
+ratio of 1.04 is min-to-max AMPLITUDE; C11's is the NET. Both on the same 15
+impacts: amplitude 1.10, net 0.41. The spike's size is captured and where the
+velocity settles afterwards is not — so the splice must preserve the amplitude
+B5 measured while correcting the settling point. `analysis/31`,
+`python run.py --closure`, `metrics.momentum_closure`.
+
+Bench and squat need none of this — no impact, and both a per-rep residual and
+now a vertical closure at the sensor's noise floor. Their problem, if they have
+one, is a different problem, and nothing external measures it yet.
 
 Every attempt is measurable against `metrics.vs_truth`, which is the whole point
 of having built it. `analysis/25_b6_bias_models.png`, `python run.py --bias`.

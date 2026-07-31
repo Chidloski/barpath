@@ -943,6 +943,78 @@ def test_horizontal_meets_the_spec(video, csv, reps):
     assert m["pipeline_v_rms"] < 3.0
 
 
+# beats_null: the pipeline's horizontal error against the error from drawing NO
+# fore-aft motion at all. >1 means the reconstruction carries information; <1
+# means a flat line would score better. Measured 2026-07-31 (C10) on every
+# capture with video, and unchanged at C11.
+BEATS_NULL = {
+    "bench_90x4_1_20260727": 1.10,
+    "bench_90x4_2_20260727": 4.80,
+    "bench_90x4_3_20260727": 4.03,
+    "bench_92.5x2_20260727": 1.14,
+    "bench_spoto_90x5_1_20260730": 0.72,
+    "bench_spoto_90x5_2_20260730": 0.80,
+    "bench_spoto_90x5_3_20260730": 0.92,
+    "deadlift_155x6_1_20260728": 0.70,
+    "deadlift_155x6_2_20260728": 0.35,
+    "deadlift_180x3_20260728": 0.13,
+}
+NULL_FLOOR = 0.80          # 20% headroom, matching CEILING's logic above
+
+
+@pytest.mark.parametrize("video", sorted(BEATS_NULL), ids=lambda v: v)
+def test_beats_null_does_not_regress(video):
+    """Six of ten captures lose to a flat line. Pin that so it cannot worsen.
+
+    `beats_null` is one line of arithmetic that nobody had run in the life of
+    this project, and it reframes every horizontal number in it: measured
+    against drawing no fore-aft motion at all, most of the reconstruction
+    subtracts information rather than adding it. All three deadlifts lose, at
+    0.70, 0.35 and 0.13.
+
+    This is the cheapest guard available against the failure mode that let
+    milestones 1-6 pass — reporting a change as an improvement when the thing
+    it improved still loses to doing nothing. A change that lowers horizontal
+    rms while lowering this too has not helped.
+    """
+    csv = _csv_for(video)
+    if csv is None or not (VIDEO / f"{video}.mov").exists():
+        pytest.skip(f"{video} not present")
+    from src import metrics, pipeline
+
+    result = pipeline.run(csv, video=VIDEO / f"{video}.mov")
+    m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
+    assert m["beats_null"] > BEATS_NULL[video] * NULL_FLOOR, (
+        f"{video}: beats_null fell to {m['beats_null']:.2f} from the "
+        f"{BEATS_NULL[video]:.2f} measured at C10")
+
+
+@pytest.mark.xfail(reason="P2/P3 — six of ten captures lose to a flat line",
+                   strict=False)
+@pytest.mark.parametrize("video", sorted(BEATS_NULL), ids=lambda v: v)
+def test_the_reconstruction_beats_drawing_nothing(video):
+    """The floor beneath the spec: be better than a straight vertical line.
+
+    xfail for the same reason `test_horizontal_meets_the_spec` is — so the
+    target is executable and visible on every run rather than living in prose.
+    It is a far weaker bar than the 1 cm spec and the pipeline fails it on six
+    of ten captures, so expect four XPASS here (`bench_90x4_1`, `_2`, `_3` and
+    `bench_92.5x2`). When a change makes the rest pass, tighten BEATS_NULL and
+    delete this.
+    """
+    csv = _csv_for(video)
+    if csv is None or not (VIDEO / f"{video}.mov").exists():
+        pytest.skip(f"{video} not present")
+    from src import metrics, pipeline
+
+    result = pipeline.run(csv, video=VIDEO / f"{video}.mov")
+    m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
+    assert m["beats_null"] > 1.0, (
+        f"{video}: drawing a flat vertical line scores "
+        f"{m['null_h_rms']:.2f} cm against the pipeline's "
+        f"{m['pipeline_h_rms']:.2f}")
+
+
 @needs_data
 @pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
 def test_dispersion_is_finite_and_reported(path):
@@ -1680,6 +1752,166 @@ def test_deadlift_vertical_momentum_does_not_close(stem):
         f"re-pin this test")
     assert min(dv) > -2.0, (
         f"{stem}: closure {min(dv):.2f} m/s is worse than anything measured")
+
+
+# ------------------------------------------------------------------ C11 --
+@pytest.mark.parametrize("video,reps", BENCH_SYNCED, ids=[b[0] for b in BENCH_SYNCED])
+def test_bench_vertical_momentum_closes(video, reps):
+    """The control the deadlift deficit needed: loaded lifting, no impact.
+
+    Between two moments the video says the bar was still, the integral of
+    vertical acceleration must be zero. On bench it is, to |dv| <= 0.102 m/s
+    over 44 intervals on all seven captures — 0.0019 g of residual, which is
+    the 0.0025 g accel bias measured on a table. Bench closes at the sensor's
+    own noise floor.
+
+    Deadlift, measured identically, loses 0.36-1.43 m/s on every interval with
+    a floor impact in it. See the sibling test.
+
+    This is asserted as a PASS, unlike almost everything else in this file, so
+    it will start failing if a change to the world-frame acceleration breaks
+    the one lift that currently works. It is also the reason B6 may splice at
+    the impact rather than reworking the integrator: the integrator is fine.
+    """
+    csv = _csv_for(video)
+    if csv is None or not (VIDEO / f"{video}.mov").exists():
+        pytest.skip(f"{video} not present")
+    from src import metrics, pipeline
+
+    result = pipeline.run(csv, video=VIDEO / f"{video}.mov")
+    m = metrics.momentum_closure(result, VIDEO / f"{video}.mov")
+
+    assert m["n_with_impact"] == 0, (
+        f"{video}: impact_anchors found {m['n_with_impact']} floor impacts on a "
+        f"bench press, which is a segmentation bug, not a closure result")
+    assert m["n_intervals"] >= 2
+    assert m["max_abs_dv"] < 0.15, (
+        f"{video}: vertical momentum closes to {m['max_abs_dv']:.3f} m/s, "
+        f"against 0.102 measured at C11. Bench was the impact-free control and "
+        f"it has stopped closing")
+    assert abs(m["median_dv"]) < 0.05
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_the_momentum_deficit_is_the_floor_impact(video, csv, reps):
+    """Within one capture: the pull closes and the landing does not.
+
+    The dwell detector splits a deadlift rep at the lockout, so the concentric
+    and the descent-plus-landing are separate intervals of the same capture.
+    Floor-to-lockout carries 55-66 cm of loaded bar travel and closes to
+    |dv| <= 0.063 m/s; every interval containing an impact loses 0.36-1.43.
+
+    Same lift, same load, same wrist, same calibration, same 30 seconds of
+    recording. The only thing the two halves do not share is the landing, so
+    this rules out the whole family of explanations that blame the lift, the
+    load or the reconstruction generally — which the bench comparison alone
+    could not.
+
+    Do not judge these intervals by peak acceleration. A 155 kg pull leaves the
+    wrist's total |accel| at 0.6-1.1 g, indistinguishable from resting, and
+    reading that number is how these were twice mistaken for the bar sitting on
+    the floor. The video's bar travel is what separates them.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import metrics, pipeline
+
+    result = pipeline.run(RAW / f"{csv}.csv", video=VIDEO / f"{video}.mov")
+    m = metrics.momentum_closure(result, VIDEO / f"{video}.mov")
+
+    with_impact = [iv["dv"] for iv in m["intervals"] if iv["spans_impact"]]
+    clean = [iv["dv"] for iv in m["intervals"] if not iv["spans_impact"]]
+    assert with_impact and clean, (
+        f"{csv}: {len(with_impact)} impact intervals and {len(clean)} clean — "
+        f"this test needs both halves of a rep to compare")
+
+    assert max(with_impact) < -0.2, (
+        f"{csv}: an impact-spanning interval closed to {max(with_impact):+.3f} "
+        f"m/s. If B6 fixed this, re-pin the test and say so")
+    assert max(abs(d) for d in clean) < 0.15, (
+        f"{csv}: a pull-only interval failed to close "
+        f"({max(clean, key=abs):+.3f} m/s), so the deficit is no longer "
+        f"isolated to the landing and C11's attribution needs redoing")
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_the_impact_amplitude_is_right_and_its_net_is_not(video, csv, reps):
+    """Why B5's 1.04 and C11's deficit are both true. Measured together.
+
+    B5 reports the impact's velocity step at a median 1.04 of the video's, and
+    it is right — it measures min-to-max AMPLITUDE within +/-0.3 s, and its
+    docstring explicitly warns off net-change windows. C11 measures the net,
+    which is the quantity the closure identity constrains, and gets ~0.4.
+
+    Both on the same 15 impacts: amplitude ratio ~1.10, net ratio ~0.41.
+
+    **The spike's size is captured; where the velocity settles afterwards is
+    not.** That is B6's ringing, and this pins it as the deficit rather than a
+    cosmetic wobble. It also says what a fix has to do: preserve the amplitude
+    B5 measured while correcting the settling point, which is why a constant
+    bias cannot do it.
+
+    Per capture, amplitude then net: 1.10/0.35, 0.99/0.37, 1.78/0.96.
+
+    The amplitude is checked against B5's own `IMPACT_STEP_RATIO` bands rather
+    than a fresh constant, which is what makes this a reconciliation: the same
+    quantity measured here lands where B5 pinned it, including
+    `deadlift_180x3`'s known 58-72% over-read, so the disagreement really is
+    about WHICH quantity and not about how either is computed.
+
+    The net is asserted as a fraction of the amplitude, not absolutely. A
+    capture that over-reads everything inflates both — 180x3's net ratio is
+    0.96 and it still loses 0.36 m/s per interval — so the ratio between them
+    is the robust statement. Any fixed post-impact offset also oscillates with
+    the ring (0.72, 0.49, 0.76, 0.54 at 50, 100, 150, 200 ms), which is the
+    same reason.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from scipy.signal import savgol_filter
+    from src import metrics, orient, pipeline, segment, truth
+
+    result = pipeline.run(RAW / f"{csv}.csv", video=VIDEO / f"{video}.mov")
+    log = result["log"]
+    t = log["t"]
+    world = orient.to_world(log["accel"], log["quat"], log["quat"])
+    vel = np.concatenate([[0.0], np.cumsum(world[:-1, 2] * np.diff(t))])
+
+    path = truth.bar_path(VIDEO / f"{video}.mov")
+    impacts = segment.impact_anchors(log)
+    fit = truth.sync(truth.landings(path),
+                     np.array([float(t[k]) for k in impacts]))
+    t_video = truth.to_imu_time(path, fit)
+    v_video = np.gradient(savgol_filter(path["height"], 9, 3), t_video)
+
+    amplitude, net = [], []
+    for k in impacts:
+        tk = float(t[k])
+        a = int(np.searchsorted(t, tk - 0.30))
+        b = int(np.searchsorted(t, tk + 0.30))
+        m = (t_video > tk - 0.30) & (t_video < tk + 0.30)
+        if not m.any():
+            continue
+        amplitude.append((vel[a:b].max() - vel[a:b].min())
+                         / float(np.nanmax(v_video[m]) - np.nanmin(v_video[m])))
+        pre = int(np.searchsorted(t, tk - 0.08))
+        post = int(np.searchsorted(t, tk + 0.60))
+        step = (float(np.interp(t[post], t_video, v_video))
+                - float(np.interp(t[pre], t_video, v_video)))
+        net.append((vel[post] - vel[pre]) / step)
+
+    stem = next(k for k in IMPACT_STEP_RATIO if csv.startswith(k))
+    lo, hi = IMPACT_STEP_RATIO[stem]
+    amp, net_ = float(np.median(amplitude)), float(np.median(net))
+
+    assert lo < amp < hi, (
+        f"{stem}: impact amplitude ratio {amp:.2f} is outside the {lo}-{hi} "
+        f"B5 measured for this capture, so this is no longer measuring the "
+        f"same quantity B5 did and the reconciliation does not hold")
+    assert net_ < amp * 0.65, (
+        f"{stem}: the net impulse recovers {net_ / amp:.2f} of what the "
+        f"amplitude suggests, against 0.32-0.54 at C11. If the settled "
+        f"velocity now matches the video, B6 has landed — re-pin this")
 
 
 # ------------------------------------------------------------------- B6 --

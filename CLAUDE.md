@@ -433,9 +433,44 @@ overstated it.
 
 This does not contradict B5's 1.04. That ratio is the velocity STEP measured
 locally across the impact against video, over a few hundred milliseconds, and it
-is right. Step 7's detrend hides the deficit completely, which is why vertical
-ROM comes out at a plausible 53–61 cm either way — and it is the sharpest
-available statement of why "the detrend is carrying vertical entirely".
+is right. C11 below states exactly why the two coexist — B5's is an AMPLITUDE
+and this is a NET — which is sharper than "local versus global" and is what
+tells B6 what to preserve. Step 7's detrend hides the deficit completely, which
+is why vertical ROM comes out at a plausible 53–61 cm either way, and it is the
+sharpest available statement of why "the detrend is carrying vertical entirely".
+
+**C11 closed the attribution on 2026-07-31: the deficit is the landing, and
+only the landing.** The measurement is an identity — between two moments the
+video says the bar was still, the integral of vertical acceleration must be
+zero — with nothing tunable in it, and it is immune to the video's per-capture
+vertical scale error because a scale cannot move a zero crossing.
+
+    bench, real lifting                   44 intervals   median -0.013  worst 0.102
+    deadlift, floor->lockout (the pull)    8 intervals   median -0.010  worst 0.063
+    deadlift, interval with a landing      9 intervals   median -0.589  worst -1.428
+
+**The middle row is the strongest and the least obvious.** Those are 55-66 cm
+loaded pulls *from the same captures as the failing row* — the dwell detector
+splits a deadlift rep at the lockout, so the concentric and the
+descent-plus-landing are separate intervals of the same thirty seconds of tape.
+Same lift, load, wrist and calibration; only the landing differs. Bench then
+confirms it independently, on a lift with no landing anywhere in it. As residual
+acceleration: 0.0019 g and 0.0008 g against 0.0300 g, the first two being the
+0.0025 g measured on a table.
+
+*Do not judge these intervals by peak acceleration.* A 155 kg pull leaves the
+wrist's total |accel| at 0.6-1.1 g, indistinguishable from resting — reading
+that number is how these were twice mistaken for the bar sitting on the floor.
+
+**This reconciles with B5 rather than contradicting it, and the distinction is
+what B6 needs.** B5's velocity-step ratio of 1.04 is min-to-max AMPLITUDE within
+±0.3 s, and its docstring warns off net-change windows. C11 measures the NET,
+which is what the closure identity constrains. Both on the same 15 impacts:
+amplitude 1.10, net 0.41. **The spike's size is captured; where the velocity
+settles afterwards is not.** So a fix must preserve the amplitude B5 measured
+while correcting the settling point — which is another reason a constant bias
+cannot do it. *Evidence:* `metrics.momentum_closure`, `analysis/31`,
+`python run.py --closure`, gated in `tests/test_real_data.py`.
 
 **B6 then found where the deficit is injected, and it is not distributed.**
 Cumulative vertical velocity across a rest-to-rest interval is smooth and

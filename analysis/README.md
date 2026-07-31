@@ -545,6 +545,14 @@ what the rest of the rep does. Step 7's detrend hides it entirely, which is why
 vertical ROM comes out at a plausible 53–61 cm either way — and it is the
 sharpest available statement of why the detrend is carrying vertical.
 
+*Both numbers here have since been superseded, and the reasoning refined twice.*
+The −0.05 to −2.36 range inherits its rep-window boundary placement; measured
+between validated rest instants it is −0.37 to −1.48 on 8 of 9 (see the B6
+section below). And "the deficit is what the rest of the rep does" is wrong —
+**C11 localised it to the landing alone**, with the deadlift's own pulls closing
+at 0.0008 g. The B5 reconciliation is also sharper than "local versus global":
+B5's is an AMPLITUDE and the deficit is in the NET. See the C11 section.
+
 ## B6 — the constant-bias family is dead, and the error is an impulse (2026-07-30)
 - `25_b6_bias_models.png` — three panels. Regenerate with `python run.py --bias`.
 
@@ -961,3 +969,63 @@ measured through it are invariant to a whole-rep shift. All seven sync.
 which a constant bias would also produce; the four added here run 0.42–0.56, and
 the video's own descent fraction tracks each one. `bench_92.5x2` is decisive —
 its 2-count chest pause puts the touch at 0.431 by video and 0.424 by IMU.
+
+## C11 — the vertical deficit is the landing, and only the landing (2026-07-31)
+
+- `31_c11_momentum_closure.png` — three panels: every interval grouped, the
+  duration control, and where the impulse goes. `python run.py --closure`.
+
+The impact-free control the C6 deficit had needed since it was found. The
+measurement is an identity rather than a comparison: between two instants where
+the bar's velocity is zero, the integral of its vertical acceleration must be
+zero. No model, no assumption about how lifting behaves, nothing tunable.
+
+**It is also immune to the defect that flags half the vertical numbers in this
+project.** The video's per-capture vertical scale can be 20% wrong and still
+cannot move a zero crossing, so the video is used only to say *when* the bar was
+still, never how far it went. A flagged capture's closure is quotable where its
+ROM is not.
+
+| intervals | n | median | worst |
+|---|---|---|---|
+| bench, real lifting | 44 | −0.013 m/s | 0.102 |
+| deadlift, floor→lockout (the pull) | 8 | −0.010 m/s | 0.063 |
+| deadlift, interval containing a landing | 9 | −0.589 m/s | −1.428 |
+
+**The middle row is the result.** Those are 55–66 cm loaded pulls *from the same
+captures as the failing row* — the dwell detector splits a deadlift rep at the
+lockout, so the concentric and the descent-plus-landing are separate intervals
+of the same thirty seconds of tape. Same lift, load, wrist, calibration. Only
+the landing differs. That is a within-capture control, which the
+bench-versus-deadlift comparison this was built to make is not; bench then
+confirms it on a lift with no landing anywhere in it. As residual acceleration,
+0.0019 g and 0.0008 g against 0.0300 g — the first two being the 0.0025 g
+measured on a table.
+
+**Two wrong readings on the way, both kept.** First "deadlift closes too, except
+across an impact", which over-claimed until the middle group was shown to
+contain lifting at all. Then "the bar is sitting on the floor", from a
+max-|accel| of 0.6–1.1 g in those intervals. **A 155 kg pull leaves the wrist's
+total acceleration barely above 1 g, indistinguishable from resting** — peak
+acceleration cannot separate pulling from rest, and the video's bar travel can.
+
+**Where it enters.** Split each failing interval at the impact. Before it the
+reconstruction tracks the video's descent velocity to +0.14…+0.71 m/s — small,
+and the *opposite* sign to the deficit. The error in the step across the impact
+is −0.11…−1.54 and tracks the interval total. Injected at the landing, not
+accumulated through the descent.
+
+**B5 reconciled, not contradicted.** B5's 1.04 is min-to-max AMPLITUDE within
+±0.3 s, and its docstring explicitly warns off net-change windows; this is the
+NET, which is what the identity constrains. Same 15 impacts: amplitude 1.10,
+net 0.41. The spike's size is captured and where the velocity settles
+afterwards is not — B6's ringing, promoted from a described wobble to the whole
+deficit. A fix must preserve the amplitude while correcting the settling point.
+
+A fixed post-impact offset oscillates with the ring (0.72, 0.49, 0.76, 0.54 at
+50, 100, 150, 200 ms), which is why B5 was right to refuse that window and why
+the gate asserts the amplitude-to-net separation rather than either alone.
+
+**What it closes.** The integrator, the attitude and the calibration are not the
+problem on the vertical: 52 intervals of loaded lifting close at the sensor's
+own noise floor.

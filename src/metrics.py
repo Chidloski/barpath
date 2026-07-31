@@ -35,9 +35,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, filtfilt, savgol_filter
 
-from . import correct, project, segment, truth
+from . import correct, orient, project, segment, truth
 
 GRID = 100          # samples per rep on the normalised-time grid
 
@@ -720,6 +720,197 @@ def vs_truth(result: dict, video: str | Path) -> dict:
         # Horizontal and sync are not implicated. See truth.VERTICAL_ROM_M.
         "video_rom_flags": truth.rom_flags(
             truth.lift_of(name), [r["video_rom_cm"] / 100 for r in good]),
+    }
+
+
+# ------------------------------------------------------- momentum closure --
+def _video_zero_dwells(t: np.ndarray, v: np.ndarray, v_thresh: float,
+                       min_dwell_s: float) -> np.ndarray:
+    """Midpoints of every interval where the video says the bar is not moving.
+
+    A DWELL, not an instant. The bar passes through zero velocity at the bottom
+    of every touch-and-go rep too, and those are useless here: at a turnaround
+    the acceleration is at its largest, so an endpoint placed there moves by
+    a*dt for a sync error of dt and the measurement inherits the sync. A dwell
+    is flat by construction — shift the clock inside it and v is still ~0 — so
+    the endpoint survives the sync error the bench correlation cannot rule out.
+    Measured: +/-100 ms of deliberate sync error moves the bench figure from
+    0.102 to 0.090/0.127 m/s, and only at +/-200 ms does it break (0.44).
+    """
+    slow = np.abs(v) < v_thresh
+    out, i = [], 0
+    while i < len(slow):
+        if not slow[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(slow) and slow[j + 1]:
+            j += 1
+        if t[j] - t[i] >= min_dwell_s:
+            out.append(0.5 * (t[i] + t[j]))
+        i = j + 1
+    return np.array(out)
+
+
+def momentum_closure(result: dict, video: str | Path, v_thresh: float = 0.10,
+                     min_dwell_s: float = 0.20) -> dict:
+    """Vertical impulse between two moments the bar is known to be still.
+
+    THE IDENTITY
+    ------------
+    Between two instants where the bar's velocity is zero, the integral of its
+    vertical acceleration must be zero. No model, no assumption about lifting,
+    nothing tunable — it is the definition of acceleration. Whatever the
+    reconstruction leaves here is error, and unlike every other number in this
+    module it is not scored against a distance the video has to measure
+    correctly.
+
+    **This is immune to the defect that flags half the vertical numbers in this
+    project.** `truth.VERTICAL_ROM_M` catches the video's per-capture vertical
+    SCALE being wrong by up to 20%. A scale error cannot move a zero crossing,
+    so the video is used here only to say WHEN the bar was still, never how far
+    it went. A flagged capture's closure is quotable; its ROM is not.
+
+    WHY THE ENDPOINTS COME FROM THE VIDEO
+    -------------------------------------
+    `segment.rest_instants` places them from raw acceleration and gyro alone,
+    which is what a CORRECTION must do. It only works where there is a floor
+    impact to seed the search, so it is deadlift-only, and the deadlift-only
+    measurement it supports could never say whether the deficit was the impact
+    or the pipeline.
+
+    Bench has no raw-signal anchor and cannot be given one. A bar descending at
+    constant velocity reads |a| = g with a quiet gyro, exactly as a bar at rest
+    does — that ambiguity is inertial sensing itself, not a detector that needs
+    work. Measured: seeding the same score-minimum search from bench rep
+    boundaries lands 7 of 34 anchors mid-descent at 0.4-0.5 m/s.
+
+    The remaining candidate was the reconstruction's own rep boundaries, and
+    that is circular in the exact way that matters: `segment` places them at
+    zero crossings of the integrated velocity, so the integral between two of
+    them is near zero by construction and the test would pass on a pipeline
+    with any amount of drift. The video is the only endpoint source that is
+    neither unavailable nor question-begging.
+
+    That makes this a DIAGNOSTIC, not a correction. Nothing in the pipeline may
+    call it.
+
+    WHAT IT MEASURED, 2026-07-31
+    ----------------------------
+    Ten captures, 61 intervals, identical treatment for both lifts:
+
+        bench, lifting            44 intervals   median -0.013   |dv| <= 0.102
+        deadlift, pull only        8 intervals   median -0.010   |dv| <= 0.063
+        deadlift, impact inside    9 intervals   median -0.589   -1.43 .. -0.36
+
+    **The deficit is the floor impact and nothing else.** Nine of nine
+    impact-spanning intervals lose vertical impulse and every one is negative,
+    while 52 intervals of loaded lifting without one scatter around zero. As a
+    residual acceleration: 0.0019 g on bench, 0.0008 g on the deadlift pulls,
+    both at the 0.0025 g accel bias measured on a table, against 0.0300 g
+    across an impact.
+
+    **The middle row is the strongest of the three and it took two wrong
+    readings to see it.** Those eight intervals run floor to lockout — 55-66 cm
+    of bar travel by the video, a full loaded pull — and they are in the SAME
+    CAPTURES as the nine that fail. Same lift, same load, same wrist, same
+    calibration. The dwell detector splits a deadlift rep at the lockout, so
+    the concentric and the descent-plus-landing are measured separately, and
+    only the half with the landing in it loses anything. That is a within-
+    capture control, which the bench-versus-deadlift comparison this was built
+    to make is not. (They were first misread as the bar resting on the floor,
+    on a max-|accel| of 0.6-1.1 g. A 155 kg pull is gentle: the wrist's total
+    acceleration barely leaves 1 g, so that number does not distinguish pulling
+    from resting. The video's bar travel does.)
+
+    Bench then confirms it independently, on a lift with no landing anywhere in
+    it, and is what rules out "deadlift descents are simply harder to
+    reconstruct than deadlift pulls".
+
+    This is P6's horizontal result (bench and squat 0.003 g, deadlift
+    0.010-0.030 g) reproduced on the vertical axis, on a quantity with no
+    tunable in it, with the cause isolated rather than inferred.
+
+    Durations rule out the obvious confound: the closing intervals run
+    1.04-3.09 s against the failing ones' 1.60-3.42, so they do not pass by
+    being short.
+
+    WHERE IT ENTERS, AND WHY B5 IS NOT CONTRADICTED
+    -----------------------------------------------
+    Split each impact-spanning interval at the impact and compare against the
+    video on both sides. Before the impact the reconstruction tracks the
+    video's descent velocity to +0.14..+0.71 m/s — small, and POSITIVE, the
+    opposite sign to the deficit. The error in the step across the impact is
+    -0.11..-1.54 m/s and tracks the interval total. The deficit is injected at
+    the impact; it does not accumulate through the descent.
+
+    That sits alongside B5's velocity-step ratio of 1.04 rather than against
+    it, and the distinction is the useful part. B5 measures min-to-max
+    AMPLITUDE within +/-0.3 s, and deliberately so — its docstring warns off
+    net-change windows. Measured both ways on the same 15 impacts: amplitude
+    ratio median 1.10, net-change ratio median 0.41.
+
+    **The spike's size is captured. Where the velocity settles afterwards is
+    not.** B6 found the mechanism already — several hundred ms of ringing as
+    the watch keeps moving after the bar stops — and this says the ringing is
+    not cosmetic: it is the whole deficit. A net-change ratio measured at a
+    fixed offset oscillates with the ring (0.72, 0.49, 0.76, 0.54 at 50, 100,
+    150, 200 ms), which is why B5 was right to refuse that window and why the
+    quantity to fix is the settled velocity, not the peak.
+
+    Returns per-interval detail plus medians. `spans_impact` is False on every
+    bench interval because `segment.impact_anchors` correctly returns [] there.
+
+    One assumption, shared with step 6 and `rest_instants`: the video sees the
+    BAR and this integrates the WATCH. They are the same rest only where the
+    hand is on the bar, which it is at a bench lockout and at a touch-and-go
+    floor rest. It would not be after the lifter lets go, and the final impact
+    of a set is excluded for other reasons anyway.
+    """
+    log = result["log"]
+    t = log["t"]
+    world = orient.to_world(log["accel"], log["quat"], log["quat"])
+
+    t_imu, _, height, fit = _video_on_imu_clock(result, video)
+    v_video = np.gradient(savgol_filter(height, 9, 3), t_imu)
+
+    bounds = result["bounds"]
+    first, last = float(t[bounds[0][0]]), float(t[bounds[-1][1] - 1])
+    mids = _video_zero_dwells(t_imu, v_video, v_thresh, min_dwell_s)
+    mids = mids[(mids >= first - 0.5) & (mids <= last + 0.5)]
+    if len(mids) < 2:
+        raise ValueError(
+            f"{Path(result['path']).name}: {len(mids)} video dwells inside the "
+            f"rep span, need >=2. Nothing here can be measured without two "
+            f"moments the bar is known to be still.")
+
+    idx = [int(np.searchsorted(t, m)) for m in mids]
+    impacts = segment.impact_anchors(log)
+
+    intervals = []
+    for a, b in zip(idx, idx[1:]):
+        intervals.append({
+            "t_start": float(t[a]),
+            "duration_s": float(t[b] - t[a]),
+            # The whole measurement. Must be zero; is not.
+            "dv": float(np.trapezoid(world[a:b, 2], t[a:b])),
+            "spans_impact": any(a <= k < b for k in impacts),
+        })
+
+    dv = np.array([iv["dv"] for iv in intervals])
+    spans = np.array([iv["spans_impact"] for iv in intervals])
+    return {
+        "capture": Path(result["path"]).name,
+        "sync_offset": fit["offset"],
+        "n_intervals": len(intervals),
+        "intervals": intervals,
+        "median_dv": float(np.median(dv)),
+        "max_abs_dv": float(np.abs(dv).max()),
+        "median_dv_with_impact": (float(np.median(dv[spans]))
+                                  if spans.any() else float("nan")),
+        "median_dv_no_impact": (float(np.median(dv[~spans]))
+                                if (~spans).any() else float("nan")),
+        "n_with_impact": int(spans.sum()),
     }
 
 

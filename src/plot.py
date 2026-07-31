@@ -433,6 +433,80 @@ def plot_anchors(anchors: dict, residuals: dict, exclusion: dict, momentum: dict
     return fig
 
 
+def plot_momentum_closure(groups: dict, traces: dict):
+    """C11 — the deficit is the impact, not the lift.
+
+    `groups` maps a label to a list of (duration_s, dv) per interval.
+    `traces` maps a label to (t_rel, cumulative dv, impact_t or None) for one
+    representative interval of each kind.
+
+    The middle group is the one to read carefully, and it is the reason the
+    left panel is worth anything: those are deadlift PULLS, floor to lockout,
+    55-66 cm of loaded bar travel from the same captures as the red group.
+    They close. So the red group's deficit is not the lift, the load, or the
+    capture — it is the only thing the two do not share, the landing.
+
+    The middle panel answers the obvious confound: the closing intervals could
+    have closed by being short. They are not shorter.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
+    colours = {"bench, lifting": "#2c7fb8", "deadlift, pull only": "#2ca25f",
+               "deadlift, impact inside": "#c0392b"}
+
+    # 1 --- every interval, grouped ------------------------------------------
+    ax = axes[0]
+    rng = np.random.default_rng(0)
+    for i, (label, rows) in enumerate(groups.items()):
+        dv = np.array([d for _, d in rows])
+        ax.scatter(i + rng.uniform(-0.16, 0.16, len(dv)), dv, s=34,
+                   color=colours.get(label, "0.4"), alpha=0.85,
+                   edgecolor="none")
+        ax.plot([i - 0.28, i + 0.28], [np.median(dv)] * 2, "k-", lw=2.0)
+    ax.axhline(0.0, color="0.3", lw=1.2)
+    ax.axhspan(-0.11, 0.11, color="0.87", zorder=0)
+    ax.set_ylim(-1.55, 0.42)
+    ax.text(-0.42, 0.20, "+/-0.11 m/s — the sensor's own floor, 0.0019 g",
+            ha="left", va="center", fontsize=8, color="0.35")
+    ax.text(1.0, -0.30, "floor to lockout: 55-66 cm of\nreal pulling, and it "
+            "closes.\nSame captures as the red group.", ha="center", va="top",
+            fontsize=7.5, color="0.4")
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels([k.replace(", ", ",\n") for k in groups], fontsize=8)
+    ax.set_ylabel("vertical impulse between two still moments, m/s")
+    ax.set_title("Must be zero. Only the impact-spanning intervals are not.",
+                 fontsize=10, loc="left")
+
+    # 2 --- the confound: are the closing intervals just short? ---------------
+    ax = axes[1]
+    for label, rows in groups.items():
+        ax.scatter([d for d, _ in rows], [abs(v) for _, v in rows], s=34,
+                   color=colours.get(label, "0.4"), alpha=0.85,
+                   edgecolor="none", label=label)
+    ax.set_yscale("log")
+    ax.set_xlabel("interval duration, s")
+    ax.set_ylabel("|vertical impulse|, m/s")
+    ax.set_title("Not an artefact of length: the closing intervals are no "
+                 "shorter", fontsize=10, loc="left")
+    ax.legend(fontsize=8, loc="upper left")
+
+    # 3 --- where it enters ---------------------------------------------------
+    ax = axes[2]
+    for label, (t_rel, cum, t_impact) in traces.items():
+        ax.plot(t_rel, cum, lw=1.6, color=colours.get(label, "0.4"),
+                label=label)
+        if t_impact is not None:
+            ax.axvline(t_impact, color=colours.get(label, "0.4"), ls=":", lw=1.2)
+    ax.axhline(0.0, color="0.3", lw=1.2)
+    ax.set_xlabel("time through the interval, s")
+    ax.set_ylabel("cumulative vertical impulse = velocity, m/s")
+    ax.set_title("The impact (dotted) does not bring the velocity back to zero",
+                 fontsize=10, loc="left")
+    ax.legend(fontsize=8, loc="lower left")
+
+    fig.tight_layout()
+    return fig
+
+
 def plot_bias_models(variants: dict, closure: dict, traces: dict):
     """B6 — why every constant-bias correction makes it worse.
 

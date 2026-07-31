@@ -42,7 +42,16 @@ residual and its vertical inherits ~1 cm from the sync itself. See
 **And read `beats_null` before any of them.** `vs_truth` compares the pipeline
 against drawing no fore-aft motion at all. Six of ten captures lose to that flat
 line, including all three deadlifts (0.70×, 0.35×, 0.13×). Only `bench_90x4_2`
-and `_3` clearly win, by 4×.
+and `_3` clearly win, by 4×. Gated since C11: a per-capture non-regression floor
+plus an xfail carrying `beats_null > 1` as the target.
+
+**One number here does not depend on the video's distances at all.**
+`metrics.momentum_closure` (C11) integrates vertical acceleration between two
+moments the video says the bar was *still*, which must come to zero. A scale
+error cannot move a zero crossing, so this survives the per-capture vertical
+scale defect below — and it found that the deficit is the floor landing and
+nothing else. Bench closes at 0.0019 g over 44 intervals and the deadlift's own
+pulls at 0.0008 g, against 0.0300 g across a landing. See `analysis/31`.
 
 Note what that leans on, and how it turned out. The plates were measured on
 2026-07-30 — 425 mm notched, 445 mm bumper, 450 mm calibrated — replacing a

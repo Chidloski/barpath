@@ -1,14 +1,34 @@
-# Handoff — 2026-07-31, end of the C8/C9/C10 session
+# Handoff — 2026-07-31, end of the C8/C9/C10/C11 session
 
-Transient file. Everything durable is already in `TASKS.md` (C8, C9, C10
-entries), `CLAUDE.md` (P1, P2) and `analysis/README.md`. **Delete this when the
-work below is done.**
+Transient file. Everything durable is already in `TASKS.md` (C8, C9, C10, C11
+entries), `CLAUDE.md` (P1, P2, P6) and `analysis/README.md`. **Delete this when
+the work below is done.**
 
-Working tree is clean, suite is **359 passed, 1 skipped, 6 xfailed** (~6.5 min;
-there is no `pytest-timeout` plugin, do not pass `--timeout`).
+Working tree is clean, suite is **382 passed, 1 skipped, 12 xfailed, 4 xpassed**
+(~10 min; there is no `pytest-timeout` plugin, do not pass `--timeout`). The 4
+xpassed are expected and documented — they are the four benches that beat the
+null model.
 
-Recent commits: `ab1bc6d` C10, `40f8fbc` C9, `34adadc` capture protocol,
+Recent commits: C11, `ab1bc6d` C10, `40f8fbc` C9, `34adadc` capture protocol,
 `9979006` C8.
+
+## Done since this file was written
+
+**Item 1 (bench as the impact-free control) — done, and it went further than
+planned.** `metrics.momentum_closure`, `analysis/31`, `run.py --closure`, three
+new gates. The deficit is the floor landing and nothing else: bench closes over
+44 intervals of real lifting, **and so do the deadlift's own pulls** — the dwell
+detector splits a rep at the lockout, so floor→lockout and lockout→floor are
+separate intervals of the same capture, and only the half with the landing in it
+loses anything. That is a within-capture control, stronger than the
+bench-vs-deadlift comparison this item asked for. B5 is reconciled rather than
+contradicted: its 1.04 is an AMPLITUDE, the deficit is in the NET (0.41 on the
+same 15 impacts), and the difference is B6's ringing. See TASKS.md C11.
+
+**Item 3 (`beats_null` as a gate) — done.** Per-capture non-regression floor at
+20% headroom, plus an xfail carrying `beats_null > 1`.
+
+Items 2, 4 and 5 below are untouched and still in the order given.
 
 ## Read this first: the one number that reframes everything
 
@@ -38,6 +58,12 @@ Two standing cautions:
   channel, horizontal metric, validated on deadlift to 18 ms) but it is a
   coupling deadlift does not have. Do not let it spread to anything else.
 
+`metrics.momentum_closure` (C11) reads the video too and is still not a
+violation: it is a DIAGNOSTIC, nothing in the pipeline calls it, and it uses the
+video only to place its endpoints in time. Its own docstring says why the
+alternatives were rejected — the reconstruction's rep boundaries would be
+circular, and bench has no raw-signal anchor available even in principle.
+
 The bigger risk is not video leakage, it is that **every tuned constant in this
 project was chosen on the same 17 captures it is evaluated on** — cadence
 tolerance 1.45, the ROM bands, `SEEDS`, `PERIOD_TOL`, `RIVAL_FRAC`. Nothing is
@@ -45,50 +71,29 @@ held out. Worth fixing the discipline before adding more constants.
 
 ## Pre-gym work, in order
 
-### 1. Bench as the impact-free control (P3/P6) — highest value
+### 2. B6's splice — integrate across the impact, not through it  ← NOW FIRST
 
-C8, C9 and C10 set this up and it has not been run. The setup:
-
-- Deadlift loses **-0.37 to -1.48 m/s** of vertical impulse per rep, on 8 of 9
-  intervals, measured between `segment.rest_instants`.
-- P6 puts three quarters of deadlift's per-rep error in the +/-100 ms around
-  each floor impact — 6% of the samples.
-- **Bench has no floor impact**, is out by 0.6-3.7 cm against deadlift's
-  5.05-15.44, and disagrees with itself on fore-aft sign on 1 of 29 reps against
-  deadlift's 4/6, 2/6, 1/3.
-
-The measurement nobody has made: **bench's vertical momentum closure.**
-`rest_instants` and the closure gate (`tests/test_real_data.py`, search
-`momentum`) are deadlift-only because `rest_instants` was validated against
-deadlift video. Bench now has video, so it can be validated the same way and the
-closure measured.
-
-If bench closes and deadlift does not, the deficit is *conclusively* the impact
-rather than anything pipeline-wide. C9 removed the last confound: bench windows
-are now known to be correctly placed, so a bench-vs-deadlift difference cannot
-be blamed on segmentation.
-
-### 2. B6's splice — integrate across the impact, not through it
-
-The only surviving item in B6's own plan. **Note `TASKS.md` B6 still says "#14
-first, not as a side quest... now on the critical path" — that is stale.** #14's
-strap-resonance detector was REMOVED as undetectable at 100 Hz (post-impact
-spectrum has no repeatable peak, 10-47.5 Hz across 15 impacts, and Nyquist is
-50 Hz). Fix that sentence when you touch B6.
+The only surviving item in B6's own plan, and C11 has now aimed it precisely.
+*(The stale "#14 first, not as a side quest" sentence in `TASKS.md` B6 has been
+fixed — #14's detector was removed as undetectable at 100 Hz.)*
 
 The state on both sides of the impact is known and validated at |v| < 0.10 m/s.
 The constant-bias family is arithmetically ruled out — a constant cannot
 represent an impulse; see the table in B6 and `analysis/25`. Splice, do not
-model. Item 1 above should be done first because it tells you whether this is
-the whole story.
+model.
 
-### 3. Make `beats_null` a gate
+**What C11 added, and it is a constraint on the fix, not just motivation.** The
+splice must **preserve the impact's amplitude while correcting where the
+velocity settles.** B5's step ratio of 1.04 is min-to-max amplitude and it is
+right; the net across the same 15 impacts is 0.41. A fix that flattens the ring
+will destroy the amplitude B5 measured and score worse — check both, and
+`test_the_impact_amplitude_is_right_and_its_net_is_not` asserts the separation
+so it will tell you.
 
-It is reported but nothing asserts on it. Mirror
-`test_horizontal_meets_the_spec`: an xfail carrying the target (`beats_null > 1`
-on every capture) so the number is executable and visible on every run, plus a
-non-regression ceiling per capture. This is the cheapest guard in the project
-against reporting a change as an improvement when it still loses to a flat line.
+Also: C11 rules out the integrator, the attitude and the calibration as
+explanations on the vertical, since 52 intervals of loaded lifting close at the
+sensor's own noise floor. The bug is local to the landing. Do not go looking
+upstream.
 
 ### 4. B4 — the axis sign
 
@@ -102,6 +107,13 @@ Cheap version: nominate two captures (one bench, one deadlift) as held out,
 never looked at while tuning, and check them only at the end of a change. Would
 have caught nothing so far as far as anyone knows — which is exactly the problem,
 because nobody can currently say.
+
+C11 added to the pile rather than reducing it: `BEATS_NULL` and `NULL_FLOOR`,
+and the closure gates' 0.15 m/s bounds, are all pinned from the same 17
+captures. In mitigation the closure thresholds sit in a wide gap — 0.102 against
+0.361 — rather than being fitted, and the amplitude gate reuses B5's existing
+`IMPACT_STEP_RATIO` instead of introducing a constant. But they are not held
+out, and the honest statement is that nothing here is.
 
 ## Explicitly NOT pre-gym
 

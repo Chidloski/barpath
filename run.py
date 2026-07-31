@@ -9,6 +9,7 @@
     python run.py --rom                # per-rep vertical ROM against the bounds
     python run.py --anchors            # C6: attitude before and after a set
     python run.py --bias               # B6: constant-bias corrections vs the video
+    python run.py --closure            # C11: vertical momentum, bench vs deadlift
     python run.py --scorecard          # how well the pipeline performs, per lift
     python run.py --paths              # step 9: the bar path itself
 
@@ -37,6 +38,12 @@ spec; see P2.
 the still holds bracketing each set, the per-rep residual that the anchors
 cannot see, and where the deadlift's share of it enters. Needs the `phase`
 column, so it uses the 2026-07-30 captures onward.
+
+--closure writes analysis/31_c11_momentum_closure.png: the vertical impulse
+between two moments the video says the bar was still, which must be zero. Bench
+closes at the sensor's noise floor and deadlift does not, and the difference is
+the floor impact. Slow — it decodes every bench and deadlift clip. Squat is
+excluded because its footage does not track.
 """
 
 from __future__ import annotations
@@ -283,6 +290,84 @@ def draw_anchors() -> int:
     return 0
 
 
+def draw_closure() -> int:
+    """C11 — vertical momentum closure, bench against deadlift."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import metrics, orient, plot, segment, truth
+
+    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
+    groups: dict[str, list] = {"bench, lifting": [],
+                               "deadlift, pull only": [],
+                               "deadlift, impact inside": []}
+    traces: dict[str, tuple] = {}
+
+    for path in sorted(raw.glob("*.csv")):
+        try:
+            lift = truth.lift_of(path)
+        except ValueError:
+            continue
+        if lift == "squat":
+            continue                      # vs_truth refuses squat; so does this
+        video = pipeline.find_video(path, vid)
+        if video is None:
+            continue
+
+        result = pipeline.run(path, video=video)
+        try:
+            m = metrics.momentum_closure(result, video)
+        except ValueError as exc:
+            print(f"{path.stem:34s} SKIPPED  {exc}")
+            continue
+
+        log = result["log"]
+        world = orient.to_world(log["accel"], log["quat"], log["quat"])
+        impacts = segment.impact_anchors(log)
+
+        for iv in m["intervals"]:
+            key = ("bench, lifting" if lift == "bench" else
+                   "deadlift, impact inside" if iv["spans_impact"] else
+                   "deadlift, pull only")
+            groups[key].append((iv["duration_s"], iv["dv"]))
+
+        # One representative trace per kind: the interval nearest its own
+        # group median, so the panel shows the typical case and not the worst.
+        for iv in m["intervals"]:
+            key = ("bench, lifting" if lift == "bench" else
+                   "deadlift, impact inside" if iv["spans_impact"] else
+                   "deadlift, pull only")
+            same = [d for _, d in groups[key]]
+            if key in traces or abs(iv["dv"] - np.median(same)) > 0.15:
+                continue
+            a = int(np.searchsorted(log["t"], iv["t_start"]))
+            b = int(np.searchsorted(log["t"], iv["t_start"] + iv["duration_s"]))
+            cum = np.concatenate(
+                [[0.0], np.cumsum(world[a:b - 1, 2] * np.diff(log["t"][a:b]))])
+            t_imp = next((float(log["t"][k] - log["t"][a])
+                          for k in impacts if a <= k < b), None)
+            traces[key] = (log["t"][a:b] - log["t"][a], cum, t_imp)
+
+        print(f"{path.stem:34s} {m['n_intervals']:2d} intervals, "
+              f"median {m['median_dv']:+.3f} m/s, max |dv| {m['max_abs_dv']:.3f}")
+
+    if not any(groups.values()):
+        print("no captures with video to measure closure on")
+        return 1
+
+    for label, rows in groups.items():
+        dv = np.array([d for _, d in rows])
+        if not len(dv):
+            continue
+        print(f"{label:26s} n={len(dv):3d}  median {np.median(dv):+.3f}  "
+              f"max |dv| {np.abs(dv).max():.3f} m/s")
+
+    out = ROOT / "analysis" / "31_c11_momentum_closure.png"
+    plot.plot_momentum_closure(groups, traces).savefig(out, dpi=105)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 B6_VARIANTS = ["shipping", "zero-mean accel\nper rep",
                "zero-mean, no\nposition detrend", "bias from rest-to-rest\nclosure"]
 
@@ -426,6 +511,8 @@ def main(argv: list[str]) -> int:
         return draw_anchors()
     if "--bias" in argv:
         return draw_bias_models()
+    if "--closure" in argv:
+        return draw_closure()
     if "--scorecard" in argv:
         return draw_scorecard()
 
