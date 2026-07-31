@@ -421,6 +421,66 @@ track.** `vs_truth` refuses squat.
 **What this unlocked: P1's bench phase question**, which C9 answered the same
 day. See the next entry.
 
+### C10 — the null model, and why four benches were being refused
+`src/metrics.py`. Started as a diagnosis of C8's 3-of-7 split and turned up
+something larger on the way.
+
+**The null model. Six of ten captures are worse than a flat line.** `vs_truth`
+now reports `null_h_rms` — what you score by drawing NO fore-aft motion at all —
+and `beats_null`. Measured:
+
+| capture | pipeline | null | |
+|---|---|---|---|
+| bench_90x4_2 | 0.64 cm | 3.08 | **4.80× better** |
+| bench_90x4_3 | 0.76 | 3.06 | **4.03× better** |
+| bench_92.5x2 | 2.75 | 3.13 | 1.14× |
+| bench_90x4_1 | 1.88 | 2.07 | 1.10× |
+| bench_spoto_90x5_3 | 2.63 | 2.42 | **0.92× worse** |
+| bench_spoto_90x5_2 | 2.69 | 2.16 | **0.80× worse** |
+| bench_spoto_90x5_1 | 3.67 | 2.63 | **0.72× worse** |
+| deadlift_155x6_1 | 5.05 | 3.55 | **0.70× worse** |
+| deadlift_155x6_2 | 9.19 | 3.23 | **0.35× worse** |
+| deadlift_180x3 | 15.44 | 1.96 | **0.13× worse** |
+
+P2's "5–15× outside spec" is measured against the spec. Measured against doing
+nothing, **all three deadlifts are worse than useless on the horizontal**, by up
+to 7.9×. One line of arithmetic, never run before. It is a permanent output now.
+
+**Two bench captures meet the 1 cm spec — the first in this project.** 0.64 and
+0.76 cm. Checked for the obvious artefact and it is not one: those two have the
+LARGEST video fore-aft travel of the seven (5.41 and 5.61 cm) and beat the null
+by 4×, where a flat-line artefact would show small error on small travel.
+
+**Why four benches were refused, and it was our fault not theirs.** C8's
+`SYNC_MIN_CORR` was a peak-height threshold, and peak height here conflates
+agreement with what fraction of the record contains lifting — the correlation
+runs over the whole overlap. Bench clips are 20–30% reps; deadlifts are 50–56%.
+Restrict the correlation to the rep span and every bench rises to 0.886–0.996
+while deadlift moves only to 0.883–0.892: the gap that justified 0.55 vanishes.
+The correlations ordered perfectly by rep count (2 reps → 0.367, 4 → ~0.50,
+5 → ~0.69), which is what gave it away.
+
+**Restricting is not the fix, and that is the interesting half.** The non-rep
+time is what breaks the degeneracy. Restricted, bench sidelobes climb to
+0.86–0.99 — `bench_90x4_1` reaches 0.985, a coin flip — because "align rep n
+with rep n" stops being distinguishable from "align rep n with rep n+1".
+Deadlift survives restriction (0.55–0.76) because it is genuinely aperiodic.
+**Dilution is the price of identification.**
+
+**So accept on the SHAPE of the curve.** Every rival above `RIVAL_FRAC` of the
+peak must sit within `PERIOD_TOL` of a whole rep period. Measured across all
+seven captures, as offsets from the peak in each capture's own cadence: **eleven
+rivals, every one at 0.96–1.05 periods.** Not one fractional. So bench's lag is
+identified modulo one rep, always, and never worse — and both quantities
+measured through it are invariant to a whole-rep shift. All seven sync.
+
+A fractional-period rival would be a real failure and is what it refuses on. No
+capture produces one, so **that branch is unexercised on real data — a guard,
+not a measurement.** And a bench single cannot be synced by this route at all,
+since a cadence needs two reps; it raises rather than guessing.
+
+`analysis/29` redrawn.
+
 ### C9 — bench rep-window phase, measured for the first time
 `tests/test_real_data.py`, `analysis/30_bench_window_phase.png`. The half of P1
 that CLAUDE.md called the one that matters, on the lift that just acquired an

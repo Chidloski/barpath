@@ -118,9 +118,9 @@ magnitude, no attitude, no integration, matched to video at 13.5 ms rms). All
 the corrupted velocity.
 
 *Updated 2026-07-31 (C9): that is not the same as their phase being wrong.
-Bench segments on the corrupted velocity and comes out IN PHASE anyway — 15 of
-15 windows hold exactly one chest touch. Squat remains unverified. See the C9
-section.*
+Bench segments on the corrupted velocity and comes out IN PHASE anyway — 29 of
+29 windows hold exactly one chest touch, once C10 admitted all seven captures.
+Squat remains unverified. See the C9 and C10 sections.*
 
 ## The sign inversion (2026-07-29)
 **Core Motion's `userAcceleration` is the negative of physical acceleration.**
@@ -890,3 +890,74 @@ fractional-period error *would* show, and does not: the three captures agree to
 bar, not whether the reconstructed path inside it is right — that is P2's
 2.63–3.67 cm. And it says nothing about squat, which has no external anchor of
 any kind and is now the only lift whose phase is unverified.
+
+## C10 — the null model, and the threshold that was measuring the wrong thing (2026-07-31)
+
+Started as "why do four of seven benches refuse the sync?" and found something
+bigger on the way. No new figure; `29` is redrawn.
+
+**The null model. Six of ten captures lose to a flat line.** `metrics.vs_truth`
+now reports `null_h_rms` — the error you get by drawing NO fore-aft motion at
+all — and `beats_null`, that over the pipeline's error:
+
+| capture | pipeline | null | |
+|---|---|---|---|
+| `bench_90x4_2` | 0.64 cm | 3.08 | **4.80× better** |
+| `bench_90x4_3` | 0.76 | 3.06 | **4.03× better** |
+| `bench_92.5x2` | 2.75 | 3.13 | 1.14× |
+| `bench_90x4_1` | 1.88 | 2.07 | 1.10× |
+| `bench_spoto_90x5_3` | 2.63 | 2.42 | **0.92× worse** |
+| `bench_spoto_90x5_2` | 2.69 | 2.16 | **0.80× worse** |
+| `bench_spoto_90x5_1` | 3.67 | 2.63 | **0.72× worse** |
+| `deadlift_155x6_1` | 5.05 | 3.55 | **0.70× worse** |
+| `deadlift_155x6_2` | 9.19 | 3.23 | **0.35× worse** |
+| `deadlift_180x3` | 15.44 | 1.96 | **0.13× worse** |
+
+**All three deadlifts are worse than useless on the horizontal**, by up to 7.9×.
+P2's "5–15× outside spec" measures against the spec; this measures against doing
+nothing, and it is the harsher and more useful number. It is one line of
+arithmetic and it had never been run.
+
+**Two bench captures meet the 1 cm spec**, the first in the project — 0.64 and
+0.76 cm. Tested for the obvious artefact, since a bar that barely moves is easy
+to predict: those two have the *largest* video fore-aft travel of the seven
+(5.41 and 5.61 cm) and beat the null by 4×. A flat-line artefact gives small
+error on small travel; this is the opposite.
+
+**Why four benches were being refused.** C8's `SYNC_MIN_CORR` was a peak-height
+threshold, and peak height conflates agreement with what fraction of the record
+contains lifting, since the correlation runs over the whole overlap. Bench clips
+are 20–30% reps; deadlifts are 50–56%. The tell was that the correlations
+ordered perfectly by rep count: 2 reps → 0.367, 4 → 0.496/0.498/0.509,
+5 → 0.682/0.691/0.696. Restrict the correlation to the rep span and every bench
+rises to 0.886–0.996 while deadlift moves only to 0.883–0.892 — the gap that
+justified 0.55 disappears.
+
+**Restricting is not the fix, and that is the part worth keeping.** The non-rep
+time is what breaks the degeneracy. Restricted, bench sidelobes climb to
+0.86–0.99 — `bench_90x4_1` reaches 0.985, a coin flip — because "align rep *n*
+with rep *n*" stops being distinguishable from "align rep *n* with rep *n+1*".
+Deadlift survives restriction (sidelobes 0.55–0.76) because it is genuinely
+aperiodic. Dilution is the price of identification.
+
+**The rule now accepts on the SHAPE of the curve.** Every rival above 0.70 of
+the peak must sit within 0.15 of a whole rep period. Measured across all seven,
+as offsets from the peak in each capture's own cadence:
+
+    bench_90x4_1        2.13 s   0.80@-1.03P   0.78@+1.05P
+    bench_90x4_2        2.46 s   0.80@+1.05P   0.73@-1.05P
+    bench_90x4_3        2.31 s   0.75@-1.04P
+    bench_92.5x2        4.55 s   0.80@+0.97P
+    bench_spoto_90x5_1  2.96 s   0.81@-0.96P   0.76@+0.96P
+    bench_spoto_90x5_2  3.23 s   0.81@+0.98P
+    bench_spoto_90x5_3  2.76 s   0.80@-1.04P   0.78@+1.04P
+
+**Eleven rivals, seven captures, every one within 5% of exactly one rep period.**
+So the lag is identified modulo one rep and never worse, and both quantities
+measured through it are invariant to a whole-rep shift. All seven sync.
+
+**And C9's phase result got stronger by being extended.** All seven now: 29 of
+29 windows hold exactly one chest touch. C9 had three captures all near 0.60,
+which a constant bias would also produce; the four added here run 0.42–0.56, and
+the video's own descent fraction tracks each one. `bench_92.5x2` is decisive —
+its 2-count chest pause puts the touch at 0.431 by video and 0.424 by IMU.

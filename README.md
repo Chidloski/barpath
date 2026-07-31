@@ -77,12 +77,20 @@ against a 1 cm spec, and vertical 5.24, 6.60 and 5.24 cm against ±2–3 cm.** S
 "vertical comes out fine" had been repeated for a while without anyone
 measuring it per rep.
 
-C8 added bench to that list on 2026-07-31, on the three of seven captures whose
-video can be time-aligned to the IMU: **horizontal 3.67, 2.69 and 2.63 cm.**
-Still outside spec, by 2.6–3.7× rather than deadlift's 5–15×. One difference is
-worth more than the magnitude: deadlift's reconstruction disagrees with itself
-about which way "forward" is on 4 of 6, 2 of 6 and 1 of 3 reps, and bench does
-so on **none** of its fifteen.
+C8 added bench to that list on 2026-07-31, and C10 extended it to all seven
+captures: **horizontal 0.64, 0.76, 1.88, 2.63, 2.69, 2.75 and 3.67 cm.** Two of
+those are inside the 1 cm spec, the first captures in this project to meet it.
+Deadlift's reconstruction also disagrees with itself about which way "forward"
+is on 4 of 6, 2 of 6 and 1 of 3 reps; bench does so on 1 of 29.
+
+**But read this before any of those numbers.** C10 measured the pipeline
+against the null model — drawing no fore-aft motion at all, a straight vertical
+line. On **six of ten captures, including all three deadlifts, the pipeline is
+worse than the flat line**: 0.13×, 0.35× and 0.70× on deadlift. Only
+`bench_90x4_2` and `_3` clearly beat it, by 4×. So "5–15× outside spec" is the
+generous framing; measured against doing nothing, most of the horizontal
+reconstruction subtracts information rather than adding it. `metrics.vs_truth`
+reports this as `beats_null` on every run.
 
 ## Quick start
 

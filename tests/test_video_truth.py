@@ -37,18 +37,24 @@ DEADLIFTS = [
     ("deadlift_180x3_20260728", "deadlift_180x3_20260728_121739"),
 ]
 
-# Every bench capture, with the rep count from its filename label and whether
-# its correlation clears SYNC_MIN_CORR. The split is the point: it is bounded
-# by real data on both sides and neither margin is large. See bench_sync.
+# Every bench capture with the rep count from its filename label. All seven sync
+# as of C10. Four of them did not under the peak-height threshold C8 shipped;
+# that threshold turned out to be measuring what fraction of each clip was
+# lifting rather than how well the signals agreed. See bench_sync.
 BENCHES = [
-    ("bench_90x4_1_20260727", 4, False),
-    ("bench_90x4_2_20260727", 4, False),
-    ("bench_90x4_3_20260727", 4, False),
-    ("bench_92.5x2_20260727", 2, False),
-    ("bench_spoto_90x5_1_20260730", 5, True),
-    ("bench_spoto_90x5_2_20260730", 5, True),
-    ("bench_spoto_90x5_3_20260730", 5, True),
+    ("bench_90x4_1_20260727", 4),
+    ("bench_90x4_2_20260727", 4),
+    ("bench_90x4_3_20260727", 4),
+    ("bench_92.5x2_20260727", 2),
+    ("bench_spoto_90x5_1_20260730", 5),
+    ("bench_spoto_90x5_2_20260730", 5),
+    ("bench_spoto_90x5_3_20260730", 5),
 ]
+
+
+def _cadence(result: dict) -> float:
+    starts = [float(result["log"]["t"][a]) for a, _ in result["bounds"]]
+    return float(np.median(np.diff(starts))) if len(starts) > 1 else float("nan")
 
 
 def _has(video: str, csv: str = "") -> bool:
@@ -101,7 +107,8 @@ def test_correlation_sync_recovers_a_known_offset(video, csv):
     fit = truth.sync(truth.landings(path), impacts)
     true_lag = float(np.median(truth.to_imu_time(path, fit) - path["t"]))
 
-    got = metrics.bench_sync(path, log, result["velocity"][:, 2])
+    got = metrics.bench_sync(path, log, result["velocity"][:, 2],
+                             _cadence(result))
     err_ms = abs(got["offset"] - true_lag) * 1000.0
 
     assert err_ms < SYNC_CONTROL_MS, (
@@ -110,19 +117,19 @@ def test_correlation_sync_recovers_a_known_offset(video, csv):
 
 
 @pytest.mark.parametrize("video,csv", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
-def test_a_correct_sync_can_score_below_the_old_threshold(video, csv):
+def test_peak_height_does_not_say_whether_the_lag_is_right(video, csv):
     """The correlation VALUE is a poor proxy for the lag being right.
 
-    This pins the mistake that made the first bench sync unusable. It shipped
-    with `SYNC_MIN_CORR = 0.70` on the strength of a claimed 0.96-1.00, and
-    rejected all seven bench captures. But `deadlift_180x3` scores **0.595**
-    while recovering the true offset to 18 ms — so 0.70 rejects a sync that is
-    correct, and the claimed band was never achievable by this method on this
-    data.
+    This pins the mistake that cost two thresholds. `SYNC_MIN_CORR = 0.70`
+    shipped first, on a docstring claiming bench correlations of 0.96-1.00, and
+    rejected all seven bench captures. 0.55 replaced it and admitted three. But
+    `deadlift_180x3` scores **0.595** while recovering the true offset to 18 ms,
+    so a correct sync can sit at the very bottom of the range, and no height
+    threshold separates good from bad.
 
-    Asserting the ceiling rather than just the floor is deliberate: if a change
-    ever pushes deadlift correlations up near 0.9, the threshold's justification
-    has moved and it should be re-derived rather than left where it is.
+    Asserting the ceiling as well as the floor is deliberate: if a change ever
+    pushes these known-good deadlift correlations near 0.9, the reasoning behind
+    the acceptance rule has moved and wants re-deriving.
     """
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
@@ -130,45 +137,33 @@ def test_a_correct_sync_can_score_below_the_old_threshold(video, csv):
 
     result = pipeline.run(RAW / f"{csv}.csv")
     path = truth.bar_path(VIDEO / f"{video}.mov")
-    corr = metrics.bench_sync(path, result["log"], result["velocity"][:, 2])["corr"]
+    corr = metrics.bench_sync(path, result["log"], result["velocity"][:, 2],
+                              _cadence(result))["corr"]
 
-    assert metrics.SYNC_MIN_CORR <= corr < 0.90, (
+    assert 0.55 <= corr < 0.90, (
         f"{video}: correlation {corr:.3f} outside the 0.55-0.90 band these "
-        f"known-good deadlift syncs occupied when the threshold was set")
+        f"known-good deadlift syncs occupied when the rule was written")
 
 
-def test_the_threshold_sits_in_a_gap_bounded_on_both_sides():
-    """SYNC_MIN_CORR is a midpoint, not a round number, and the margins are thin.
+@pytest.mark.parametrize("video,reps", BENCHES, ids=[b[0] for b in BENCHES])
+def test_every_bench_rival_is_a_whole_rep_period_away(video, reps):
+    """The acceptance rule, and the measurement it rests on. All seven sync.
 
-    Same shape of argument as C5's cadence tolerance: the value is defensible
-    only because real data brackets it. Correct deadlift syncs floor at 0.595;
-    bench captures that must be refused reach 0.509. 0.55 is the middle of that
-    gap, with ~0.04 either side.
+    `bench_sync` accepts on the SHAPE of the correlation curve rather than the
+    height of its peak, because height conflates agreement with what fraction
+    of the clip is lifting — bench clips are 20-30% reps against deadlift's
+    50-56%, which is most of why the old threshold refused four of these.
 
-    This asserts the arithmetic, so that moving the constant without moving the
-    evidence fails here rather than silently changing which captures are truth.
-    """
-    from src import metrics
+    What actually matters is whether the peak is confusable with anything. It
+    is: every bench capture has rivals at 0.73-0.81 of the peak. But **all
+    eleven of them, across all seven captures, sit within 5% of exactly one rep
+    period** — 0.96 to 1.05 P. So the lag is identified modulo one rep and never
+    worse, and both quantities measured through it are invariant to a whole-rep
+    shift (horizontal rms, and phase by construction).
 
-    highest_refused, lowest_correct = 0.509, 0.595
-    assert highest_refused < metrics.SYNC_MIN_CORR < lowest_correct
-    assert metrics.SYNC_MIN_CORR - highest_refused > 0.03
-    assert lowest_correct - metrics.SYNC_MIN_CORR > 0.03
-
-
-@pytest.mark.parametrize("video,reps,syncs", BENCHES, ids=[b[0] for b in BENCHES])
-def test_bench_sync_admits_exactly_the_captures_it_should(video, reps, syncs):
-    """Three of seven bench captures sync; four refuse. Pin which.
-
-    Not a quality assertion — a scope one. The four 2026-07-27 captures
-    correlate 0.37-0.51 and must raise, because a lag read off a peak that low
-    is not identified and a per-rep error measured through it would be a number
-    with nothing behind it. The three 2026-07-30 spoto captures reach
-    0.68-0.70, inside the band deadlift validates.
-
-    If a change makes a refused capture sync, that is not automatically progress
-    — it may mean the floor has been lowered past its evidence. Check the
-    deadlift control first.
+    A FRACTIONAL-period rival would be a real failure and is what the rule
+    refuses on. No capture in `data/raw/` produces one, so that branch is
+    unexercised here — this test pins the measurement, not the guard.
     """
     csv = _csv_for(video)
     if not _has(video) or csv is None:
@@ -177,14 +172,32 @@ def test_bench_sync_admits_exactly_the_captures_it_should(video, reps, syncs):
 
     result = pipeline.run(csv)
     path = truth.bar_path(VIDEO / f"{video}.mov")
+    got = metrics.bench_sync(path, result["log"], result["velocity"][:, 2],
+                             _cadence(result))
 
-    if syncs:
-        got = metrics.bench_sync(path, result["log"], result["velocity"][:, 2])
-        assert got["corr"] >= metrics.SYNC_MIN_CORR
-        assert abs(got["offset"]) < 5.0
-    else:
-        with pytest.raises(ValueError, match="correlate only"):
-            metrics.bench_sync(path, result["log"], result["velocity"][:, 2])
+    assert abs(got["offset"]) < 5.0
+    assert got["rivals"], (
+        f"{video}: no rival above {metrics.RIVAL_FRAC} of the peak. That is "
+        f"better than measured and worth understanding before accepting it")
+    for lag, frac, periods in got["rivals"]:
+        assert abs(periods - round(periods)) <= metrics.PERIOD_TOL
+        assert abs(round(periods)) >= 1
+
+
+def test_a_bench_single_cannot_be_synced_by_this_route():
+    """A cadence needs two reps, so the rule cannot be applied to a single.
+
+    Stated as a test because it is a real limit rather than an oversight, and
+    because the capture protocol asks for a bench single — for a different
+    reason (C5's singleton rule is predicted to segment onto the unrack). When
+    that capture arrives it will land here too, and it should raise rather than
+    quietly sync on an unchecked peak.
+    """
+    from src import metrics
+
+    with pytest.raises(ValueError, match="fewer than two reps"):
+        metrics.bench_sync({"t": np.arange(10.0), "height": np.zeros(10)},
+                           {"t": np.arange(10.0)}, np.zeros(10), float("nan"))
 
 
 def _corr_curve(path, log, vz, lags):
@@ -248,7 +261,7 @@ def test_the_deadlift_peak_is_well_isolated(video, csv):
     assert _sidelobe_ratio(c, lags) < 0.78
 
 
-@pytest.mark.parametrize("video", [b[0] for b in BENCHES if b[2]])
+@pytest.mark.parametrize("video", [b[0] for b in BENCHES])
 def test_bench_sidelobes_sit_at_the_rep_period_and_cost_little(video):
     """Bench's peak is weakly isolated, and it does not matter. Both asserted.
 
@@ -291,8 +304,8 @@ def test_bench_sidelobes_sit_at_the_rep_period_and_cost_little(video):
 
 
 # ------------------------------------------------------------ bench tracking --
-@pytest.mark.parametrize("video,reps,syncs", BENCHES, ids=[b[0] for b in BENCHES])
-def test_bench_tracks_the_plate_and_not_the_gym(video, reps, syncs):
+@pytest.mark.parametrize("video,reps", BENCHES, ids=[b[0] for b in BENCHES])
+def test_bench_tracks_the_plate_and_not_the_gym(video, reps):
     """Bench tracking, asserted on travel and rep count rather than on NCC.
 
     This replaces `test_bench_tracking_fails_loudly_rather_than_silently`,
@@ -332,8 +345,8 @@ def test_bench_tracks_the_plate_and_not_the_gym(video, reps, syncs):
     assert np.nanmedian(path["score"]) > 0.60
 
 
-@pytest.mark.parametrize("video,reps,syncs", BENCHES, ids=[b[0] for b in BENCHES])
-def test_bench_video_rep_count_matches_the_label(video, reps, syncs):
+@pytest.mark.parametrize("video,reps", BENCHES, ids=[b[0] for b in BENCHES])
+def test_bench_video_rep_count_matches_the_label(video, reps):
     """The video's own rep count must match the filename, 7 of 7.
 
     Independent of the IMU entirely — it counts reversals in the tracked height

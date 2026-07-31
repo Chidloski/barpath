@@ -47,13 +47,17 @@ SYNC_FS = 200.0         # Hz, the grid both signals are resampled onto
 SYNC_BAND = (0.15, 5.0)  # Hz. Below removes the integrator's drift, above the
 #                          tremor; a bench rep is 0.3-0.7 Hz and its reversals
 #                          carry the harmonics the correlation actually keys on.
-SYNC_MIN_CORR = 0.55    # peak correlation below which the lag is not identified.
-#                         NOT a round number and not a guess: it is the midpoint
-#                         of a gap bounded by real data on both sides. Deadlift
-#                         syncs that are independently CORRECT score as low as
-#                         0.595, and the bench captures that must be rejected
-#                         reach 0.509. Both margins are ~0.04 and neither is
-#                         large. See bench_sync's docstring for the measurement.
+# The sync is accepted or refused on the SHAPE of the correlation curve, not on
+# the height of its peak. A peak-height threshold was tried first and withdrawn:
+# it conflates agreement with what fraction of the clip is lifting, and bench
+# clips are 20-30% reps against deadlift's 50-56%. See bench_sync's docstring.
+RIVAL_FRAC = 0.70       # a local maximum this close to the peak is a real rival
+RIVAL_GUARD_S = 0.4     # ...if it is at least this far from the peak
+PERIOD_TOL = 0.15       # rivals must sit within this of a WHOLE rep period.
+#                         Measured: all 11 rivals across the 7 bench captures
+#                         land at 0.96-1.05 periods, so 0.15 is loose against
+#                         the data and still rejects a half-period rival, which
+#                         is the case that would actually matter.
 
 
 # ------------------------------------------------------------- dispersion --
@@ -156,7 +160,7 @@ def _band(y: np.ndarray) -> np.ndarray:
 
 
 def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
-               max_lag_s: float = 5.0) -> dict:
+               cadence_s: float, max_lag_s: float = 5.0) -> dict:
     """Align a bench video to the IMU clock. Returns offset and correlation.
 
     THE PROBLEM, STATED PLAINLY
@@ -191,23 +195,62 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
     is modest even when the lag is exactly right — 0.595 on a sync that is
     correct to 18 ms — which is why the threshold is where it is.
 
-    THE THRESHOLD, AND THE GAP IT SITS IN
+    WHAT IT ACCEPTS ON, AND WHY NOT PEAK HEIGHT
+    -------------------------------------------
+    **Two peak-height thresholds were tried and both were wrong.** 0.70 came
+    first, from a docstring claiming bench correlations of 0.96-1.00; measured,
+    they are 0.367-0.696, so it rejected all seven captures. Then 0.55, from the
+    gap between the highest bench (0.509) and the lowest known-correct deadlift
+    (0.595); that admitted three of seven.
+
+    **That gap was an artefact.** Peak height conflates two things — how well
+    the signals agree, and what fraction of the record contains lifting at all,
+    since the correlation runs over the whole overlap. Bench clips are 20-30%
+    reps; deadlifts are 50-56%. Restrict the correlation to the rep span and
+    every bench rises to 0.886-0.996 while deadlift moves only to 0.883-0.892:
+    the ordering that justified 0.55 disappears. Peak height was largely
+    measuring clip composition.
+
+    Restricting is NOT the fix, and this is the useful half: **the non-rep time
+    is what breaks the degeneracy.** Throw away the setup and the rest and bench
+    sidelobes climb to 0.86-0.99 — `bench_90x4_1` reaches 0.985, a coin flip —
+    because "align rep n with rep n" stops being distinguishable from "align rep
+    n with rep n+1". Deadlift survives restriction (sidelobes 0.55-0.76) because
+    it has genuinely aperiodic structure. Dilution is the price of
+    identification, and it should be paid.
+
+    So accept on the SHAPE of the curve instead. Every rival above `RIVAL_FRAC`
+    of the peak must sit within `PERIOD_TOL` of a whole rep period. Measured on
+    all seven captures, as offsets from the peak in units of that capture's own
+    cadence:
+
+        bench_90x4_1        2.13 s   0.80@-1.03P   0.78@+1.05P
+        bench_90x4_2        2.46 s   0.80@+1.05P   0.73@-1.05P
+        bench_90x4_3        2.31 s   0.75@-1.04P
+        bench_92.5x2        4.55 s   0.80@+0.97P
+        bench_spoto_90x5_1  2.96 s   0.81@-0.96P   0.76@+0.96P
+        bench_spoto_90x5_2  3.23 s   0.81@+0.98P
+        bench_spoto_90x5_3  2.76 s   0.80@-1.04P   0.78@+1.04P
+
+    **Eleven rivals, seven captures, every one within 5% of exactly one rep
+    period.** Bench's lag is identified modulo one rep, always, and never worse
+    than that. All seven sync.
+
+    WHY A WHOLE-REP AMBIGUITY IS HARMLESS
     -------------------------------------
-    `SYNC_MIN_CORR` is 0.55. Bench, measured on all seven captures:
+    Because both things measured through this sync are invariant to it.
+    Horizontal rms scored at the rival lag rather than the peak: 3.11, 3.23 and
+    2.44 cm against 3.67, 2.69 and 2.63 — no worse, and lower on two of three.
+    And rep-window PHASE is invariant by construction, a periodic set looking
+    identical shifted by one rep; C9's three captures agree to 0.03 despite
+    offsets of +0.040, -2.320 and -0.585 s.
 
-        bench_92.5x2          0.367   refused
-        bench_90x4_1          0.496   refused
-        bench_90x4_2          0.498   refused
-        bench_90x4_3          0.509   refused
-        bench_spoto_90x5_1    0.682   syncs
-        bench_spoto_90x5_2    0.691   syncs
-        bench_spoto_90x5_3    0.696   syncs
+    A FRACTIONAL-period rival would not be harmless, and that is what this
+    refuses on. None exists in `data/raw/`, so **that branch is unexercised on
+    real data — it is a guard, not a measurement.**
 
-    So the threshold sits in the gap between 0.509 (the highest correlation
-    that must be rejected) and 0.595 (the lowest that is known to be correct).
-    Both margins are about 0.04 and neither is large. An earlier version of this
-    function used 0.70, which would have rejected `deadlift_180x3` — a sync that
-    is right to 18 ms — and did in fact reject all seven bench captures.
+    **A bench single cannot be synced by this route at all**, since a cadence
+    needs two reps. That is a real limit and it raises rather than guessing.
 
     WHY THAT IS NOT CIRCULAR, AND WHERE IT IS
     -----------------------------------------
@@ -254,11 +297,12 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
     been shown to pick correctly.
 
     The reason is structural and it is worth understanding rather than
-    thresholding: **a bench set's sidelobes sit at multiples of the rep period.**
-    The runner-up lags are -2.81, +0.85 and -3.465 s against a cadence near
-    2.9 s, so the alternative alignment pairs rep n with rep n+1. Touch-and-go
-    reps resemble each other closely, so that alignment genuinely does correlate
-    almost as well. It is not noise; it is the set being periodic.
+    thresholding: **a bench set's sidelobes sit at multiples of the rep period**
+    — measured, all eleven of them at 0.96-1.05 P. The alternative alignment
+    pairs rep n with rep n+1, and touch-and-go reps resemble each other closely,
+    so it genuinely does correlate almost as well. It is not noise; it is the
+    set being periodic. That is why this refuses on WHERE the rivals sit rather
+    than on how tall the peak is.
 
     What that costs is smaller than it sounds, and the reason is the one thing
     here that IS reassuring. Scoring at the runner-up lag instead of the peak
@@ -299,6 +343,14 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
     cannot bound a quantity that matters at 0.1 s. **Do not re-propose it
     without a way to separate the two events.** `analysis/29`.
     """
+    # A precondition, checked before the expensive sweep: without a cadence
+    # there is no way to tell a harmless whole-rep rival from a real one.
+    if not np.isfinite(cadence_s) or cadence_s <= 0:
+        raise ValueError(
+            "bench sync: needs the rep cadence to tell a whole-rep ambiguity "
+            "from a real one, and this capture has fewer than two reps. A "
+            "bench single therefore cannot be synced by this route.")
+
     t_v = path["t"]
     ok = np.isfinite(path["height"])
     if ok.sum() < 100:
@@ -312,8 +364,9 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
     t_i = np.arange(float(log["t"][0]), float(log["t"][-1]), 1.0 / SYNC_FS)
     v_imu = _band(np.interp(t_i, log["t"], velocity_z))
 
-    best = (-np.inf, 0.0)
-    for lag in np.arange(-max_lag_s, max_lag_s, 1.0 / SYNC_FS):
+    lags = np.arange(-max_lag_s, max_lag_s, 1.0 / SYNC_FS)
+    curve = np.full(len(lags), np.nan)
+    for j, lag in enumerate(lags):
         g = grid + lag
         m = (g >= t_i[0]) & (g <= t_i[-1])
         if m.sum() < 2 * SYNC_FS:
@@ -321,23 +374,44 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
         a = v_video[m] - v_video[m].mean()
         b = np.interp(g[m], t_i, v_imu)
         b = b - b.mean()
-        c = float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-12))
-        if c > best[0]:
-            best = (c, float(lag))
-    corr, lag = best
+        curve[j] = a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-12)
 
-    if corr < SYNC_MIN_CORR:
+    if not np.isfinite(curve).any():
+        raise ValueError("bench sync: no lag gives enough overlap to correlate")
+
+    pk = int(np.nanargmax(curve))
+    corr, lag = float(curve[pk]), float(lags[pk])
+
+    # Every rival worth taking seriously must be a WHOLE-REP restatement of the
+    # same alignment. See the docstring: that is the ambiguity this method
+    # cannot resolve and does not need to.
+    rivals = []
+    for i in range(1, len(curve) - 1):
+        if not np.isfinite(curve[i]) or abs(lags[i] - lag) <= RIVAL_GUARD_S:
+            continue
+        if curve[i] >= curve[i - 1] and curve[i] >= curve[i + 1] \
+                and curve[i] >= RIVAL_FRAC * corr:
+            k = (lags[i] - lag) / cadence_s
+            rivals.append((float(lags[i]), float(curve[i] / corr), float(k)))
+
+    stray = [r for r in rivals if abs(r[2] - round(r[2])) > PERIOD_TOL]
+    if stray:
+        worst = max(stray, key=lambda r: r[1])
         raise ValueError(
-            f"bench sync: the video and the reconstruction correlate only "
-            f"{corr:.2f} on vertical velocity, below the {SYNC_MIN_CORR} floor "
-            f"calibrated on deadlift, where syncs known to be correct to 18 ms "
-            f"score 0.595-0.774. The lag is not identified, so there is no "
-            f"clock alignment and no honest error number to report.")
+            f"bench sync: a rival alignment at {worst[0]:+.2f} s reaches "
+            f"{worst[1]:.2f} of the peak and sits {worst[2]:+.2f} rep periods "
+            f"away, not a whole number. A whole-period rival is harmless — it "
+            f"is the same alignment restated — but a fractional one means the "
+            f"lag is genuinely not identified, and every number measured "
+            f"through it would be arbitrary.")
 
     return {
-        "method": "vertical cross-correlation, calibrated on deadlift",
+        "method": "vertical cross-correlation, whole-rep ambiguity permitted",
         "offset": lag,          # video t + offset = IMU t
         "corr": corr,
+        "cadence_s": float(cadence_s),
+        # (lag, height as a fraction of the peak, offset in rep periods)
+        "rivals": rivals,
     }
 
 
@@ -375,7 +449,13 @@ def _video_on_imu_clock(result: dict, video: str | Path) -> tuple[np.ndarray, np
         fit["method"] = "floor impacts matched to video landings"
         t_imu = truth.to_imu_time(path, fit)
     else:
-        fit = bench_sync(path, log, result["velocity"][:, 2])
+        # Cadence from the IMU's own rep starts. It is used only to ask whether
+        # a rival alignment is a whole rep away, so a rough median is enough —
+        # and it is IMU-side, so it does not borrow anything from the video the
+        # sync is being fitted against.
+        starts = [float(log["t"][a]) for a, _ in result["bounds"]]
+        cadence = float(np.median(np.diff(starts))) if len(starts) > 1 else np.nan
+        fit = bench_sync(path, log, result["velocity"][:, 2], cadence)
         # One fitted scalar, so there is no residual and no slope, and neither
         # is claimed. Both are NaN rather than filled with a stand-in: an
         # earlier version put the re-rack disagreement in `rms_ms`, which
@@ -428,6 +508,37 @@ def vs_truth(result: dict, video: str | Path) -> dict:
       than verified on bench. `sync_rms_ms` and `sync_drift_pct` are NaN, and
       that is not an omission — nothing here measures them. Three of the seven
       bench captures clear the correlation floor; the other four raise.
+
+    READ `beats_null` BEFORE READING ANY OTHER NUMBER HERE
+    ------------------------------------------------------
+    `null_h_rms` is what you score by drawing **no fore-aft motion at all** —
+    a straight vertical line, start-aligned, per rep. `beats_null` is that over
+    the pipeline's error, so above 1 the reconstruction adds information about
+    the horizontal and below 1 it subtracts it.
+
+    Measured 2026-07-31 on every capture with video, and it is the least
+    comfortable number in the project:
+
+        bench_90x4_2         0.64 cm vs 3.08    4.80x   better
+        bench_90x4_3         0.76 cm vs 3.06    4.03x   better
+        bench_92.5x2         2.75 cm vs 3.13    1.14x   better
+        bench_90x4_1         1.88 cm vs 2.07    1.10x   better
+        bench_spoto_90x5_3   2.63 cm vs 2.42    0.92x   WORSE
+        bench_spoto_90x5_2   2.69 cm vs 2.16    0.80x   WORSE
+        bench_spoto_90x5_1   3.67 cm vs 2.63    0.72x   WORSE
+        deadlift_155x6_1     5.05 cm vs 3.55    0.70x   WORSE
+        deadlift_155x6_2     9.19 cm vs 3.23    0.35x   WORSE
+        deadlift_180x3      15.44 cm vs 1.96    0.13x   WORSE
+
+    **Six of ten, including all three deadlifts, are worse than a flat line.**
+    P2's "5-15x outside spec" is measured against the spec; measured against
+    doing nothing, the deadlift reconstruction is 1.4-7.9x worse than useless on
+    the axis the whole project is about. Two bench captures are the only place
+    the horizontal reconstruction demonstrably works.
+
+    This check cost nothing and nobody had run it. It is the cheapest guard in
+    the file against the failure this project keeps repeating — a number that
+    looks like progress because it is finite.
 
     Three errors per rep, and the gaps between them are the point
     -------------------------------------------------------------
@@ -563,6 +674,10 @@ def vs_truth(result: dict, video: str | Path) -> dict:
             "video_closure_v": float(abs(vid[-1, 1] - vid[0, 1]) * 100),
             "video_rom_cm": float((vid[:, 1].max() - vid[:, 1].min()) * 100),
             "video_fore_aft_cm": float((vid[:, 0].max() - vid[:, 0].min()) * 100),
+            # The null model: what you score by drawing NO fore-aft motion at
+            # all. Any reconstruction that does not beat this is adding noise
+            # rather than information. See `beats_null` below.
+            "null_h_rms": float(np.sqrt((vid[:, 0] ** 2).mean()) * 100),
         })
 
     good = [r for r in per_rep if r["covered"]]
@@ -592,6 +707,13 @@ def vs_truth(result: dict, video: str | Path) -> dict:
         "video_closure_v": med("video_closure_v"),
         "video_rom_cm": med("video_rom_cm"),
         "video_fore_aft_cm": med("video_fore_aft_cm"),
+        "null_h_rms": med("null_h_rms"),
+        # >1 means the reconstruction is better than drawing a flat line; <1
+        # means it is worse. Measured 2026-07-31 on all ten captures with video:
+        # 4.80 and 4.03 on bench_90x4_2 and _3, 1.10-1.14 on two more benches,
+        # and BELOW 1 on the other six INCLUDING ALL THREE DEADLIFTS — 0.70,
+        # 0.35 and 0.13. Read that before quoting any horizontal number.
+        "beats_null": float(med("null_h_rms") / med("pipeline_h_rms")),
         # The referee, checked against the same table as the reconstruction.
         # Non-empty means this capture's video vertical scale is wrong and its
         # vertical numbers — video_rom_cm, pipeline_v_rms, raw_v_rms — carry it.

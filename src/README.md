@@ -31,13 +31,18 @@ rms per rep on the three deadlifts, against a 1 cm spec, and 5.24/6.60/5.24 cm
 vertical against ±2–3 cm. It also showed the horizontal error is a smooth arch
 at rep frequency rather than noise. See `analysis/19`.
 
-Since 2026-07-31 that list is no longer deadlift-only. Bench adds **3.67, 2.69
-and 2.63 cm** horizontal on the three captures whose sync is identified —
-still outside the 1 cm spec, but by 2.6–3.7× where deadlift is out by 5–15×.
-Read those through `metrics.bench_sync`'s docstring: the clock alignment is a
-cross-correlation calibrated on deadlift rather than a landmark match, so bench
-carries no sync residual and its vertical inherits ~1 cm from the sync itself.
-See `analysis/29`.
+Since 2026-07-31 that list is no longer deadlift-only. Bench adds **0.64, 0.76,
+1.88, 2.63, 2.69, 2.75 and 3.67 cm** horizontal across all seven captures — two
+of them inside the 1 cm spec, the first in this project. Read those through
+`metrics.bench_sync`'s docstring: the clock alignment is a cross-correlation
+calibrated on deadlift rather than a landmark match, so bench carries no sync
+residual and its vertical inherits ~1 cm from the sync itself. See
+`analysis/29`.
+
+**And read `beats_null` before any of them.** `vs_truth` compares the pipeline
+against drawing no fore-aft motion at all. Six of ten captures lose to that flat
+line, including all three deadlifts (0.70×, 0.35×, 0.13×). Only `bench_90x4_2`
+and `_3` clearly win, by 4×.
 
 Note what that leans on, and how it turned out. The plates were measured on
 2026-07-30 — 425 mm notched, 445 mm bumper, 450 mm calibrated — replacing a
@@ -59,7 +64,7 @@ against something other than a guess.
 | lift | plate | works? | median NCC | travel | notes |
 |---|---|---|---|---|---|
 | deadlift | 445 mm bumper | **timing yes, vertical no** | 0.83–0.94 | 59.1 / **66.8** / **47.6** cm | automatic; sync 11–16 ms rms, drift <0.25%; ROM spread 19 cm on a 61 cm ceiling |
-| bench | 425 mm notched | **yes, from a hand seed** | 0.75–0.95 | 21.8–29.8 cm | `truth.SEEDS`; 3 of 7 clear the sync floor, 4 raise; radius carries ~4% scale |
+| bench | 425 mm notched | **yes, from a hand seed** | 0.75–0.95 | 21.8–29.8 cm | `truth.SEEDS`; all 7 sync since C10; radius carries ~4% scale |
 | squat | 450 mm calibrated | **no — `vs_truth` refuses** | ~0.40 | 2 raise, 2 at ~12.5 cm | plate clips top of frame at lockout |
 
 Deadlift's row used to read "yes, unattended" without qualification. It tracks

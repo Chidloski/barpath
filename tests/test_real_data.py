@@ -374,9 +374,14 @@ DEADLIFTS = [
     ("deadlift_180x3_20260728", "deadlift_180x3_20260728_121739", 3),
 ]
 
-# The bench captures whose video clock sync resolves — see metrics.bench_sync.
-# The other four correlate 0.37-0.51 and raise, so they cannot be phase-tested.
+# Every bench capture. All seven sync as of C10 — under C8's peak-height
+# threshold only the three spoto ones did, and that threshold turned out to be
+# measuring clip composition. See metrics.bench_sync.
 BENCH_SYNCED = [
+    ("bench_90x4_1_20260727", 4),
+    ("bench_90x4_2_20260727", 4),
+    ("bench_90x4_3_20260727", 4),
+    ("bench_92.5x2_20260727", 2),
     ("bench_spoto_90x5_1_20260730", 5),
     ("bench_spoto_90x5_2_20260730", 5),
     ("bench_spoto_90x5_3_20260730", 5),
@@ -648,15 +653,25 @@ def test_rep_windows_are_in_phase_with_the_video(video, csv, reps):
         )
 
 
-# Measured 2026-07-31 (C9), the first time bench phase could be measured at all.
-# The video's chest touch lands at this fraction through each IMU rep window.
-# A window HALF A REP out of step would put it near 0.0 or 1.0; these sit near
-# 0.6 because a bench rep is genuinely asymmetric, which the next test proves
-# from the video alone. Bands are +/-0.08 around the measured medians.
+# Measured 2026-07-31 (C9), extended to all seven captures by C10. The video's
+# chest touch lands at this fraction through each IMU rep window. A window HALF
+# A REP out of step would put it near 0.0 or 1.0; nothing is close.
+#
+# **The spread across captures is the evidence, not the value.** C9 had only the
+# three spoto captures and they all sat near 0.60, which a constant bias would
+# also produce. C10 added four more and they run 0.42-0.56 — and the video's own
+# descent fraction, measured with no IMU and no sync, tracks each one (shown in
+# the comments). `bench_92.5x2` is the sharpest case: a 2-count chest pause puts
+# its touch at 0.424 and the video independently says 0.431. The segmenter is
+# following per-capture rep structure, not sitting at a number.
 BENCH_TOUCH_PHASE = {
-    "bench_spoto_90x5_1_20260730": 0.593,
-    "bench_spoto_90x5_2_20260730": 0.613,
-    "bench_spoto_90x5_3_20260730": 0.619,
+    "bench_90x4_1_20260727": 0.559,          # video 0.504
+    "bench_90x4_2_20260727": 0.558,          # video 0.518
+    "bench_90x4_3_20260727": 0.537,          # video 0.521
+    "bench_92.5x2_20260727": 0.424,          # video 0.431, 2-count pause
+    "bench_spoto_90x5_1_20260730": 0.593,    # video 0.573
+    "bench_spoto_90x5_2_20260730": 0.613,    # video 0.590
+    "bench_spoto_90x5_3_20260730": 0.619,    # video 0.582
 }
 
 
@@ -676,17 +691,22 @@ def test_bench_rep_windows_are_in_phase_with_the_video(video, reps):
     press -> lockout, so the touch belongs strictly inside, one per window. Out
     of phase would mean 0 or 2 touches, or one sitting at the very edge.
 
-    Result: **15 of 15 windows, one touch each, phase 0.567-0.648.** Bench
-    windows are in phase. Note what this does NOT say — it constrains where the
-    window sits relative to the bar, not whether the reconstructed PATH inside
-    it is right, which is P2's 2.63-3.67 cm.
+    Result: **29 of 29 windows, one touch each**, phase 0.42-0.62. Bench windows
+    are in phase. Note what this does NOT say — it constrains where the window
+    sits relative to the bar, not whether the reconstructed PATH inside it is
+    right, which is P2's 0.64-3.67 cm.
+
+    C9 measured this on three captures, all near 0.60; C10 added the other four
+    and they run 0.42-0.56. The spread is what makes it evidence — see
+    `BENCH_TOUCH_PHASE`.
 
     On the sync's known weakness: `bench_sync`'s peak is only weakly isolated,
     its rivals one rep period away. A whole-rep-period error is invisible here
     BY CONSTRUCTION, because a periodic set looks the same shifted by one rep —
     so this test is robust to exactly the ambiguity bench_sync cannot resolve.
-    A FRACTIONAL-period error would show up, and does not: all three captures
-    agree to 0.03 despite offsets of +0.040, -2.320 and -0.585 s.
+    A FRACTIONAL-period error would show up as a phase disagreeing with the
+    video's own descent fraction, and none does: the seven captures track it
+    individually to 0.007-0.055 across a 0.42-0.62 spread.
     """
     csv_path = _csv_for(video)
     if not (VIDEO / f"{video}.mov").exists() or csv_path is None:
@@ -695,8 +715,9 @@ def test_bench_rep_windows_are_in_phase_with_the_video(video, reps):
 
     result = pipeline.run(csv_path)
     path = truth.bar_path(VIDEO / f"{video}.mov")
-    offset = metrics.bench_sync(path, result["log"],
-                                result["velocity"][:, 2])["offset"]
+    starts = [float(result["log"]["t"][a]) for a, _ in result["bounds"]]
+    offset = metrics.bench_sync(path, result["log"], result["velocity"][:, 2],
+                                float(np.median(np.diff(starts))))["offset"]
     touches, _ = _bench_video_events(path)
 
     t = result["log"]["t"]
@@ -733,14 +754,16 @@ def test_a_bench_rep_really_is_asymmetric(video, reps):
     windows sit, and the two are not distinguishable from the IMU.
 
     So measure it in the video alone — no IMU, no sync, no reconstruction.
-    Lockout to touch, over lockout to lockout. The descent takes **0.573,
-    0.590 and 0.582** of a rep by median, against the IMU windows' 0.593, 0.613
-    and 0.619. They agree to 0.02-0.04 of a rep, which on a 2.8 s rep is
-    60-100 ms.
+    Lockout to touch, over lockout to lockout. Across the seven captures the
+    descent takes **0.431 to 0.590** of a rep by median, against the IMU
+    windows' 0.424 to 0.619, tracking each capture individually to 0.007-0.055.
 
     A bench descent is controlled and a press is not: 1.6-1.9 s down against
-    1.2-1.3 s up, measured here. The asymmetry is real and the segmenter is
-    tracking it.
+    1.2-1.3 s up on a touch-and-go set. `bench_92.5x2` is the case that makes
+    this an argument rather than a coincidence — its 2-count chest pause moves
+    the touch to 0.431, well away from the others, and the IMU window follows to
+    0.424. A constant bias could produce a cluster near 0.6; it cannot produce
+    that.
 
     *Rep 1 of every set is excluded from the median rather than fitted around:
     it reads 0.69-0.73 because the "descent" there starts at the unrack, which
@@ -762,9 +785,18 @@ def test_a_bench_rep_really_is_asymmetric(video, reps):
             fracs.append((x - before[-1]) / (after[0] - before[-1]))
 
     assert len(fracs) >= reps - 1
-    assert 0.50 < float(np.median(fracs)) < 0.68, (
-        f"{video}: the video says the descent is {np.median(fracs):.3f} of a "
-        f"rep — if this moved, the ~0.6 phase above needs re-explaining")
+    got = float(np.median(fracs))
+
+    # The assertion is AGREEMENT, not a band. A band was tried first and it was
+    # the weaker test: it read 0.50-0.68, which `bench_92.5x2` breaks at 0.431
+    # — and that capture is the strongest evidence here rather than an
+    # exception, because its pause moves BOTH modalities together.
+    want = BENCH_TOUCH_PHASE[video]
+    assert abs(got - want) < 0.08, (
+        f"{video}: the video puts the bottom of the rep at {got:.3f} and the "
+        f"IMU window at {want:.3f}. They tracked each other to 0.055 across "
+        f"seven captures spanning 0.42-0.62, so a gap this size means one of "
+        f"the two has moved and the ~0.6 phase needs re-explaining")
 
 
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])

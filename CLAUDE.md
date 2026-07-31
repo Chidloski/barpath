@@ -263,19 +263,53 @@ error does not. And **"vertical comes out fine" is false**; vertical was never
 measured per rep before A3 and it misses its own looser spec on all three
 captures.
 
-**A fourth measurement, 2026-07-31 (C8): bench is out by 2.6–3.7×, not 5–15×,
-and it agrees with itself about direction.** Horizontal **3.67, 2.69 and
-2.63 cm rms** on the three captures whose video sync is identified. Two things
+**READ THIS FIRST — 2026-07-31 (C10). Against the null model, most of the
+pipeline is worse than useless on the horizontal.** `metrics.vs_truth` now
+reports `null_h_rms`: what you score by drawing **no fore-aft motion at all**, a
+straight vertical line. `beats_null` is that over the pipeline's error.
+
+    bench_90x4_2         0.64 cm vs 3.08    4.80x   better
+    bench_90x4_3         0.76 cm vs 3.06    4.03x   better
+    bench_92.5x2         2.75 cm vs 3.13    1.14x   better
+    bench_90x4_1         1.88 cm vs 2.07    1.10x   better
+    bench_spoto_90x5_3   2.63 cm vs 2.42    0.92x   WORSE
+    bench_spoto_90x5_2   2.69 cm vs 2.16    0.80x   WORSE
+    bench_spoto_90x5_1   3.67 cm vs 2.63    0.72x   WORSE
+    deadlift_155x6_1     5.05 cm vs 3.55    0.70x   WORSE
+    deadlift_155x6_2     9.19 cm vs 3.23    0.35x   WORSE
+    deadlift_180x3      15.44 cm vs 1.96    0.13x   WORSE
+
+**Six of ten, including all three deadlifts, are beaten by a flat line.** The
+"5–15× outside spec" framing below is measured against the spec; measured
+against doing nothing, deadlift is 1.4–7.9× worse than useless on the one axis
+this project exists to draw. `bench_90x4_2` and `_3` are the only captures where
+the horizontal reconstruction demonstrably carries information.
+
+This check is one line of arithmetic and nobody had run it in the life of the
+project. Quote `beats_null` alongside any horizontal number.
+
+**A fourth measurement, 2026-07-31 (C8, extended by C10): bench is out by
+0.6–3.7 cm, and it agrees with itself about direction.** Horizontal rms on all
+seven captures: **0.64, 0.76, 1.88, 2.63, 2.69, 2.75 and 3.67 cm**. Two of them
+are inside the 1 cm spec — the first captures in this project to meet it — and
+those two are also the ones that beat the null by 4×, on 5.4 and 5.6 cm of real
+fore-aft travel, so it is not the flat-line artefact. Two things
 follow. The magnitude says the deadlift numbers are not the whole story of P2 —
 whatever dominates there is either weaker on bench or partly absent. And
-`reps_disagreeing_on_sign` is **0 of 5, 0 of 5, 0 of 5**, against deadlift's
+`reps_disagreeing_on_sign` is **0 on 28 of 29 bench reps**, against deadlift's
 4 of 6, 2 of 6 and 1 of 3, which is the sharper contrast: the fore-aft
 instability P2 reports below is a deadlift phenomenon on the evidence held, not
 a pipeline-wide one. The obvious suspect is the floor impact, which P6 already
 locates as where three quarters of the deadlift per-rep error enters and which
 bench does not have. *Read the bench numbers through
-`metrics.bench_sync`'s docstring first* — hand seed, ~4% scale, 3 of 7 captures,
-and a sync calibrated on deadlift rather than verified on bench.
+`metrics.bench_sync`'s docstring first* — hand seed, ~4% scale on every bench
+distance, and a sync calibrated on deadlift rather than verified on bench.
+
+*C8 originally reported this on three captures, because its peak-height
+threshold refused the other four. C10 showed that threshold was measuring what
+fraction of each clip contained lifting — bench clips are 20–30% reps against
+deadlift's 50–56% — rather than how well the signals agreed. All seven sync now,
+and the four it had been refusing are the better half.*
 
 **A caution about this whole metric, found while checking C8 and applying to
 every number in P2.** `vs_truth`'s horizontal rms is insensitive to gross time

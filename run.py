@@ -391,8 +391,14 @@ def draw_scorecard() -> int:
                 print(f"{stem}: no video truth — {e}")
                 continue
             m = truths[label]
+            # beats_null is printed alongside, never behind a flag: below 1.0
+            # the reconstruction is worse than drawing no fore-aft motion at
+            # all, which is true of six of the ten captures with video and of
+            # every deadlift. See metrics.vs_truth.
+            verdict = "beats" if m["beats_null"] >= 1.0 else "LOSES TO"
             print(f"{stem}: horizontal {m['pipeline_h_rms']:.2f} cm rms, "
                   f"vertical {m['pipeline_v_rms']:.2f} cm rms, "
+                  f"{verdict} the flat line ({m['beats_null']:.2f}x), "
                   f"{len(m['video_rom_flags'])} truth rep(s) flagged")
 
     if not results:
