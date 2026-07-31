@@ -507,6 +507,77 @@ def plot_momentum_closure(groups: dict, traces: dict):
     return fig
 
 
+def plot_splice_rejected(closure: dict, h_rms: dict, rom_trace: tuple,
+                         rom_bound: float):
+    """B6 — the impact splice does what it claims and loses anyway.
+
+    `closure` maps stem -> (shipping dv list, spliced dv list), m/s.
+    `h_rms` maps stem -> {variant label: horizontal rms in cm}.
+    `rom_trace` is (stem, shipping per-rep vertical, spliced per-rep vertical).
+    `rom_bound` is the deadlift ROM ceiling in cm.
+
+    Three panels because the result needs all three to be honest: the splice
+    works, it does not help the axis the spec is about, and it breaks a bound
+    it was never aimed at. Any one of them alone misrepresents it.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
+
+    # 1 --- it does exactly what it was built to do ---------------------------
+    ax = axes[0]
+    for i, (stem, (ship, spl)) in enumerate(closure.items()):
+        ax.scatter(np.full(len(ship), i - 0.16), ship, s=40, color="#c0392b",
+                   label="shipping" if i == 0 else None, edgecolor="none")
+        ax.scatter(np.full(len(spl), i + 0.16), spl, s=40, color="#2ca25f",
+                   label="with the splice" if i == 0 else None, edgecolor="none")
+    ax.axhline(0.0, color="0.3", lw=1.2)
+    ax.set_xticks(range(len(closure)))
+    ax.set_xticklabels([s.replace("_", "\n", 1) for s in closure], fontsize=7)
+    ax.set_ylabel("vertical impulse across a landing, m/s")
+    ax.set_title("It works: the momentum deficit is gone", fontsize=10, loc="left")
+    ax.legend(fontsize=8)
+
+    # 2 --- and it does not help the axis the spec is about -------------------
+    ax = axes[1]
+    labels = list(next(iter(h_rms.values())))
+    x = np.arange(len(h_rms))
+    w = 0.8 / len(labels)
+    for j, lab in enumerate(labels):
+        ax.bar(x + j * w - 0.4 + w / 2, [h_rms[s][lab] for s in h_rms], w,
+               label=lab, color=["0.35", "#2c7fb8", "#e08214", "#8073ac"][j])
+    ax.axhline(1.0, color="crimson", ls="--", lw=1.2)
+    ax.text(len(h_rms) - 0.5, 1.15, "the 1 cm spec", ha="right", fontsize=8,
+            color="crimson")
+    ax.set_yscale("log")
+    ax.set_xticks(x)
+    ax.set_xticklabels([s.replace("_", "\n", 1) for s in h_rms], fontsize=7)
+    ax.set_ylabel("horizontal rms vs video, cm")
+    ax.set_title("No variant beats shipping. Vertical-only is identical.",
+                 fontsize=10, loc="left")
+    ax.legend(fontsize=7)
+
+    # 3 --- and it breaks a bound it was not aimed at -------------------------
+    ax = axes[2]
+    stem, ship_reps, spl_reps = rom_trace
+    for i, rep in enumerate(ship_reps):
+        ax.plot(np.linspace(0, 1, len(rep)), rep - rep.min(), color="0.45",
+                lw=1.0, label="shipping" if i == 0 else None)
+    for i, rep in enumerate(spl_reps):
+        ax.plot(np.linspace(0, 1, len(rep)), rep - rep.min(), color="#c0392b",
+                lw=1.2, label="with the splice" if i == 0 else None)
+    ax.axhline(rom_bound, color="crimson", ls="--", lw=1.4)
+    ax.text(0.02, rom_bound + 1.5, f"{rom_bound:.0f} cm — what this lifter can "
+            f"actually move a bar through", fontsize=8, color="crimson")
+    ax.set_xlabel("normalised time through the rep")
+    ax.set_ylabel("vertical travel, cm")
+    ax.set_title(f"Why it still loses: ~1/2*e*T of position injected at each "
+                 f"landing\n({stem}, and a linear detrend cannot remove a "
+                 f"quadratic)", fontsize=9, loc="left")
+    ax.legend(fontsize=8)
+
+    fig.tight_layout()
+    return fig
+
+
 def plot_bias_models(variants: dict, closure: dict, traces: dict):
     """B6 — why every constant-bias correction makes it worse.
 

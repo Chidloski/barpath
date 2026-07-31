@@ -1916,6 +1916,118 @@ def test_the_impact_amplitude_is_right_and_its_net_is_not(video, csv, reps):
 
 # ------------------------------------------------------------------- B6 --
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_the_impact_splice_fixes_the_closure_and_loses_anyway(video, csv, reps):
+    """B6's splice, measured and rejected. The second negative result here.
+
+    The idea was sound and C11 aimed it precisely: the vertical deficit is
+    injected at the landing, the bar's velocity there is zero and externally
+    validated, so stop integrating THROUGH the impact and splice across it.
+    Implemented inline rather than shipped, exactly as the constant-bias family
+    below is, so the measurement stays executable without the code living in
+    `correct.py`.
+
+    **It does what it was built to do.** Vertical momentum closure across a
+    landing goes from -0.778 / -0.522 / -0.339 m/s to -0.049 / -0.004 / -0.019.
+    The defect C6 found and C11 localised is gone.
+
+    **And it loses on every variant tried:**
+
+        splice     detrend    horizontal rms, cm
+        none       xyz        5.05 /  9.19 / 15.44   <- shipping
+        z only     xyz        5.05 /  9.19 / 15.44   <- bit-identical
+        xyz        xyz       10.09 /  5.90 / 14.61
+        xyz        z only    28.51 / 18.00 / 61.36
+
+    Three things that rules out, and the third is the one worth carrying.
+
+    *A vertical-only splice cannot help the spec.* `pipeline_h_rms` reads
+    columns 0 and 1; a correction confined to column 2 leaves it bit-identical.
+    Measured, not argued — and it means no vertical fix can ever satisfy a
+    horizontal decision rule.
+
+    *An all-axis splice over-corrects.* Step 7's detrend already removes the
+    horizontal drift, and doing it twice is worse on the capture with the best
+    baseline (5.05 -> 10.09).
+
+    *And the splice cannot REPLACE the detrend either*, which was the last live
+    hypothesis. Row 4 is the test: splice everything, then close vertical only.
+    It gives 28.51 / 18.00 / 61.36 against the detrend's 5.05 / 9.19 / 15.44.
+    The detrend constrains position across a whole rep; the splice constrains
+    velocity at one instant per rep. **A sparse true constraint does not
+    substitute for a dense false one** — which is B7's conclusion reached from
+    the opposite direction, and now measured on the vertical too.
+
+    It also breaks a bound it was never aimed at: per-rep vertical ROM goes to
+    82.6 / 65.4 / 64.1 cm against a 61 cm ceiling, because removing an error `e`
+    over a window `T` injects about `e*T/2` of position and step 7's LINEAR
+    detrend cannot remove a quadratic. See `analysis/32`.
+
+    Asserts the negative result. If a future change makes the splice win, this
+    fails and should be deleted in favour of shipping it.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from scipy.integrate import cumulative_trapezoid
+    from src import correct, metrics, pipeline, segment, truth
+
+    result = pipeline.run(RAW / f"{csv}.csv")
+    log = result["log"]
+    t = log["t"]
+    impacts = segment.impact_anchors(log)
+    rest = segment.rest_instants(log, impacts)
+
+    # Only rest instants inside the rep span. `impact_anchors` also fires on the
+    # re-rack of bench_90x4_1/_3 and squat_140x5, all after the last rep ends.
+    lo, hi = result["bounds"][0][0], result["bounds"][-1][1] - 1
+    rest = [k for k in rest if lo <= k <= hi]
+    if not rest:
+        pytest.skip(f"{csv}: no validated rest instant inside the rep span")
+
+    def spliced(axes):
+        v = result["velocity"].copy()
+        keep = np.zeros(v.shape[1])
+        keep[list(axes)] = 1.0
+        for r in rest:
+            k = max([i for i in impacts if i < r], default=None)
+            if k is None:
+                continue
+            e = v[r] * keep
+            w = np.zeros(len(v))
+            w[k:r + 1] = (t[k:r + 1] - t[k]) / (t[r] - t[k])
+            w[r + 1:] = 1.0
+            v = v - w[:, None] * e
+        return v
+
+    def score(velocity, detrend_axes):
+        pos = cumulative_trapezoid(velocity, np.cumsum(log["dt"]), axis=0,
+                                   initial=0)
+        reps = correct.detrend_set(pos, result["bounds"], t, axes=detrend_axes)
+        m = metrics.vs_truth({**result, "reps": reps, "velocity": velocity},
+                             VIDEO / f"{video}.mov")
+        roms = [float(p[:, 2].max() - p[:, 2].min()) * 100 for p in reps]
+        return m["pipeline_h_rms"], max(roms)
+
+    shipped = result["vs_truth"]["pipeline_h_rms"] if "vs_truth" in result else None
+    if shipped is None:
+        shipped = score(result["velocity"], (0, 1, 2))[0]
+
+    # A vertical-only splice cannot move a horizontal metric. Bit-identical.
+    assert score(spliced((2,)), (0, 1, 2))[0] == pytest.approx(shipped, abs=1e-9)
+
+    # Every variant that does move it, moves it the wrong way overall.
+    all_axis, rom_all = score(spliced((0, 1, 2)), (0, 1, 2))
+    replace, _ = score(spliced((0, 1, 2)), (2,))
+    assert replace > shipped * 1.5, (
+        f"{csv}: splice-instead-of-detrend gives {replace:.2f} cm against "
+        f"{shipped:.2f}. If it now wins, B6 should ship and this test go")
+
+    # And the position artefact breaks the physical ROM ceiling.
+    assert rom_all > truth.VERTICAL_ROM_M["deadlift"][1] * 100, (
+        f"{csv}: spliced ROM {rom_all:.1f} cm no longer exceeds the bound, so "
+        f"the e*T/2 artefact is gone and the splice deserves re-measuring")
+
+
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
 def test_constant_bias_corrections_are_worse_than_none(video, csv, reps):
     """B6's first candidate, measured and rejected. Asserts a negative result.
 

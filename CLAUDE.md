@@ -376,6 +376,16 @@ will not by itself bring the pipeline near spec. The bulk of the error is
 upstream, in the acceleration that reaches the integrator. Fix the error, not
 the thing that was supposed to hide it.
 
+**Reordered 2026-07-31: B3 now comes first, and not for its own 2–4 cm.** B6's
+splice was the attempt to fix the error upstream and it was rejected — see P6.
+Two of its findings bear on B3 rather than on B6. The detrend is doing *more*
+work than "hiding" suggests: replacing it with the splice's true constraint
+costs 3–5×, so it is load-bearing as well as wrong, which B7 also found. And
+because it is **linear**, it cannot absorb a correction localised in time — the
+splice's `e·T/2` position artefact pushed vertical ROM to 82.6 cm against a
+61 cm ceiling. So B3 is not just a correctness fix now; it is the thing that
+unblocks every localised correction after it.
+
 **P6 — The floor impact is trustworthy, and unused.** Closed as a worry and
 opened as an opportunity, by B5.
 
@@ -388,9 +398,25 @@ the event spanning 2–3 samples: the IMU/video velocity-step ratio is median
 So the impact is the one place in this pipeline where the IMU demonstrably
 agrees with external truth — 13.5 ms on timing, ~1.0 on the velocity step — and
 the pipeline spends it entirely on segmentation. The bar's state there is
-*known*: velocity zero, height at plate radius. Using it as an anchor is B7,
-and it is the only externally true constraint available; step 7's closure is an
-assumption by comparison.
+*known*: velocity zero, height at plate radius. It is the only externally true
+constraint available; step 7's closure is an assumption by comparison.
+
+**Spending it has now been tried twice and failed twice, and the second failure
+explains the first.** B7 anchored position at the impacts and lost. B6's splice
+removed the velocity error across the impact window and lost too — even though
+it *worked*, taking the vertical momentum deficit to −0.05 m/s. The common
+reason: **the impact is one instant per rep, and the detrend it would replace
+constrains position across the whole rep. A sparse true constraint does not
+substitute for a dense false one.** Row 4 of B6's table is the direct test —
+splice everything, close vertical only — and it gives 28.5/18.0/61.4 cm against
+shipping's 5.05/9.19/15.44.
+
+And any correction localised in time now has a second obstacle to clear:
+removing an error `e` over a window `T` injects about `e·T/2` of position, and
+step 7's detrend is **linear**, so it cannot remove a quadratic. The splice
+pushed per-rep vertical ROM to 82.6 cm against a 61 cm physical ceiling. **B6 is
+blocked on B3.** *Evidence:* `analysis/32`, `python run.py --splice`,
+`tests/test_real_data.py`.
 
 One capture dissents. `deadlift_180x3` over-reads its impact step by 58–72%,
 alone among the three, and is also the worst by horizontal error. Heaviest bar,

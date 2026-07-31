@@ -638,6 +638,12 @@ impact using the known rest state on both sides instead of through it. Bench and
 squat need neither — they have no impact, and their per-rep residual is already
 at the sensor's noise floor.
 
+*The second candidate was built on 2026-07-31 and rejected — see the B6 splice
+section at the end of this file. It removed the vertical deficit completely and
+still lost, and its failure applies to the first candidate too: any correction
+localised in time injects `e·T/2` of position that step 7's LINEAR detrend
+cannot remove. B3 has to come first.*
+
 ## Where the pipeline stands (2026-07-30)
 - `21_pipeline_stages.png` — regenerated on the current pipeline. `run.py --stages`.
 - `26_pipeline_scorecard.png` — how well it performs, per lift. `run.py --scorecard`.
@@ -1029,3 +1035,56 @@ the gate asserts the amplitude-to-net separation rather than either alone.
 **What it closes.** The integrator, the attitude and the calibration are not the
 problem on the vertical: 52 intervals of loaded lifting close at the sensor's
 own noise floor.
+
+## B6 — the impact splice, measured and rejected (2026-07-31)
+
+- `32_b6_splice_rejected.png` — three panels: it works, it does not help, and
+  it breaks a bound it was not aimed at. `python run.py --splice`.
+
+The last item in B6's own plan, aimed by C11: the vertical deficit is injected
+at the landing, the bar's velocity there is zero and externally validated, so
+stop integrating *through* the impact and splice across it. Built, measured
+against a rule fixed in advance, and rejected. The splice lives in `run.py` and
+in the test that pins the result, deliberately not in `correct.py` — B7's
+precedent is to delete rather than leave a flag.
+
+**It does exactly what it was built to do.** Vertical momentum closure across a
+landing goes from −0.778 / −0.522 / −0.339 to **−0.049 / −0.004 / −0.019 m/s**.
+
+**And it loses on every variant tried:**
+
+| splice | detrend | horizontal rms, cm |
+|---|---|---|
+| none | xyz | **5.05 / 9.19 / 15.44** ← shipping |
+| z only | xyz | 5.05 / 9.19 / 15.44 ← bit-identical |
+| xyz | xyz | 10.09 / 5.90 / 14.61 |
+| xyz | z only | 28.51 / 18.00 / 61.36 |
+
+**Row 2 is a fact about metrics, not about the splice, and it is worth
+internalising.** `pipeline_h_rms` reads columns 0 and 1. A correction confined
+to column 2 leaves it bit-identical to twelve decimal places. So **no
+vertical-only fix can ever satisfy a horizontal decision rule** — which means
+the rule set for this experiment was partly mis-specified, and the honest
+reading is that the splice was never able to pass it.
+
+**Row 4 is the real test and the real result.** It is the last live hypothesis:
+that the splice should *replace* the horizontal detrend rather than stack on it,
+since B7 showed the detrend is knowingly false. Splice all three axes, then
+close vertical only. It gives 28.51 / 18.00 / 61.36 against shipping's
+5.05 / 9.19 / 15.44 — 3–5× worse, though far better than the 495 / 522 / 337 of
+closing vertical-only with nothing in its place.
+
+**The reason generalises past this attempt.** The detrend constrains position
+across a whole rep; the splice constrains velocity at one instant per rep. **A
+sparse true constraint does not substitute for a dense false one.** That is
+exactly B7's "a true constraint in the wrong place", arrived at from the
+opposite direction and now measured on the vertical as well.
+
+**The obstacle that changes the plan.** The splice breaks a bound it was never
+aimed at: per-rep vertical ROM reaches **82.6 / 65.4 / 64.1 cm against a 61 cm
+ceiling**. Removing an error `e` over a window `T` injects about `e·T/2` of
+position — 15–23 cm here — and step 7's detrend is **linear**, so a quadratic
+bump survives it. Panel 3 shows it directly. Every correction localised in time
+inherits this, including the time-varying models B6 has left. **B6 is blocked on
+B3**, and B3's value is no longer its own 2–4 cm but that it unblocks
+everything after it.

@@ -10,6 +10,7 @@
     python run.py --anchors            # C6: attitude before and after a set
     python run.py --bias               # B6: constant-bias corrections vs the video
     python run.py --closure            # C11: vertical momentum, bench vs deadlift
+    python run.py --splice             # B6: the impact splice, measured and rejected
     python run.py --scorecard          # how well the pipeline performs, per lift
     python run.py --paths              # step 9: the bar path itself
 
@@ -44,6 +45,12 @@ between two moments the video says the bar was still, which must be zero. Bench
 closes at the sensor's noise floor and deadlift does not, and the difference is
 the floor impact. Slow — it decodes every bench and deadlift clip. Squat is
 excluded because its footage does not track.
+
+--splice writes analysis/32_b6_splice_rejected.png: B6's impact splice, measured
+and rejected. It removes the vertical momentum deficit completely and still
+loses on horizontal, which is the axis the spec is about. The splice lives here
+and in the test that pins the result, deliberately not in `correct.py` — it was
+rejected, and B7's precedent is to delete rather than leave a flag behind.
 """
 
 from __future__ import annotations
@@ -290,6 +297,117 @@ def draw_anchors() -> int:
     return 0
 
 
+DL_SPLICE = [("deadlift_155x6_1_20260728_122828", "deadlift_155x6_1_20260728"),
+             ("deadlift_155x6_2_20260728_123603", "deadlift_155x6_2_20260728"),
+             ("deadlift_180x3_20260728_121739", "deadlift_180x3_20260728")]
+
+
+def draw_splice() -> int:
+    """B6 — the impact splice: it fixes the closure and loses anyway.
+
+    Regenerates analysis/32. The splice is implemented here and in the test
+    that pins the result, deliberately not in `correct.py` — it was measured
+    and rejected, and B7's precedent is to delete rather than leave a flag.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from scipy.integrate import cumulative_trapezoid
+    from scipy.signal import savgol_filter
+    from src import correct, metrics, plot, segment, truth
+
+    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
+
+    # One decode per clip; vs_truth is called four times per capture.
+    cache, original = {}, truth.bar_path
+
+    def cached(v, *a, **k):
+        cache.setdefault(str(v), original(v, *a, **k))
+        return cache[str(v)]
+
+    truth.bar_path = metrics.truth.bar_path = cached
+
+    def splice(velocity, t, rest, impacts, axes):
+        v = velocity.copy()
+        keep = np.zeros(v.shape[1])
+        keep[list(axes)] = 1.0
+        for r in rest:
+            k = max([i for i in impacts if i < r], default=None)
+            if k is None:
+                continue
+            e = v[r] * keep
+            w = np.zeros(len(v))
+            w[k:r + 1] = (t[k:r + 1] - t[k]) / (t[r] - t[k])
+            w[r + 1:] = 1.0
+            v = v - w[:, None] * e
+        return v
+
+    def closure(result, velocity, video):
+        t_imu, _, height, _ = metrics._video_on_imu_clock(result, video)
+        v_vid = np.gradient(savgol_filter(height, 9, 3), t_imu)
+        log, t = result["log"], result["log"]["t"]
+        first, last = t[result["bounds"][0][0]], t[result["bounds"][-1][1] - 1]
+        mids = metrics._video_zero_dwells(t_imu, v_vid, 0.10, 0.20)
+        mids = mids[(mids >= first - 0.5) & (mids <= last + 0.5)]
+        idx = [int(np.searchsorted(t, m)) for m in mids]
+        impacts = segment.impact_anchors(log)
+        return [velocity[b, 2] - velocity[a, 2]
+                for a, b in zip(idx, idx[1:])
+                if any(a <= k < b for k in impacts)]
+
+    variants = [("shipping", None, (0, 1, 2)),
+                ("splice z", (2,), (0, 1, 2)),
+                ("splice xyz", (0, 1, 2), (0, 1, 2)),
+                ("splice xyz\n+ z-only detrend", (0, 1, 2), (2,))]
+
+    closures, h_rms, rom_trace = {}, {}, None
+    for csv, video in DL_SPLICE:
+        path, clip = raw / f"{csv}.csv", vid / f"{video}.mov"
+        if not (path.exists() and clip.exists()):
+            print(f"{csv} or {video} not present — skipping")
+            continue
+        result = pipeline.run(path)
+        log, t = result["log"], result["log"]["t"]
+        impacts = segment.impact_anchors(log)
+        lo, hi = result["bounds"][0][0], result["bounds"][-1][1] - 1
+        rest = [k for k in segment.rest_instants(log, impacts) if lo <= k <= hi]
+        stem = csv.split("_2026")[0]
+
+        closures[stem] = (closure(result, result["velocity"], clip),
+                          closure(result, splice(result["velocity"], t, rest,
+                                                 impacts, (2,)), clip))
+        row = {}
+        for label, axes, det in variants:
+            v = (result["velocity"] if axes is None
+                 else splice(result["velocity"], t, rest, impacts, axes))
+            pos = cumulative_trapezoid(v, np.cumsum(log["dt"]), axis=0, initial=0)
+            reps = correct.detrend_set(pos, result["bounds"], t, axes=det)
+            row[label] = metrics.vs_truth(
+                {**result, "reps": reps, "velocity": v}, clip)["pipeline_h_rms"]
+        h_rms[stem] = row
+        print(f"{stem:22s} closure {np.median(closures[stem][0]):+.3f} -> "
+              f"{np.median(closures[stem][1]):+.3f} m/s   "
+              + "  ".join(f"{k.splitlines()[0]} {v:.2f}" for k, v in row.items()))
+
+        if rom_trace is None:
+            v = splice(result["velocity"], t, rest, impacts, (2,))
+            pos = cumulative_trapezoid(v, np.cumsum(log["dt"]), axis=0, initial=0)
+            sp = correct.detrend_set(pos, result["bounds"], t)
+            rom_trace = (stem, [p[:, 2] * 100 for p in result["reps"]],
+                         [p[:, 2] * 100 for p in sp])
+
+    if not closures:
+        print("no deadlift capture with video to measure the splice on")
+        return 1
+
+    out = ROOT / "analysis" / "32_b6_splice_rejected.png"
+    plot.plot_splice_rejected(closures, h_rms, rom_trace,
+                              truth.VERTICAL_ROM_M["deadlift"][1] * 100
+                              ).savefig(out, dpi=105)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 def draw_closure() -> int:
     """C11 — vertical momentum closure, bench against deadlift."""
     import matplotlib
@@ -513,6 +631,8 @@ def main(argv: list[str]) -> int:
         return draw_bias_models()
     if "--closure" in argv:
         return draw_closure()
+    if "--splice" in argv:
+        return draw_splice()
     if "--scorecard" in argv:
         return draw_scorecard()
 

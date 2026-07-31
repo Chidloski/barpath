@@ -192,8 +192,13 @@ B3 from "remove a false assumption" to "find something that can replace it".
 — 13 of 15 impacts within 0.05 m/s of true rest, against 0.4–1.0 m/s at
 `impact_anchors`, which marks the spike ONSET rather than rest. The two it
 rejects are the final impact of a set, where the lifter releases the bar; the
-`max_accel` gate drops them rather than returning them wrong. B6 will want
-this.
+`max_accel` gate drops them rather than returning them wrong.
+
+*B6 did want it, used it for the splice, and the splice lost too — for the same
+reason B7's anchor did. The detector still survives both: it is what
+`metrics.momentum_closure` measures against, and that is now the sharpest
+diagnostic in the project. The DETECTOR was never the problem; what fails is
+using one instant per rep to replace a constraint that spans the whole rep.*
 
 **A claimed win, since retracted.** This entry originally recorded that fitting
 `detrend_rep`'s line through a 5-sample median took horizontal from 5.1/9.2/15.4
@@ -629,7 +634,7 @@ hold, not the end of lifting.
 the right count, duration and amplitude, so none of the above could see phase.
 *C9 then measured it: bench is in phase, 15 of 15. Squat is still unverified.*
 
-### B6 — attack the acceleration error itself  ← next, and C6 aimed it
+### B6 — attack the acceleration error itself  ← splice rejected; blocked on B3
 A3 puts the error upstream of the detrend and gives it a shape: a smooth arch
 at rep frequency, 5–15 cm of horizontal per rep. The metric B6 was waiting on
 now exists, so this is unblocked.
@@ -665,12 +670,13 @@ validated rest-to-rest interval is smooth and physical through the pull and the
 descent, then rings for several hundred ms at the floor impact and settles
 0.4–1.5 m/s short of zero. See `analysis/25`.
 
-**What is left, in order.**
+**What is left — and item 1 has now been measured and rejected.**
 
-1. **Integrate across the impact, not through it.** The state on both sides is
-   known and validated: `segment.rest_instants` lands where the video says
-   |v| < 0.10 m/s. Splice rather than model.
-2. Time-varying correction only if that fails.
+1. ~~**Integrate across the impact, not through it.**~~ **REJECTED 2026-07-31.**
+   Built, measured against a rule fixed in advance, and it lost. See *The
+   splice, measured and rejected* below.
+2. Time-varying correction. Now the only survivor, and see the caution below —
+   it inherits the same obstacle.
 
 *Item 1 used to be "#14 first, not as a side quest", on the strap-resonance
 detector. That is withdrawn: #14's detector was REMOVED as undetectable at
@@ -704,6 +710,52 @@ impacts: amplitude 1.10, net 0.41. The spike's size is captured and where the
 velocity settles afterwards is not — so the splice must preserve the amplitude
 B5 measured while correcting the settling point. `analysis/31`,
 `python run.py --closure`, `metrics.momentum_closure`.
+
+**The splice, measured and rejected (2026-07-31).** `analysis/32`,
+`python run.py --splice`, pinned in
+`test_the_impact_splice_fixes_the_closure_and_loses_anyway`.
+
+At each validated rest instant the bar's velocity is zero, so the accumulated
+velocity error there is known exactly. The splice removes it with a ramp across
+the impact window — the ringing window C11 identified — rather than spreading it
+over the rep as the constant-bias family did.
+
+**It does exactly what it was built to do.** Vertical momentum closure across a
+landing: −0.778 / −0.522 / −0.339 → **−0.049 / −0.004 / −0.019 m/s**. The defect
+C6 found and C11 localised is gone.
+
+**And it loses on every variant:**
+
+| splice | detrend | horizontal rms, cm |
+|---|---|---|
+| none | xyz | **5.05 / 9.19 / 15.44** ← shipping |
+| z only | xyz | 5.05 / 9.19 / 15.44 ← bit-identical |
+| xyz | xyz | 10.09 / 5.90 / 14.61 |
+| xyz | z only | 28.51 / 18.00 / 61.36 |
+
+Three things that rules out. *A vertical-only splice cannot help the spec* —
+`pipeline_h_rms` reads columns 0 and 1, so a correction confined to column 2
+leaves it bit-identical. Measured, not argued, and it means **no vertical fix
+can ever satisfy a horizontal decision rule.** *An all-axis splice
+over-corrects*, because step 7 already removes that horizontal drift and doing
+it twice is worse on the capture with the best baseline. *And the splice cannot
+replace the detrend either*, which was the last live hypothesis — row 4 is that
+test and it is 3–5× worse.
+
+**The reason, and it generalises.** The detrend constrains position across a
+whole rep; the splice constrains velocity at one instant per rep. **A sparse
+true constraint does not substitute for a dense false one.** That is B7's
+conclusion reached from the opposite direction — B7 put it as "a true constraint
+in the wrong place" — and it now holds on the vertical as well as the horizontal.
+
+**A second obstacle, which is the part that changes the plan.** The splice
+breaks a bound it was never aimed at: per-rep vertical ROM goes to
+**82.6 / 65.4 / 64.1 cm against a 61 cm ceiling**. Removing an error `e` over a
+window `T` injects about `e·T/2` of position — 15–23 cm here — and step 7's
+detrend is **linear**, so it cannot remove a quadratic. Any correction localised
+in time hits this, including the time-varying models left in item 2. **B6 is
+blocked on B3**: the detrend has to be able to absorb a local correction before
+a local correction can be worth making.
 
 Bench and squat need none of this — no impact, and both a per-rep residual and
 now a vertical closure at the sensor's noise floor. Their problem, if they have

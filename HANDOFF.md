@@ -71,29 +71,38 @@ held out. Worth fixing the discipline before adding more constants.
 
 ## Pre-gym work, in order
 
-### 2. B6's splice — integrate across the impact, not through it  ← NOW FIRST
+### 2. ~~B6's splice~~ — DONE, and rejected on measurement
 
-The only surviving item in B6's own plan, and C11 has now aimed it precisely.
-*(The stale "#14 first, not as a side quest" sentence in `TASKS.md` B6 has been
-fixed — #14's detector was removed as undetectable at 100 Hz.)*
+Built, measured against a rule fixed in advance, rejected. `analysis/32`,
+`python run.py --splice`, TASKS.md B6. It removes the vertical momentum deficit
+completely (−0.778 → −0.049 m/s) and loses on horizontal in every variant,
+including the one where it *replaces* the detrend rather than stacking on it.
 
-The state on both sides of the impact is known and validated at |v| < 0.10 m/s.
-The constant-bias family is arithmetically ruled out — a constant cannot
-represent an impulse; see the table in B6 and `analysis/25`. Splice, do not
-model.
+**Two findings from it that change what comes next**, both in TASKS.md B6:
 
-**What C11 added, and it is a constraint on the fix, not just motivation.** The
-splice must **preserve the impact's amplitude while correcting where the
-velocity settles.** B5's step ratio of 1.04 is min-to-max amplitude and it is
-right; the net across the same 15 impacts is 0.41. A fix that flattens the ring
-will destroy the amplitude B5 measured and score worse — check both, and
-`test_the_impact_amplitude_is_right_and_its_net_is_not` asserts the separation
-so it will tell you.
+- **No vertical-only fix can satisfy a horizontal decision rule.**
+  `pipeline_h_rms` reads columns 0 and 1, so a column-2 correction is
+  bit-identical. Obvious in hindsight; it was not obvious when the rule was
+  written, and it made the rule partly mis-specified.
+- **Step 7's detrend is linear and cannot absorb a correction localised in
+  time.** Removing an error `e` over a window `T` injects `e·T/2` of position —
+  enough to push vertical ROM to 82.6 cm against a 61 cm physical ceiling.
+  **Every remaining B6 idea inherits this, so B3 now comes first.**
 
-Also: C11 rules out the integrator, the attitude and the calibration as
-explanations on the vertical, since 52 intervals of loaded lifting close at the
-sensor's own noise floor. The bug is local to the landing. Do not go looking
-upstream.
+### 3. B3 — rework the per-rep detrend  ← NOW FIRST
+
+Promoted from "explicitly NOT pre-gym" by the splice's rejection. Its value is
+no longer its own 2–4 cm; it is that **it unblocks every localised correction
+after it**, B6's included.
+
+Two constraints on it, both measured rather than argued:
+
+- It cannot simply be dropped. B7: closing vertical only, with nothing in its
+  place, gives 495/522/337 cm. The splice is not a good enough replacement
+  either (28.5/18.0/61.4). The detrend is knowingly wrong *and* load-bearing.
+- Whatever replaces it must be able to absorb a quadratic, or the localised
+  corrections it exists to unblock will break the ROM bound exactly as the
+  splice did.
 
 ### 4. B4 — the axis sign
 
@@ -117,9 +126,10 @@ out, and the honest statement is that nothing here is.
 
 ## Explicitly NOT pre-gym
 
-- **B3 (rework the per-rep detrend).** Worth 2-4 cm, measurable now, but
-  CLAUDE.md is right that it is "the thing that was supposed to hide" the error.
-  Do it after B6 so it fixes a premise rather than compensating for one.
+- ~~**B3 (rework the per-rep detrend).**~~ **Moved to item 3 above and promoted
+  to first.** The reasoning here was "do it after B6 so it fixes a premise
+  rather than compensating for one". B6's splice was then measured and rejected,
+  and the reason it lost is the detrend — so the order is the other way round.
 - **B2 / step 6.** Blocked on taping `d`. Already proven not identifiable from
   video.
 - **Anything squat.** Two of four 2026-07-30 captures do not track; `vs_truth`

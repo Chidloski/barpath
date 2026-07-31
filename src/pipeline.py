@@ -126,11 +126,24 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None,
     result["velocity"] = velocity
     result["position"] = position
 
-    # B7 tried anchoring velocity and vertical position to the floor impacts
-    # here, and it lost: horizontal 5.1/9.2/15.4 -> 10.4/7.4/10.2 cm and
-    # vertical 5.2/6.8/4.9 -> 15.3/18.0/4.5. `segment.rest_instants` survives
-    # because it is validated and B6 will want it; the correction does not.
-    # See TASKS.md B7 and analysis/22.
+    # Two corrections have been tried here and both lost, for the same reason.
+    #
+    # B7 anchored velocity and vertical position to the floor impacts:
+    # horizontal 5.1/9.2/15.4 -> 10.4/7.4/10.2 cm, vertical -> 15.3/18.0/4.5.
+    # B6's splice removed the velocity error across the impact window instead,
+    # and it WORKED on what it targeted — vertical momentum closure -0.778 ->
+    # -0.049 m/s — while leaving horizontal bit-identical (a column-2 correction
+    # cannot move a metric that reads columns 0 and 1) and pushing per-rep
+    # vertical ROM to 82.6 cm against a 61 cm ceiling.
+    #
+    # The shared reason: the impact is ONE INSTANT PER REP and step 7's detrend
+    # constrains position across the whole rep. A sparse true constraint does
+    # not substitute for a dense false one — measured directly, splicing all
+    # three axes and then closing vertical only gives 28.5/18.0/61.4 cm.
+    #
+    # `segment.rest_instants` survives both because it is validated against
+    # video and `metrics.momentum_closure` is built on the same idea. Neither
+    # correction does. See TASKS.md B7 and B6, analysis/22 and analysis/32.
 
     # 5 --- segment ---------------------------------------------------------
     impacts = segment.impact_anchors(log)
