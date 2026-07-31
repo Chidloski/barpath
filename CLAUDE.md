@@ -263,7 +263,42 @@ error does not. And **"vertical comes out fine" is false**; vertical was never
 measured per rep before A3 and it misses its own looser spec on all three
 captures.
 
-**READ THIS FIRST — 2026-07-31 (C10). Against the null model, most of the
+**READ THIS FIRST, BEFORE THE NULL MODEL — 2026-07-31 (C12). The deadlift
+referee is lost at lockout, and every deadlift number below is measured through
+it.** Spotted by the owner from `analysis/33`: the video traces a flat ~10 cm
+fore-aft line at the top of the pull, which is against the physics of the lift —
+the bar is held against the thighs at lockout and is very nearly still. It is
+the tracker moving, not the bar.
+
+Measured, and it is total and perfectly stratified by height. Frames in the top
+10 cm of travel scoring below `truth.GOOD_SCORE`: **166/166, 149/149, 146/150.**
+Frames in the bottom 10 cm: **1/743, 0/780, 0/588.** Median NCC over the top 15%
+of travel is **0.371 / 0.395 / 0.440** against whole-clip medians of
+0.830 / 0.846 / 0.937. Bench is the control and holds up at 0.563–0.850.
+
+**`truth.validate` could never see it**, because it checked the whole-clip
+median and lockout is only 8–15% of a clip. That is this project's recurring
+failure shape once more: an aggregate that passes while the thing fails exactly
+where it matters. `truth.top_of_travel_score` now measures it and `vs_truth`
+reports `video_top_ncc`.
+
+**What it costs is not what you would guess.** The invented fore-aft motion goes
+into `null_h_rms`, which is what `beats_null` divides by — so the referee's
+failure was *flattering* the pipeline. Restricted to frames scoring above
+GOOD_SCORE (56–67% of each rep):
+
+    capture             h rms           null           beats_null
+    deadlift_155x6_1    5.05 -> 4.00    3.55 -> 2.36   0.70 -> 0.59
+    deadlift_155x6_2    9.19 -> 9.76    3.23 -> 2.03   0.35 -> 0.21
+    deadlift_180x3     15.44 -> 16.91   1.96 -> 1.18   0.13 -> 0.07
+
+So the horizontal MAGNITUDES below stand — P2 is still 5–15× out — but **the
+deadlift `beats_null` figures are too generous by 15–45%.** Not the template
+size, which was the first guess: shrinking `half` raises NCC to 0.69 and makes
+the track worse, inflating ROM from 60.5 to 74.1 cm. The fix is a wider shot,
+not code. *Evidence:* `analysis/34`, `tests/test_video_truth.py`.
+
+**READ THIS SECOND — 2026-07-31 (C10). Against the null model, most of the
 pipeline is worse than useless on the horizontal.** `metrics.vs_truth` now
 reports `null_h_rms`: what you score by drawing **no fore-aft motion at all**, a
 straight vertical line. `beats_null` is that over the pipeline's error.
@@ -329,6 +364,17 @@ the three captures found an identical plate radius. Plate diameter, radius
 quantisation and tracker drift were each tested and each ruled out; what is left
 is that the scale is calibrated on a plate resting on the floor and applied to
 travel reaching the top of frame.
+
+**That last guess was right, and C12 gives it a mechanism (2026-07-31.)** The
+tracker does not merely apply a floor-calibrated scale to the top of frame — it
+*loses the plate* there, on 97–100% of the frames in the top 10 cm of travel.
+Per-rep ROM is the difference between the lowest and the HIGHEST tracked point,
+so the highest point is the one measurement taken where the tracker is least
+reliable. That is a far better explanation of a 19 cm spread on a fixed anatomy
+than a scale subtlety, and it predicts the spread should be worst on the capture
+whose lockout tracks worst. It is not a proven cause — the three ruled-out
+candidates were tested and this one has not been, because testing it needs
+footage that tracks at lockout. See the C12 note at the top of P2.
 
 So: the horizontal numbers stand — fore-aft travel is a few centimetres, well
 inside the frame region the plate calibrates, and the sync still matches to

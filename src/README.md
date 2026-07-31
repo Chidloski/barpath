@@ -133,6 +133,29 @@ Requires `ffmpeg` on PATH. No new Python dependencies.
 
 Ordered by how much they could bite.
 
+**0. The deadlift track is LOST AT LOCKOUT, and it invents ~10 cm of fore-aft
+motion there.** Added 2026-07-31 (C12), at the top because it undermines the
+lift this project treats as its best-founded truth.
+
+Top-of-travel NCC is **0.371 / 0.395 / 0.440** against whole-clip medians of
+0.830 / 0.846 / 0.937. Stratified by height it is total: 97–100% of the frames
+in the top 10 cm of travel score below `GOOD_SCORE`, and 0% of those in the
+bottom 10 cm do. The bar at a deadlift lockout is held against the thighs and is
+nearly still, so the several centimetres of fore-aft travel reported there are
+the tracker moving, not the bar.
+
+**The old `validate` could not see this** — it checked the whole-clip median,
+and lockout is 8–15% of a clip. `truth.top_of_travel_score` measures it now and
+`validate` warns separately, because the two fail independently.
+
+It flatters the pipeline rather than penalising it: the invented motion inflates
+`null_h_rms`, so deadlift `beats_null` falls from 0.70/0.35/0.13 to
+0.59/0.21/0.07 when restricted to well-tracked frames. Horizontal magnitude
+barely moves. Bench is the control and holds at 0.563–0.850.
+
+Not fixable by template size — shrinking `half` raises NCC and makes the track
+worse (ROM 60.5 → 74.1 cm). Needs a wider shot. See `analysis/34`.
+
 **1. The vertical scale is wrong by up to ±20%, per capture.** Per-rep video ROM
 on the three deadlifts: 59.1, **66.8** and **47.6 cm**, against a ceiling of 61
 measured for this lifter. One lifter, one lift, a 19 cm spread.
@@ -150,6 +173,14 @@ module docstring used to assert this was safe. It is not. The fix is footage
 with a known vertical reference in shot — a metre rule against the rack — not
 code. `truth.validate` warns and `metrics.vs_truth` returns `video_rom_flags`;
 never quote a flagged capture's vertical unqualified.
+
+**Drawback 0 is probably the mechanism.** ROM is the lowest-to-HIGHEST tracked
+point, so the highest point — the one that sets the number — is measured exactly
+where the tracker has lost the plate. "Right in location, no mechanism" became
+"right in location, with a mechanism" on 2026-07-31. It is not proven: the three
+candidates above were tested and this one cannot be until footage tracks at
+lockout. But it explains a 19 cm spread on a fixed anatomy far better than a
+scale subtlety does.
 
 Note the flag is one-sided in practice. `deadlift_180x3`'s 47.6 cm is ~20% low
 and passes, because the sanity floor is 40 cm and nothing justifies raising it.

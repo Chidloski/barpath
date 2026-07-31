@@ -576,6 +576,46 @@ sensor's own noise floor. Gated as a PASS in `test_bench_vertical_momentum_
 closes`, unusually for this file, so a regression in the one lift that works
 will fail the suite.
 
+### C12 — the deadlift referee is lost at lockout
+`src/truth.py` (`top_of_travel_score`, `validate`), `src/metrics.py`
+(`video_top_ncc`), `tests/test_video_truth.py`,
+`analysis/34_video_truth_lost_at_lockout.png`.
+
+**Found by eye, not by a gate.** The owner read `analysis/33` and objected that
+the deadlift video truth traces a flat ~10 cm horizontal line at the top of the
+pull, which is against the logic of the lift — at lockout the bar is held
+against the thighs and is very nearly still. Correct, and it had never been
+checked: nothing in the project asked whether the referee was right *anywhere in
+particular*, only on average.
+
+**Total, and stratified perfectly by height.** Top-of-travel NCC
+**0.371 / 0.395 / 0.440** against whole-clip medians of 0.830 / 0.846 / 0.937.
+Frames in the top 10 cm scoring below `GOOD_SCORE`: 166/166, 149/149, 146/150.
+In the bottom 10 cm: 1/743, 0/780, 0/588. Bench is the control and holds at
+0.563–0.850, higher than its own median on the spoto captures.
+
+**Why nothing caught it:** `validate` checked the whole-clip MEDIAN, and lockout
+is 8–15% of a clip. The same shape as milestones 1–6, as C8's peak-height
+threshold, as C10's clip-composition artefact — an aggregate that passes while
+the thing fails where it matters. That is now four times. **A referee needs
+checking where it is used, not on average.**
+
+**The cost runs opposite to intuition.** The invented fore-aft motion is part of
+the video's fore-aft signal, and `null_h_rms` is the rms of that signal — so the
+failure INFLATED the yardstick `beats_null` divides by. Deadlift `beats_null`
+restricted to well-tracked frames: **0.70 → 0.59, 0.35 → 0.21, 0.13 → 0.07.**
+Horizontal magnitude barely moves, so P2's 5–15× stands; the `beats_null`
+figures were too generous by 15–45%.
+
+**Not the template size**, which was the first guess: shrinking `half` raises
+NCC to 0.69 and makes the track worse, ROM inflating 60.5 → 74.1 cm against a
+61 cm ceiling. The fix is the camera, not code — see Capture protocol.
+
+**And it probably explains C4's ±20% vertical scale error.** Per-rep ROM is
+lowest-to-HIGHEST tracked point, so the highest point is measured exactly where
+the tracker is least reliable. C4's surviving guess was right in location and
+now has a mechanism. Unproven: testing it needs footage that tracks at lockout.
+
 ### C11b — `beats_null` is executable
 `tests/test_real_data.py`. C10 measured the null model and nothing asserted on
 it. Now two gates: a per-capture non-regression floor at 20% headroom, and an
@@ -941,13 +981,19 @@ Not code, and the highest value per effort available:
   66.8 / 47.6 cm against a 61 cm ceiling) and the plate cannot fix it, because
   it calibrates at the bottom of frame for travel reaching the top. The referee
   for P2 is mis-scaled and no amount of code repairs footage. See `analysis/23`.
-- **Step the camera back.** Squat clips the plate at lockout, and two of the
-  four 2026-07-30 captures do not track at all — squat is now the only lift with
-  no external horizontal check, so this is what converts it to truth with no
-  code. Bench sits the plate against clutter; it is truth already (C8) but only
-  from a hand-placed seed in `truth.SEEDS`, and a clear plate would let
-  auto-seeding work and drop the ~4% scale uncertainty the hand-read radius
-  carries.
+- **Step the camera back. Promoted to joint-highest by C12 (2026-07-31), because
+  it turns out DEADLIFT needs it too.** The deadlift tracker is lost at lockout —
+  97–100% of the frames in the top 10 cm of travel score below `GOOD_SCORE`,
+  against 0% at the floor — and it invents ~10 cm of fore-aft motion there, on
+  the one lift this project treats as its best-founded truth. Squat clips the
+  plate at lockout and two of the four 2026-07-30 captures do not track at all,
+  so this is also what converts squat to truth with no code. Bench sits the
+  plate against clutter; it is truth already (C8) but only from a hand-placed
+  seed in `truth.SEEDS`, and a clear plate would let auto-seeding work and drop
+  the ~4% scale uncertainty the hand-read radius carries. **One camera change
+  fixes a defect on all three lifts.** Note what does NOT fix it: shrinking the
+  template raises NCC and makes the track worse (ROM 60.5 → 74.1 cm). See
+  `analysis/34`.
 - **A sessionless capture with 30+ s of wrist-down.** C7 deleted the
   `HKWorkoutSession` after measuring that 100 Hz survives a dimmed frontmost app
   for **20 s**. Nothing tests longer, and a real set plus setup is longer. This

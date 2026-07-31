@@ -531,32 +531,63 @@ def test_bench_auto_seeding_still_does_not_find_the_plate(video):
 
 
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
-def test_deadlift_tracking_is_clean_enough_to_trust(video, csv, reps):
-    """Deadlifts must track well, unattended, with no warning.
+def test_deadlift_tracking_is_clean_where_it_is_clean(video, csv, reps):
+    """Deadlifts track well on the floor and badly at lockout. Both, asserted.
 
-    "Tracks well" and "is dimensionally right" turned out to be different
-    questions. `deadlift_155x6_2` tracks beautifully — 0.85 median NCC, a floor
-    baseline steady to 0.4 cm, per-rep lockouts agreeing with each other to a
-    couple of centimetres — and reports the bar moving through 69.5 cm of a
-    range whose ceiling is 61. A confident, self-consistent, wrongly scaled
-    track is not what this test was written to catch, and it does not catch it;
-    `test_video_rom_is_flagged_where_it_is_implausible` does.
+    **This test used to be called `..._is_clean_enough_to_trust` and asserted
+    that no quality warning fired at all. That premise is dead**, and it is
+    worth saying how it died rather than quietly relaxing it.
+
+    Two separate defects have now been found in tracks this test was passing:
+
+    *Dimensional.* `deadlift_155x6_2` tracks beautifully — 0.85 median NCC, a
+    floor baseline steady to 0.4 cm, per-rep lockouts agreeing to a couple of
+    centimetres — and reports 69.5 cm of travel against a 61 cm ceiling. A
+    confident, self-consistent, wrongly scaled track. Caught by
+    `test_video_rom_is_flagged_where_it_is_implausible`, not here.
+
+    *Localised.* C12: the tracker loses the plate at LOCKOUT on all three
+    deadlifts. Top-of-travel NCC 0.371/0.395/0.440 against whole-clip medians
+    of 0.830/0.846/0.937 — and 97-100% of frames in the top 10 cm of travel
+    score below GOOD_SCORE, against 0% in the bottom 10 cm.
+
+    Both were invisible here for the same reason: this test read aggregates.
+    `travel_m` is a whole-clip number and `median(score)` is a whole-clip
+    number, and each stayed healthy while something specific went wrong. So it
+    now asserts the aggregates AND the localised failure, and it will fail if
+    either changes — including if the lockout track is FIXED, which is the
+    outcome we want and which should delete the last block.
     """
     if not _has(video, csv):
         pytest.skip(f"{video} not present")
     import warnings as w
     from src import truth
 
-    with w.catch_warnings():
-        w.simplefilter("error")          # any quality warning fails the test
-        if csv.startswith("deadlift_155x6_2"):
-            pytest.xfail("tracks cleanly but the vertical scale is wrong: "
-                         "69.5 cm against a 61 cm bound. See "
-                         "truth.VERTICAL_ROM_M")
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
         path = truth.bar_path(VIDEO / f"{video}.mov")
+    messages = " ".join(str(c.message) for c in caught)
 
+    # The aggregates, which are genuinely fine and always were.
     assert path["travel_m"] > 0.40
     assert np.nanmedian(path["score"]) > truth.GOOD_SCORE
+
+    # The floor is where this tracker earns its keep — and where every gate
+    # that depends on it (impacts, landings, sync, rest instants) reads.
+    height, score = path["height"], path["score"]
+    ok = np.isfinite(height) & np.isfinite(score)
+    low = ok & (height < np.nanmin(height[ok]) + 0.10)
+    assert (score[low] > truth.GOOD_SCORE).mean() > 0.95, (
+        f"{video}: the tracker has stopped being reliable at the FLOOR too. "
+        f"That breaks the landings, the sync and rest_instants, not just the "
+        f"lockout — this is much worse than C12 and wants investigating first")
+
+    # And the lockout failure, pinned so that fixing it is visible.
+    assert truth.top_of_travel_score(path) < truth.GOOD_SCORE
+    assert "losing the plate at LOCKOUT" in messages, (
+        f"{video}: the lockout warning no longer fires. If better footage or a "
+        f"better tracker fixed it, delete this block, re-measure every deadlift "
+        f"beats_null, and update P2 — they are currently 15-45% too generous")
 
 
 # ------------------------------------------------------------------- A4 --

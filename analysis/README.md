@@ -1128,3 +1128,67 @@ tests). All 72 segment correctly.
 44/44 figures from before that session are correct and are left alone; every
 post-session total was understated by 20 reps. Counting is **72/72** and the
 pre-C5 state was **71/72**.
+
+## C12 — the deadlift referee is lost at lockout (2026-07-31)
+
+- `34_video_truth_lost_at_lockout.png` — NCC against bar height, where the bad
+  frames sit in the path, and what correcting for them does to `beats_null`.
+
+**Found by eye, from `analysis/33`.** The owner read the deadlift panels and
+objected that the video truth traces a flat ~10 cm horizontal line at the top of
+the pull, which is against the logic of a deadlift: at lockout the bar is held
+against the thighs and is very nearly still. Nothing in the project had measured
+whether the referee was right anywhere in particular — only on average.
+
+**It is total, and stratified perfectly by height.**
+
+| capture | median NCC | NCC over top 15% | top-10cm frames < 0.60 | bottom-10cm |
+|---|---|---|---|---|
+| deadlift_155x6_1 | 0.830 | **0.371** | 166/166 (100%) | 1/743 (0%) |
+| deadlift_155x6_2 | 0.846 | **0.395** | 149/149 (100%) | 0/780 (0%) |
+| deadlift_180x3 | 0.937 | **0.440** | 146/150 (97%) | 0/588 (0%) |
+
+Bench is the control and holds up: top-of-travel NCC 0.563–0.850, and on the
+three spoto captures it is HIGHER than the whole-clip median, because the paused
+rep at the top is the best-tracked part of those clips.
+
+**Why nothing caught it.** `truth.validate` checked the whole-clip MEDIAN
+against `GOOD_SCORE`, and lockout is 8–15% of a clip, so all three passed at
+0.83–0.94. The same failure shape as the milestones, as the ROM bound before C4,
+and as C8's peak-height threshold: an aggregate that passes while the thing
+fails exactly where it matters. `truth.top_of_travel_score` measures it now and
+`validate` warns on it separately, because the two fail independently.
+
+**What it costs, and it runs the opposite way to intuition.** The invented
+fore-aft motion is part of the video's fore-aft signal, and `null_h_rms` is the
+rms of exactly that signal — so the referee's failure INFLATED the yardstick
+`beats_null` divides by, flattering the pipeline. Restricted to frames scoring
+above `GOOD_SCORE` (56–67% of each rep):
+
+| capture | h rms | null | beats_null |
+|---|---|---|---|
+| deadlift_155x6_1 | 5.05 → 4.00 | 3.55 → 2.36 | 0.70 → **0.59** |
+| deadlift_155x6_2 | 9.19 → 9.76 | 3.23 → 2.03 | 0.35 → **0.21** |
+| deadlift_180x3 | 15.44 → 16.91 | 1.96 → 1.18 | 0.13 → **0.07** |
+
+Horizontal magnitude is roughly unchanged, so P2's 5–15× stands. The deadlift
+`beats_null` figures do not — they are too generous by 15–45%.
+
+**Not the template size.** First guess, and worth recording so it is not
+repeated: `bar_path` only applies `template_half` for `SEEDS` (bench) captures,
+so deadlifts use `track`'s default half=48 against plates of radius 64/64/56 px,
+whose inscribed squares are 45/45/39. Shrinking the template raises NCC steadily
+(0.37 → 0.69 at half=16) and makes the track WORSE: whole-clip ROM inflates from
+60.5 to 74.1 cm against a 61 cm ceiling. A smaller template matches more things,
+not the right thing. The fix is a wider shot, not code.
+
+**And it probably explains the ±20% vertical scale error** that C4 could not
+account for. Per-rep ROM is lowest-to-HIGHEST tracked point, so the highest
+point is measured exactly where the tracker is least reliable. C4's surviving
+guess — "the scale is calibrated on a plate resting on the floor and applied to
+travel reaching the top of frame" — was right in location and now has a
+mechanism. Not proven: testing it needs footage that tracks at lockout.
+
+- `33_reconstruction_vs_truth.png` is where C12 was spotted. Regenerate it after
+  any change to the tracker: the flat lines at the top of the deadlift panels
+  are the failure, and they are visible without measuring anything.

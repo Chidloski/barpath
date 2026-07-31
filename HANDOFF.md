@@ -30,7 +30,30 @@ same 15 impacts), and the difference is B6's ringing. See TASKS.md C11.
 
 Items 2, 4 and 5 below are untouched and still in the order given.
 
-## Read this first: the one number that reframes everything
+## Read this first: the referee is broken where it matters most
+
+**C12, 2026-07-31, found by the owner from `analysis/33` rather than by any
+gate.** The deadlift video truth traces a flat ~10 cm fore-aft line at the top of
+the pull. A deadlift lockout holds the bar against the thighs; it is the tracker
+moving, not the bar. Top-of-travel NCC is 0.371/0.395/0.440 against whole-clip
+medians of 0.830/0.846/0.937, and 97-100% of frames in the top 10 cm of travel
+score below `GOOD_SCORE` against 0% at the floor.
+
+It flatters the pipeline: the invented motion inflates `null_h_rms`, so deadlift
+`beats_null` is 0.59/0.21/0.07, not the 0.70/0.35/0.13 quoted below. Horizontal
+magnitudes barely move, so P2's 5-15x stands.
+
+**The lesson is bigger than the bug.** `validate` checked a whole-clip median
+and lockout is 8-15% of a clip. That is the fourth time this project has been
+caught by an aggregate that passes while the thing fails exactly where it
+matters — milestones 1-6, C8's peak-height threshold, C10's clip composition,
+now this. **Check a referee where it is used, not on average.**
+
+`truth.top_of_travel_score` and `vs_truth`'s `video_top_ncc` measure it now.
+The fix is the camera, not code: shrinking the template raises NCC and makes the
+track worse (ROM 60.5 -> 74.1 cm).
+
+## Read this second: the one number that reframes everything
 
 `metrics.vs_truth` reports `beats_null` — the pipeline's horizontal error
 against the error from drawing **no fore-aft motion at all**. Six of ten

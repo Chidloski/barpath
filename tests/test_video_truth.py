@@ -22,7 +22,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
+import numpy as np  # noqa: F401  (used by the tests below)
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -450,3 +450,115 @@ def test_a_disc_hanging_off_the_frame_edge_cannot_win(video):
     assert "broadcast" not in str(e.value), (
         "the in-frame constraint has regressed: this is the raw numpy error "
         "again, not a message naming the fault")
+
+
+# ------------------------------------------- the referee fails at lockout --
+DEADLIFT_TOP_NCC = {                 # median NCC over the top 15% of travel
+    "deadlift_155x6_1_20260728": 0.371,
+    "deadlift_155x6_2_20260728": 0.395,
+    "deadlift_180x3_20260728": 0.440,
+}
+
+
+@pytest.mark.parametrize("video,csv", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_deadlift_video_truth_is_lost_at_lockout(video, csv):
+    """The referee's own failure, found by eye on a plot and then measured.
+
+    Reported 2026-07-31 from `analysis/33`: the deadlift video traces a flat
+    horizontal excursion of ~10 cm at the top of the pull. That is against the
+    physics of the lift — at lockout the bar is held against the thighs and is
+    very nearly still — so it is the TRACKER moving, not the bar.
+
+    It is total, and stratified perfectly by height. Frames in the top 10 cm of
+    travel scoring below `truth.GOOD_SCORE`: **166/166, 149/149 and 146/150.**
+    Frames in the bottom 10 cm: **1/743, 0/780 and 0/588.** Clean on the floor,
+    lost at the top.
+
+    **`validate`'s median NCC could never see it** and passed all three at
+    0.83-0.94, because lockout is only 8-15% of a clip. That is this project's
+    recurring failure shape: an aggregate that passes while the thing fails
+    exactly where it matters.
+
+    WHAT IT COSTS, AND IT IS NOT WHAT YOU WOULD GUESS
+    -------------------------------------------------
+    The invented fore-aft motion goes into `null_h_rms`, which is the yardstick
+    `beats_null` divides by, so the referee's failure was FLATTERING the
+    pipeline. Restricted to frames scoring above GOOD_SCORE (56-67% of each
+    rep):
+
+        capture             h rms          null           beats_null
+        deadlift_155x6_1    5.05 -> 4.00   3.55 -> 2.36   0.70 -> 0.59
+        deadlift_155x6_2    9.19 -> 9.76   3.23 -> 2.03   0.35 -> 0.21
+        deadlift_180x3     15.44 -> 16.91  1.96 -> 1.18   0.13 -> 0.07
+
+    Horizontal magnitude is roughly unchanged, so P2's 5-15x stands. The
+    deadlift `beats_null` figures do not: they are too generous by 15-45%.
+
+    NOT the template size, which was the first guess and is recorded because it
+    is worth not repeating. Shrinking `half` from 48 towards the plate's
+    inscribed square raises the NCC (0.37 -> 0.69 at half=16) and makes the
+    track WORSE — whole-clip ROM inflates from 60.5 to 74.1 cm against a 61 cm
+    ceiling. A smaller template matches more things, not the right thing.
+
+    Asserts the defect. It should fail when better footage or a better tracker
+    fixes it, and `DEADLIFT_TOP_NCC` should then be deleted rather than raised.
+    """
+    from src import truth
+
+    if not (VIDEO / f"{video}.mov").exists():
+        pytest.skip(f"{video} not present")
+
+    path = truth.bar_path(VIDEO / f"{video}.mov", check=False)
+    top = truth.top_of_travel_score(path)
+    overall = float(np.nanmedian(path["score"]))
+
+    assert top < truth.GOOD_SCORE, (
+        f"{video}: top-of-travel NCC is {top:.3f}, at or above "
+        f"{truth.GOOD_SCORE}. If the lockout track is fixed, delete this test "
+        f"and re-measure every deadlift number in P2")
+    assert top == pytest.approx(DEADLIFT_TOP_NCC[video], abs=0.05)
+
+    # The half that makes it invisible: the median is fine, so a median-only
+    # check is necessary and not sufficient.
+    assert overall >= truth.GOOD_SCORE, (
+        f"{video}: whole-clip median NCC {overall:.3f} now fails too, so the "
+        f"stratified argument no longer needs making separately")
+
+    # And the physical absurdity that started this: the bar is nearly still at
+    # a deadlift lockout, and the tracker says it travels several centimetres.
+    height, x = path["height"], path["x"]
+    ok = np.isfinite(height) & np.isfinite(x)
+    top_h = np.nanmax(height[ok])
+    near = ok & (height > top_h - 0.05)
+    spread = float(np.nanmax(x[near]) - np.nanmin(x[near])) * 100
+    assert spread > 4.0, (
+        f"{video}: fore-aft spread at lockout is {spread:.1f} cm. If the "
+        f"tracker has stopped inventing motion there, this test is done")
+
+
+@pytest.mark.parametrize("video,reps", BENCHES, ids=[b[0] for b in BENCHES])
+def test_bench_video_truth_survives_the_top_of_travel(video, reps):
+    """The contrast that makes the deadlift result a finding and not a bug here.
+
+    Bench holds up where deadlift collapses: top-of-travel NCC 0.563-0.850
+    against deadlift's 0.371-0.440. On the three spoto captures it is HIGHER
+    than the whole-clip median (0.825-0.850 against 0.751-0.790), which is the
+    opposite pattern — the paused rep at the top is the best-tracked part of
+    those clips, and a metric that reported everything as broken would not show
+    that.
+
+    `bench_92.5x2` is marginal at 0.563 and is allowed for explicitly rather
+    than by a loosened threshold, because a single marginal capture is worth
+    seeing rather than hiding.
+    """
+    from src import truth
+
+    if not (VIDEO / f"{video}.mov").exists():
+        pytest.skip(f"{video} not present")
+
+    top = truth.top_of_travel_score(truth.bar_path(VIDEO / f"{video}.mov",
+                                                   check=False))
+    floor = 0.55 if video.startswith("bench_92.5x2") else truth.GOOD_SCORE
+    assert top > floor, (
+        f"{video}: top-of-travel NCC {top:.3f} has fallen below {floor}. Bench "
+        f"was the control showing the deadlift lockout failure is specific")

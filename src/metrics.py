@@ -437,6 +437,7 @@ def _video_on_imu_clock(result: dict, video: str | Path) -> tuple[np.ndarray, np
     """
     log = result["log"]
     path = truth.bar_path(video)
+    result.setdefault("_video_top_ncc", truth.top_of_travel_score(path))
 
     if truth.lift_of(Path(result["path"]).name) == "deadlift":
         impacts = np.array([float(log["t"][k]) for k in segment.impact_anchors(log)])
@@ -721,6 +722,15 @@ def vs_truth(result: dict, video: str | Path) -> dict:
         # and BELOW 1 on the other six INCLUDING ALL THREE DEADLIFTS — 0.70,
         # 0.35 and 0.13. Read that before quoting any horizontal number.
         "beats_null": float(med("null_h_rms") / med("pipeline_h_rms")),
+        # Median NCC over the top 15% of travel. Below truth.GOOD_SCORE means
+        # the referee lost the plate at LOCKOUT, where the bar is nearly still,
+        # so the fore-aft motion it reports there is invented — and since
+        # `null_h_rms` is the rms of exactly that signal, it is INFLATED and
+        # `beats_null` above is correspondingly too generous. Measured on the
+        # three deadlifts, restricting to well-tracked frames takes beats_null
+        # from 0.70/0.35/0.13 down to 0.59/0.21/0.07. All three deadlifts fail
+        # this; all seven benches pass. See truth.top_of_travel_score.
+        "video_top_ncc": float(result.pop("_video_top_ncc", float("nan"))),
         # The referee, checked against the same table as the reconstruction.
         # Non-empty means this capture's video vertical scale is wrong and its
         # vertical numbers — video_rom_cm, pipeline_v_rms, raw_v_rms — carry it.

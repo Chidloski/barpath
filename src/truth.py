@@ -506,6 +506,44 @@ def bar_path(video: str | Path, scale: float = 0.5,
     return path
 
 
+TOP_FRAC = 0.15       # "at lockout" = the top this fraction of vertical travel
+
+
+def top_of_travel_score(path: dict, frac: float = TOP_FRAC) -> float:
+    """Median NCC over the frames where the bar is highest.
+
+    The median over the WHOLE clip cannot see a failure confined to part of
+    the movement, and on deadlift there is one. Measured 2026-07-31 on the
+    three deadlifts, overall median against this one:
+
+        deadlift_155x6_1    0.830   ->   0.374
+        deadlift_155x6_2    0.846   ->   0.397
+        deadlift_180x3      0.937   ->   0.432
+
+    Stratified by height it is total: **100%, 100% and 97% of the frames in
+    the top 10 cm of travel score below GOOD_SCORE, against 0%, 0% and 0% of
+    the frames in the bottom 10 cm.** The tracker is clean on the floor and
+    lost at lockout, and `validate`'s median passes at 0.83-0.94 throughout
+    because lockout is only 8-15% of a clip.
+
+    Why it matters more than a tracking nicety: the bar at a deadlift lockout
+    is held against the thighs and is very nearly still, so the 6-11 cm of
+    fore-aft travel the tracker reports there is invented. That inflates
+    `metrics.vs_truth`'s `null_h_rms`, which is the yardstick `beats_null`
+    divides by — so the pipeline is being flattered by the referee's own
+    failure. Restricted to frames scoring above GOOD_SCORE, deadlift
+    `beats_null` falls from 0.70/0.35/0.13 to 0.59/0.21/0.07.
+    """
+    height, score = path["height"], path["score"]
+    ok = np.isfinite(height) & np.isfinite(score)
+    if not ok.any():
+        return float("nan")
+    top = np.nanmax(height[ok])
+    span = top - np.nanmin(height[ok])
+    near = ok & (height > top - frac * span)
+    return float(np.nanmedian(score[near])) if near.any() else float("nan")
+
+
 def validate(path: dict, video: str | Path = "") -> None:
     """Raise if the track cannot be a barbell. Silence here is expensive.
 
@@ -518,6 +556,11 @@ def validate(path: dict, video: str | Path = "") -> None:
     is still the only external check on the horizontal and on the timing, and
     both survive a vertical scale error. Warn, flag, and never quote the number
     unqualified — see `VERTICAL_ROM_M`.
+
+    The median-NCC check below is necessary and NOT sufficient, which is the
+    lesson of `top_of_travel_score`: a clip can hold a total tracking failure
+    over the top 15% of the movement while the median sits at 0.94. Both are
+    checked now, separately, because they fail independently.
     """
     name = Path(video).name or "video"
     if path["travel_m"] < MIN_TRAVEL_M:
@@ -535,6 +578,18 @@ def validate(path: dict, video: str | Path = "") -> None:
             f"clean track gives. The template is only partly matching — on the "
             f"squats this is the plate leaving the top of frame at lockout. "
             f"Treat the path as indicative, not as truth.",
+            stacklevel=2,
+        )
+
+    top = top_of_travel_score(path)
+    if np.isfinite(top) and top < GOOD_SCORE:
+        warnings.warn(
+            f"{name}: NCC over the top {TOP_FRAC:.0%} of travel is {top:.2f}, "
+            f"below the {GOOD_SCORE:.2f} a clean track gives, while the "
+            f"whole-clip median is {score:.2f}. The tracker is losing the plate "
+            f"at LOCKOUT specifically. The bar is nearly still there, so any "
+            f"fore-aft motion reported at the top is invented — and it inflates "
+            f"null_h_rms, which flatters beats_null. See top_of_travel_score.",
             stacklevel=2,
         )
 
