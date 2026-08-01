@@ -130,6 +130,18 @@ module docstring before quoting a number from it — `dispersion` needs no truth
 and is blind to exactly the error that dominates, so the two are not
 interchangeable.
 
+There are **two video referees**, and which one applies is decided by the
+footage, not by preference. `truth.py` tracks the plate as a dark disc and is
+the referee for everything in `data/video/`. `markers.py` (C15, 2026-08-01)
+tracks retroreflective stickers and is the referee for `data_v2/`, which is
+filmed from a tripod with markers on the plate. Every number the pipeline is
+currently scored on comes from `truth.py`, because `data/video/` has no markers
+and no marker capture has an IMU log beside it yet — `data_v2/` is video-only.
+`markers.py` is what a future capture should be judged by: on the same five
+clips it tracks 100% of frames where the plate template loses the bar at every
+lockout and reports 0.2 cm of travel on one bench set. See `src/README.md` and
+`analysis/35`–`36`.
+
 `synth.py` generates logs from a known bar path with injected bias. It was
 the keystone and is no longer. Its model of lifting is wrong in ways real
 captures have now measured — it emits stationary windows between reps, which
