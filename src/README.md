@@ -366,6 +366,19 @@ alongside.
 
 Gated by `tests/test_markers.py`, which skips cleanly when `data_v2/` is absent.
 
+**The fit residual rises with height, and is reported here so it is not
+discovered later as a surprise.** Pooled over the three deadlifts it runs 0.16 px
+at the floor to 0.81 px at lockout, correlation +0.54; per capture the lockout
+medians are 0.78, 0.71 and 1.60 px. The last is above the 1.5 px gate in
+`tests/test_markers.py`, which passes because it tests the whole-clip median
+(0.15 px on that capture). So the stickers are **not** immune to what breaks the
+plate template — the marker is smaller and dimmer at the top of frame, and the
+centroid is correspondingly noisier. The difference is that they degrade inside
+tolerance and never lose the bar, while the template degrades past
+`GOOD_SCORE`: 100% of its top-10 cm frames are untrusted against 31% at the
+floor. Do not restate this as "height does not affect the sticker tracker".
+Measured in `analysis/37`.
+
 **It tracks at full resolution and holds the whole clip, so mind the memory.**
 The stickers are ~5 px at 360x640 and `truth.bar_path`'s `scale=0.5` would throw
 away the sub-pixel accuracy the module rests on. `markers._frames_u8` therefore

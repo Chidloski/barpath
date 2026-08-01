@@ -1248,3 +1248,43 @@ not yet measured per rep.
 **What these plots do not show.** No sync, no `vs_truth`, no `beats_null`,
 because there is no IMU capture to compare against. Nothing here says the
 *pipeline* got better; it says the referee did.
+
+## 37 — old versus new tracker, in one figure (C15, 2026-08-01)
+
+`37_old_vs_new_tracker.png` — what `35` and `36` say, arranged so the comparison
+is readable without reading the prose. Same five clips, same footage, both
+referees.
+
+Row 1 is bar height over each clip with the anatomical `VERTICAL_ROM_M` band
+shaded. The two agree closely on the first two deadlifts and diverge exactly
+where `36` predicts: `deadlift_190x1`'s lockout (47.9 against 52.3 cm),
+`bench_85x6` where the plate template reports a flat 0.2 cm through six visible
+reps, and `bench_110x1` where it emits square-wave jumps to 33.3 cm.
+
+Row 2 is why, and the third panel is the one worth reading carefully.
+
+**The plate template degrades with height and crosses its own threshold.**
+Pooled over the three deadlifts, median NCC goes 0.86 at the floor to 0.33 at
+lockout, correlation with height −0.706. **100%** of frames in the top 10 cm sit
+below `GOOD_SCORE`, against 31% at the floor.
+
+**The sticker tracker degrades with height too, and that is a correction to how
+this was first drawn.** The panel was drafted captioned "no height dependence",
+which the scatter falsifies: median fit residual runs 0.16 px at the floor to
+0.81 px at lockout, correlation +0.54. Per capture the lockout medians are 0.78,
+0.71 and **1.60** px — the last above the 1.5 px gate, though that gate is on the
+whole-clip median (0.15 px there) and still passes.
+
+So the honest claim is not that stickers are immune to height. It is that they
+degrade **within tolerance while never losing the bar**, where the template
+degrades **past the point its own module says to stop believing it**. Coverage is
+the difference that matters: 100% of frames tracked at every lockout, against a
+template that is untrusted in all of them.
+
+Left panel: deadlift travel across the three sets, which one lifter's limbs fix.
+The plate template spans 10.7 cm and the stickers 4.8 cm, so whatever is left is
+still referee error — halved, not removed.
+
+**What this does not show**, as with `35` and `36`: no sync, no `vs_truth`, no
+`beats_null`. There is no IMU capture beside this footage. The referee got
+better; nothing here says the pipeline did.
