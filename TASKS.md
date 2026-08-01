@@ -624,6 +624,48 @@ and 4 xpassed — the four benches that genuinely beat a flat line. The cheapest
 available guard against reporting a change as an improvement when it still loses
 to drawing nothing.
 
+### C13 — the concurrency protocol (2026-08-01)
+Process, not pipeline: nothing here touches a reconstruction. Agents now work
+this repo concurrently and independently, so `HEARTBEAT.md` — committed empty in
+`88c8585` — becomes the board that keeps two of them off the same file. Rules in
+`CLAUDE.md` **Concurrency protocol** (binding), format in the board's own header,
+gated by `tests/test_heartbeat.py`.
+
+Claim before you write, release when you stop, and if what you need is held do
+other work or stop — do not break the lock. Races resolve by **earlier `since:`
+wins**, which works only because blocks are appended and never rewritten.
+
+Four decisions worth keeping, because each was a live failure mode rather than a
+style choice:
+
+- **The board is at the shared checkout, by absolute path.** A claim written
+  inside a worktree is invisible to every other agent, so it is not a claim. This
+  bites precisely the agents most likely to be running concurrently.
+- **Its churn is never committed**, so the file that prevents conflicts does not
+  itself generate merge conflicts on every branch. The cost is a permanently
+  dirty `HEARTBEAT.md` in the shared checkout, and the hazard that `git stash` or
+  `git reset --hard` there destroys every live claim in the repo.
+- **Shared docs are claimed late and briefly.** `CLAUDE.md`, `TASKS.md` and the
+  READMEs are touched by nearly every task, and the same-commit docs rule means
+  an agent holding them for the length of its work blocks everyone.
+- **`analysis/NN_*.png` numbers are reserved by claiming the filename** before
+  the plot exists. Two agents otherwise both take the next free number and one
+  overwrite is silent.
+
+The gate is a **format** gate and says so in its docstring: it checks the board
+parses, that a block's status matches its section, that no two *active* claims
+overlap (subtree-aware, so `src/` collides with `src/segment.py`), and that
+nothing claims immutable `data/raw/`. Verified against a populated board on 11
+hand-built cases — the healthy two-agent board, both overlap forms, the plot-
+number collision, each malformed field, a released block left under Active, and
+the two that must *not* fire: released claims may overlap freely, and the worked
+example in the fenced header is not a live claim.
+
+**What it does not do.** It is advisory and there is no enforcement at the
+filesystem, so it fails exactly when an agent skips the read — and a skipped
+claim is invisible until two edits collide. A clean board means "nobody has told
+me otherwise", not "the repo is free".
+
 ---
 
 ## To do
