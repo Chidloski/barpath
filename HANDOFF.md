@@ -175,9 +175,12 @@ In `TASKS.md` under Capture protocol. Summarised:
 
 1. **Deadlift with a metre rule in shot** — fixes the per-capture video vertical
    scale error. Highest value; no code can repair it.
-2. **A sessionless capture with 30+ s of wrist-down** — the falsifier for C7's
-   deletion of the workout session, which was only measured to 20 s. If the rate
-   drops, every capture since C7 is suspect. Never collected.
+2. **A capture WITH the session running and 30+ s of wrist-down** — this asked
+   for a *sessionless* one until 2026-08-01, as the falsifier for C7 deleting the
+   workout session. **It was collected by accident and C7 lost:** captures
+   truncated, and a Workout-app session took priority while the wrist was down.
+   C16 restored the session, so the open test is the same one *with* it. Every
+   capture taken between C7 and C16 is suspect.
 3. **Camera stepped back** — converts squat to truth; lets bench drop its hand
    seeds and the ~4% scale the hand-read radius carries.
 4. **A bench single** — C5's singleton rule is predicted to segment onto the
