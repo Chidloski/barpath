@@ -17,6 +17,16 @@ data/synthetic/*
 data/video/*
 !data/video/.gitkeep
 
+# data_v2: tripod footage with tracking stickers. Same rule as data/video —
+# large immutable input, re-derivable from nothing. Structure is tracked so the
+# layout is recorded; contents are not.
+data_v2/raw/*
+!data_v2/raw/.gitkeep
+data_v2/video/*
+!data_v2/video/.gitkeep
+data_v2/video_only/*
+!data_v2/video_only/.gitkeep
+
 # Per-run diagnostics from `python run.py --plot`. Regenerable; the curated
 # records in analysis/ are numbered and committed, these are not.
 analysis/run_*.png

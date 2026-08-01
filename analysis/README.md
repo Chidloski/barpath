@@ -1192,3 +1192,99 @@ mechanism. Not proven: testing it needs footage that tracks at lockout.
 - `33_reconstruction_vs_truth.png` is where C12 was spotted. Regenerate it after
   any change to the tracker: the flat lines at the top of the deadlift panels
   are the failure, and they are visible without measuring anything.
+
+## 35, 36 — the sticker tracker (C15, 2026-08-01)
+
+`data_v2/` is a new capture set: five clips shot from a tripod with
+retroreflective markers on the plate — three near the rim about a third of the
+way round from each other, one on the bar's end cap. **No IMU data**; the
+session did not produce any, so these are video-only and `data_v2/video_only/`
+is named for it. `src/markers.py` tracks them.
+
+`35_markers_detection.png` — what is detected and that it survives lockout.
+Columns: the plate at its lowest and at lockout with the fitted constellation
+drawn (green circle, green cross at the reported bar centre, orange square on
+the end-cap marker, cyan dots every candidate `detect` returned); then vertical,
+fore-aft, apparent size and fit residual against time.
+
+Three things to read off it. **The constellation is held at lockout on all five
+captures** — that is the whole point, and it is the failure `truth.py` cannot
+avoid, because a black plate against a dark ceiling has no contrast and a bright
+marker does not care what is behind it. **Apparent size is rigid to 1.028-1.059x
+over a clip**, which is the check that the tracker is on a steel plate and not
+wandering. And the **rep counts read straight off the vertical trace are 5, 5,
+1, 6 and 1, matching all five labels** — an independent confirmation nobody
+designed for.
+
+`36_markers_vs_plate.png` — the same footage through both trackers.
+
+| capture | stickers | plate template | old top-of-travel NCC |
+|---|---|---|---|
+| deadlift_150x5 | 54.0 cm | 54.5 cm | 0.35 |
+| deadlift_160x5 | 57.1 cm | 58.6 cm | 0.27 |
+| deadlift_190x1 | 52.3 cm | 47.9 cm | 0.45 |
+| bench_85x6 | 29.7 cm | **0.2 cm, raises** | 0.95 |
+| bench_110x1 | 23.8 cm | 33.3 cm | 0.38 |
+
+**Row 3 is C12 reproduced on footage it was never measured on.** The old
+tracker's NCC is plotted against the bar's height, and on every deadlift it
+falls monotonically from ~0.85 at the floor to ~0.3 at lockout, crossing
+`GOOD_SCORE` partway up. The failure is not a property of the three 2026-07-28
+captures; it is a property of tracking a dark plate against a dark background,
+and it recurs the moment you point the camera at another deadlift.
+
+**`bench_85x6` is the other failure shape, and it is the worse one.** The old
+tracker scores its *highest* median NCC there, 0.95, while reporting 0.2 cm of
+travel over a 6-rep set — confidently tracking a motionless piece of gym. It is
+the exact failure `truth.validate` was written for, and `validate` does catch
+it; the point is that the score says nothing.
+
+Deadlift whole-clip travel spans **4.8 cm** across the three sticker tracks
+against **10.7 cm** through the plate template, on a range of motion fixed by
+one lifter's limbs. That is the same disagreement `truth.VERTICAL_ROM_M` records
+as the largest known error in that module, roughly halved — not eliminated, and
+not yet measured per rep.
+
+**What these plots do not show.** No sync, no `vs_truth`, no `beats_null`,
+because there is no IMU capture to compare against. Nothing here says the
+*pipeline* got better; it says the referee did.
+
+## 37 — old versus new tracker, in one figure (C15, 2026-08-01)
+
+`37_old_vs_new_tracker.png` — what `35` and `36` say, arranged so the comparison
+is readable without reading the prose. Same five clips, same footage, both
+referees.
+
+Row 1 is bar height over each clip with the anatomical `VERTICAL_ROM_M` band
+shaded. The two agree closely on the first two deadlifts and diverge exactly
+where `36` predicts: `deadlift_190x1`'s lockout (47.9 against 52.3 cm),
+`bench_85x6` where the plate template reports a flat 0.2 cm through six visible
+reps, and `bench_110x1` where it emits square-wave jumps to 33.3 cm.
+
+Row 2 is why, and the third panel is the one worth reading carefully.
+
+**The plate template degrades with height and crosses its own threshold.**
+Pooled over the three deadlifts, median NCC goes 0.86 at the floor to 0.33 at
+lockout, correlation with height −0.706. **100%** of frames in the top 10 cm sit
+below `GOOD_SCORE`, against 31% at the floor.
+
+**The sticker tracker degrades with height too, and that is a correction to how
+this was first drawn.** The panel was drafted captioned "no height dependence",
+which the scatter falsifies: median fit residual runs 0.16 px at the floor to
+0.81 px at lockout, correlation +0.54. Per capture the lockout medians are 0.78,
+0.71 and **1.60** px — the last above the 1.5 px gate, though that gate is on the
+whole-clip median (0.15 px there) and still passes.
+
+So the honest claim is not that stickers are immune to height. It is that they
+degrade **within tolerance while never losing the bar**, where the template
+degrades **past the point its own module says to stop believing it**. Coverage is
+the difference that matters: 100% of frames tracked at every lockout, against a
+template that is untrusted in all of them.
+
+Left panel: deadlift travel across the three sets, which one lifter's limbs fix.
+The plate template spans 10.7 cm and the stickers 4.8 cm, so whatever is left is
+still referee error — halved, not removed.
+
+**What this does not show**, as with `35` and `36`: no sync, no `vs_truth`, no
+`beats_null`. There is no IMU capture beside this footage. The referee got
+better; nothing here says the pipeline did.

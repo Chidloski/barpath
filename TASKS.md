@@ -760,6 +760,85 @@ the stacked corrections are the defence. If more trimming is wanted, P2's
 chronological "READ THIS FIRST / SECOND / third / fourth" stacking is the next
 target, and it is a reorganisation rather than a deletion.
 
+
+### C15 — the sticker tracker (2026-08-01)
+
+`src/markers.py`, `tests/test_markers.py`, `analysis/35`, `36` and `37`.
+
+The 2026-08-01 gym session produced **video only, no IMU** — so `data_v2/` has a
+`video_only/` directory and five clips, and nothing here can be scored against a
+reconstruction. What it did produce is a tripod and markers: three
+retroreflective discs near the plate rim about a third of the circumference
+apart, one on the bar's end cap, ~1.5 cm each.
+
+**What it fixes, and it is a feature change rather than a code change.**
+`truth.py`'s two measured defects both come from tracking a dark plate by
+template. `analysis/36` reproduces both on the new footage: NCC falls from ~0.85
+at the floor to ~0.3 at lockout on all three deadlifts (C12, on captures C12
+never saw), and on `bench_85x6` the template scores its *highest* median NCC of
+the five, 0.95, while reporting 0.2 cm of travel over six reps. A bright marker
+on a dark plate has contrast regardless of the background; three in a rigid
+triangle measure their own scale every frame.
+
+All five captures track 100% of frames with all three rim markers, at 0.15-1.10
+px fit residual. All five sit inside `truth.VERTICAL_ROM_M`. Deadlift travel
+spans 4.8 cm against the template's 10.7 cm on identical footage. Rep counts
+read off the vertical trace match all five labels — 5, 5, 1, 6, 1 — which
+nobody designed for and which is the cheapest confirmation in the set.
+
+**Four things this cost, worth keeping because each was a wrong first answer.**
+
+*Markers cannot be tracked independently.* Nearest-peak per marker let the
+triangle's rigid sides vary by 69.5% over one clip. The pose is fitted to the
+group.
+
+*A two-marker fit is exact and proves nothing.* A similarity has four degrees of
+freedom and two points supply four equations, so the residual is zero whatever
+it is looking at — an early version reported `0.00 px` over 85% of a clip while
+tracking the wrong pair. Physics gates the fit instead: bounded per-frame change
+in scale, rotation and position, plus an **absolute** scale bound, because
+per-step limits compound (6% a frame is 5.7x over thirty, and on `bench_85x6`
+the fitted plate "changed size" threefold with every step legal).
+
+*Re-acquisition must not chase an extrapolated position.* The tracker followed
+the bar cleanly to the floor on `deadlift_150x5`, lost it in the impact carrying
+15.6 px/frame of downward velocity, and walked its search box through the floor
+and off the frame — 397 attempts looking at blank tarmac while the bar sat
+visible where it had landed. It searches around the last *known* position now,
+widening with the gap.
+
+*Auto-seeding cannot lean on `truth.find_plate`.* It does not find the plate on
+bench — `truth.py` says so — and anchoring to it seeded `bench_110x1` on the
+bench frame and floor shadow for 19 s. Seeding is now unaided and uses two
+things a single frame cannot see: the end-cap marker sitting at the triangle's
+centroid, and **movement** across the clip, because the bar is the thing in a
+gym that moves.
+
+**The weak spot, stated plainly.** Absolute scale rests on one constant,
+`STICKER_RATIO = 0.858`, measured on the three deadlifts and **transferred** to
+bench, which is a different plate with its own stickers. Three rim detectors
+were tried and are recorded in the source; one was consistent to 0.005 across
+captures and wrong, having locked onto the bumper's inner step. Per-*frame*
+scale is measured properly and is worth 0.6-1.4 cm on deadlift.
+
+**What it does not do.** No sync, no `vs_truth`, no `beats_null` — there is no
+IMU capture to compare against. It says the referee got better, not the
+pipeline. `data/video/` has no markers, so every number the pipeline is
+currently scored on is still measured through `truth.py`.
+
+**A correction made while drawing `analysis/37`.** The comparison plot was first
+captioned "no height dependence" for the sticker tracker, against the template's
+collapse. The scatter falsifies it: pooled over the three deadlifts the sticker
+fit residual runs 0.16 px at the floor to 0.81 px at lockout, correlation +0.54,
+with per-capture lockout medians of 0.78, 0.71 and **1.60** px — the last above
+the 1.5 px gate, which passes only because it tests the whole-clip median. The
+marker is smaller and dimmer at the top of frame and the centroid is noisier for
+it. The surviving claim is narrower: the stickers degrade **within** tolerance
+and never lose the bar, where the template degrades **past** the point `truth.py`
+says to stop believing it — 100% of its top-10 cm frames below `GOOD_SCORE`
+against 31% at the floor.
+
+
 ---
 
 ## To do
@@ -1111,8 +1190,26 @@ Not code, and the highest value per effort available:
   per-lift table keyed on the largest plate in shot. It moved A3's numbers by
   under 1% — a useful negative result, since this was flagged for months as a
   scale risk and the real scale error is 20× larger and elsewhere.
+- **Put the watch on and re-shoot with the markers. Now the highest-value item
+  in this list, and it displaces the two below.** The 2026-08-01 session solved
+  the referee and produced nothing to referee: five marker captures, zero IMU
+  logs. C15 shows the markers work — 100% tracking, sub-pixel fits, and they
+  hold at the lockout where the plate template is lost on every deadlift — so
+  much of the two items below is answered by *marking the plate* rather than by
+  moving the camera. What is missing is a capture with both. One session with
+  the watch on would give this project a referee that works at lockout and
+  something to score with it, and would let `vs_truth`, the sync and
+  `beats_null` be re-measured on footage whose fore-aft at the top of the pull
+  is not invented. Markers on the **squat** plate would go further still: squat
+  is the one lift with no external horizontal check at all, and its footage
+  fails for the same dark-plate reason the markers remove.
 - **Re-shoot with a vertical reference in frame** — a metre rule against the
-  rack, in shot for the whole clip. **Now the highest-value item here.** The
+  rack, in shot for the whole clip. ~~Now the highest-value item here.~~ **Partly
+  answered by C15**: the sticker constellation measures its own apparent size in
+  every frame, so the per-frame scale is now measured rather than extrapolated
+  from the bottom of frame. It is worth 0.6–1.4 cm on deadlift. It does not fix
+  the *absolute* scale, which still rests on one measured constant, so a metre
+  rule would still earn its place — it is no longer the top of the list. The
   video's vertical scale is wrong by up to ±20% per capture (per-rep ROM 59.1 /
   66.8 / 47.6 cm against a 61 cm ceiling) and the plate cannot fix it, because
   it calibrates at the bottom of frame for travel reaching the top. The referee
@@ -1147,11 +1244,15 @@ Not code, and the highest value per effort available:
   swept by the same rotating forearm, and the optimiser returns 21, 60, 64 and
   even 129 cm against a real 10–15 cm. Step 6 is implemented and off by default
   purely for want of this number.
-- **Film a bench single.** Newly worth doing: C5's singleton rule ranks by
-  displacement, and `bench_92.5x2`'s unrack moves the bar *further* than its
-  reps, so a bench single is predicted to segment onto the unrack. No capture
-  exists to confirm or refute it. One set of one is the cheapest falsifier in
-  this list.
+- **Film a bench single.** ~~No capture exists.~~ **Filmed 2026-08-01 —
+  `data_v2/video_only/bench_110x1_20260801.mov` — and it still cannot answer the
+  question, because that session produced no IMU log.** C5's singleton rule
+  ranks by concentric displacement and `bench_92.5x2`'s unrack moves the bar
+  *further* than its reps, so a bench single is predicted to segment onto the
+  unrack; the falsifier needs `segment.py` run against a watch capture, and the
+  video alone cannot supply one. Worth noting the video says the prediction is
+  plausible: `markers.bar_path` on that clip shows the unrack excursion reaching
+  14 cm fore-aft against a press of a few. **Re-film it with the watch on.**
 - **Film a plumb line once**, to put a number on lens distortion — the leading
   candidate for the scale error above.
 - **Tape the lockout height.** Deadlift bar centre at lockout, once. It would

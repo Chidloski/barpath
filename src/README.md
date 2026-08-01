@@ -282,3 +282,108 @@ Roughly in value-per-effort order.
 8. **Multi-scale template**, if the camera is ever placed off-axis so that
    fore-aft becomes depth. Not needed for the current filming setup, where the
    camera looks along the bar and fore-aft is in-frame horizontal.
+
+---
+
+# The sticker tracker — `markers.py`
+
+A second referee, added 2026-08-01 (C15) for the `data_v2/` captures, which are
+filmed from a tripod with retroreflective markers on the plate: three near the
+rim roughly a third of the circumference apart, one on the bar's end cap, each
+reflective disc ~1.5 cm.
+
+It does not replace `truth.py` and cannot — no marker exists in `data/video/`,
+so every capture the pipeline is currently scored against is still refereed by
+the plate template. It is what future captures should use.
+
+## Why a different feature entirely
+
+Both of `truth.py`'s measured defects are defects of the *feature*, not of the
+code around it, and no amount of tuning reaches them:
+
+- **Lost at lockout.** A black plate against a dark ceiling has no contrast to
+  match on. `analysis/36` reproduces this on footage C12 never saw: NCC falls
+  from ~0.85 at the floor to ~0.3 at lockout on all three new deadlifts.
+- **Confidently static.** On `bench_85x6` the plate template scores its highest
+  median NCC of the five, 0.95, while reporting 0.2 cm of travel over six reps.
+
+A bright marker on a dark plate is the one feature whose contrast does not
+depend on what is behind the bar, and three of them in a rigid triangle measure
+their own scale in every frame.
+
+## State on the five `data_v2` captures
+
+| | tracked | 3 markers | fit residual | travel | plate template, same clip |
+|---|---|---|---|---|---|
+| deadlift_150x5 | 100% | 100% | 0.52 px | 54.0 cm | 54.5 cm |
+| deadlift_160x5 | 100% | 100% | 0.61 px | 57.1 cm | 58.6 cm |
+| deadlift_190x1 | 100% | 100% | 0.15 px | 52.3 cm | 47.9 cm |
+| bench_85x6 | 100% | 100% | 1.10 px | 29.7 cm | **0.2 cm, raises** |
+| bench_110x1 | 100% | 100% | 1.07 px | 23.8 cm | 33.3 cm |
+
+All five sit inside `truth.VERTICAL_ROM_M`. Deadlift travel spans 4.8 cm against
+the template's 10.7 cm on the same footage. Rep counts read off the vertical
+trace match all five labels.
+
+## The three things to know before quoting a number
+
+**The pose is fitted on the rim markers only.** The end-cap marker is on the
+sleeve, which protrudes toward the camera, so its offset from the rim centroid
+is parallax — it correlates with the bar's height at r = 0.949 and swings over
+168 px on one clip. It is tracked and reported as a diagnostic of the camera
+geometry, and deliberately kept out of the path.
+
+**Absolute scale rests on one constant, `STICKER_RATIO = 0.858`**, measured on
+the three deadlifts where the plate rim is detectable and verified by eye. Per-
+*frame* scale is measured properly, from the constellation's own apparent size,
+which is the part that attacks the ±20% vertical scale error. **On bench the
+constant is transferred, not measured** — a different plate, its own stickers —
+and that is the weakest claim in the module. Three rim detectors were tried and
+recorded at `STICKER_RATIO`, including one that was beautifully consistent
+across captures (0.928/0.938/0.929) and simply wrong, having locked onto the
+bumper's inner step. Consistency is not accuracy.
+
+**`score` is not an NCC** and must never be compared with `truth.GOOD_SCORE`.
+It is fit quality: markers matched, attenuated by residual.
+
+## Usage
+
+```python
+from src import markers
+
+path = markers.bar_path("data_v2/video_only/deadlift_150x5_20260801.mov")
+# key-compatible with truth.bar_path: t, x, height, score, fps, m_per_px, travel_m
+path["calibration"]           # read this before quoting anything
+path["height_flat"]           # the same path under one fixed scale, for comparison
+path["perspective_shift_cm"]  # how far the per-frame scale moved it
+```
+
+Both paths are returned on purpose: the module's claim is that the per-frame
+scale is better, and a claim like that should be checkable from its own output.
+Measured, the correction is worth 0.6-1.4 cm on deadlift and 0.1-0.4 cm on
+bench — real but small, and much smaller than the tracking failures it sits
+alongside.
+
+Gated by `tests/test_markers.py`, which skips cleanly when `data_v2/` is absent.
+
+**The fit residual rises with height, and is reported here so it is not
+discovered later as a surprise.** Pooled over the three deadlifts it runs 0.16 px
+at the floor to 0.81 px at lockout, correlation +0.54; per capture the lockout
+medians are 0.78, 0.71 and 1.60 px. The last is above the 1.5 px gate in
+`tests/test_markers.py`, which passes because it tests the whole-clip median
+(0.15 px on that capture). So the stickers are **not** immune to what breaks the
+plate template — the marker is smaller and dimmer at the top of frame, and the
+centroid is correspondingly noisier. The difference is that they degrade inside
+tolerance and never lose the bar, while the template degrades past
+`GOOD_SCORE`: 100% of its top-10 cm frames are untrusted against 31% at the
+floor. Do not restate this as "height does not affect the sticker tracker".
+Measured in `analysis/37`.
+
+**It tracks at full resolution and holds the whole clip, so mind the memory.**
+The stickers are ~5 px at 360x640 and `truth.bar_path`'s `scale=0.5` would throw
+away the sub-pixel accuracy the module rests on. `markers._frames_u8` therefore
+decodes to uint8 and `_grey` converts one frame at a time: 610 MB peak for a
+759-frame clip, against the 1936 MB `truth.frames` peaks at just to *produce* the
+float32 stack. Do not go back to `truth.frames` here, and do not run several
+tracks concurrently on a small machine — running six at once is what crashed an
+8 GB laptop on 2026-08-01, and it is why this is written down.
