@@ -127,6 +127,14 @@ cleanly when `data/raw/` is absent.
     src/truth.py               video ground truth — see src/README.md
     src/synth.py               synthetic generator
     watch/                     Xcode project
+    HEARTBEAT.md               who is writing to what, right now
+
+`HEARTBEAT.md` is not documentation, it is live state. Agents work this repo
+concurrently and it is the board that keeps two of them off the same file:
+claim the paths you are about to write, release them when you stop, and if
+something you need is already held, do other work or stop. The rules are in
+`CLAUDE.md` under **Concurrency protocol** and they are binding. Read the board
+before your first write.
 
 Nothing raises `NotImplementedError` any more. `correct.apply_offset` is
 implemented but OFF by default — the wrist-to-bar offset `d` has never been

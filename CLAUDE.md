@@ -8,6 +8,80 @@ Its Estimation and Sensing rejections were deleted on 2026-07-28 because they
 rested on synthetic evidence — recover them with `git show HEAD:NON_GOALS.md`
 if you want to re-argue one, but do not treat them as still in force.
 
+## Concurrency protocol
+
+**Binding, and it comes before everything else in this file, because it governs
+whether you may write at all.**
+
+Agents run this repo concurrently and independently. You may not assume you are
+alone in it. `HEARTBEAT.md` is the board that keeps two agents off the same file;
+its header states the claim format, this section states the rules.
+
+**The board is at `/Users/sam/Desktop/barpath/HEARTBEAT.md` — the shared
+checkout — always.** If you are in a worktree, that is *not* the copy beside you.
+Read and write the absolute path. A claim in a worktree copy is invisible to
+every other agent and is therefore not a claim.
+
+### The loop
+
+1. **Read the board before your first write of the session.** Not before your
+   first commit, not when you get to a file that looks contended — before the
+   first edit you make to anything.
+2. **Claim, then edit.** Append one block naming every path you intend to write,
+   including files you are about to create and plots you are about to number.
+   Then re-read the board: if someone else appended an overlapping claim in the
+   meantime, the **earlier `since:` wins** and the later agent withdraws its block
+   and treats the paths as taken. That is the whole race resolution; it works
+   because blocks are only ever appended, never rewritten.
+3. **If an active claim overlaps what you need, you may not write those paths.**
+   Not one line, not a docstring, not "just the test". Do other work if you have
+   some — a different problem entirely, on paths you *can* claim.
+4. **If you have no other work, stop.** Append a block with `status: waiting`
+   naming the paths and who holds them, say so plainly in your final message, and
+   end the turn. Do not poll, do not sit in a loop, and do not start something
+   marginal to look busy.
+5. **Release the moment you stop writing** — success, failure or abandonment.
+   Set `status: released`, move the block to the log. An agent that finishes
+   without releasing has left a lock nobody can safely break.
+
+### Rules that follow from it
+
+- **Reads are free.** Locking reads would deadlock the repo instantly, since
+  every agent must read `CLAUDE.md` and `TASKS.md` to start. You may read a file
+  another agent holds; expect it to change under you.
+- **Never break, edit or shorten another agent's claim.** If one looks abandoned
+  — a stale `since:` and no sign of progress — you still do not take it. Say in
+  your final message that it looks stale and let the owner adjudicate. A wrongly
+  broken lock loses work silently, which is worse than a stall the owner can see.
+- **Claim the shared docs late and briefly.** `CLAUDE.md`, `TASKS.md`,
+  `README.md`, `HANDOFF.md`, `analysis/README.md` and `src/README.md` are touched
+  by nearly every task, so an agent holding them for the length of its work
+  blocks everyone. Do the code and the measurement under a narrow claim, then
+  take the docs in a short window at the end and release them straight after.
+  This does not weaken the same-commit docs rule below: it still requires the
+  docs in the same commit, it just does not require holding them throughout.
+- **Reserve `analysis/NN_*.png` numbers by claiming the filename** before you
+  generate it. Two agents will otherwise both take the next free number.
+- **`data/raw/` is read-only for everyone**, so it never needs claiming, and a
+  claim on it should be refused.
+- **Claims are never committed.** The header is a normal tracked file and is
+  amended like any other doc; the claim sections are live state and stay as
+  working-tree changes, so that the file preventing conflicts does not generate a
+  merge conflict on every branch. Expect `HEARTBEAT.md` to show as modified in
+  the shared checkout indefinitely — that is it working — and never `git stash`,
+  `git checkout .` or `git reset --hard` there, which silently destroys every
+  live claim in the repo, other agents' included.
+- `tests/test_heartbeat.py` checks the board parses and that no two active claims
+  overlap. It is a format gate, not a lock manager; passing it does not mean you
+  hold what you think you hold.
+
+### What this does not do
+
+It is advisory. Nothing enforces it at the filesystem, so it fails exactly when
+an agent skips step 1 — and a skipped claim is invisible until two edits collide.
+It also cannot see work in progress that was never claimed. Treat a clean board
+as "nobody has told me otherwise", not as "the repo is free".
+
 ## Spec
 
 The number that decides every engineering question:

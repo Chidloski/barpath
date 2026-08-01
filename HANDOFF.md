@@ -4,6 +4,13 @@ Transient file. Everything durable is already in `TASKS.md` (C8, C9, C10, C11
 entries), `CLAUDE.md` (P1, P2, P6) and `analysis/README.md`. **Delete this when
 the work below is done.**
 
+**Before any of it: you are not alone in this repo.** Agents run concurrently
+now. Read `/Users/sam/Desktop/barpath/HEARTBEAT.md`, claim the paths you are
+about to write, and if they are already held take other work or stop. Rules in
+`CLAUDE.md` under **Concurrency protocol**, added by C13 on 2026-08-01. Several
+items below name the same files — B3 and B6 both want `src/correct.py` — so
+expect to wait or to pick a different item rather than to queue behind one.
+
 Working tree is clean, suite is **382 passed, 1 skipped, 12 xfailed, 4 xpassed**
 (~10 min; there is no `pytest-timeout` plugin, do not pass `--timeout`). The 4
 xpassed are expected and documented — they are the four benches that beat the
