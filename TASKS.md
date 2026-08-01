@@ -274,7 +274,73 @@ instead of thresholding against an assumed 16 g full scale that B5 disproved in
 `io.check_log` a day earlier and that this copy outlived. Rejections are now
 0 of 73, which is correct: nothing in `data/raw/` clips.
 
+### C16 — the watch workout session, restored on measurement
+`watch/`. **C7 (below) is reversed.** Its own named falsifier has been collected,
+by accident, in a real gym session: captures stopped surviving the wrist going
+down, and a workout already running in the Workout app took priority while the
+wrist was down, so this app was the one suspended. Too few samples to use — that
+session's raw data is unusable.
+
+**What C7's drop tests actually proved is narrower than what was concluded from
+them.** Both were taken with the app FRONTMOST and the screen merely DIMMED.
+Core Motion does keep streaming through that state and those numbers stand. It
+is not the gym state: there the wrist drops, watchOS returns to the clock or
+hands the foreground to whichever app has a live workout, and a backgrounded app
+with no session of its own is suspended. *Frontmost-and-dimmed* and *replaced*
+are different cases, and only the first was ever tested.
+
+This is the project's recurring failure shape, in the watch code this time: an
+aggregate that passes while the thing fails exactly where it matters. Same as
+`truth.validate` checking a whole-clip median while the tracker was lost at
+lockout (C12).
+
+**What shipped.** The `HKWorkoutSession` is back, and back as the workout of
+record rather than a hidden keep-alive — one session per device means there is
+no way to share, join or even detect the Workout app's, so taking it quietly
+would end the owner's workout, which was the original bug report. So the app
+replaces the Workout app for a lifting session:
+
+- **Workout screen**, reserved for it — elapsed clock, heart rate with average
+  and peak, active and total calories, captures saved this workout, and
+  `Start Workout` / `End Workout & Save`. Ending is disabled while a capture
+  runs, since ending drops the keep-alive mid-recording.
+- **Capture screen**, the protocol unchanged — name, opening anchor, reps,
+  closing anchor — and a red warning when no session is running during a
+  recording.
+- **Effort rating**, 1-10 on Apple's wording, saved with
+  `relateWorkoutEffortSample` so it attaches to the workout rather than
+  free-floating. `Skip` is first class.
+- `Calibrate` auto-starts a session if the lifter went straight there, because a
+  capture recorded without one is invisible until the CSV is on the Mac.
+- The session delegate announces a stolen or lost session with a haptic. It
+  cannot be prevented, only noticed; the original build had no delegate at all,
+  which is how the first collision went unseen for the life of the app.
+
+**Deliberately not done: a pause control.** A paused session is not a running
+session, and "the session is running" is the whole reason the app can record
+with the wrist down — a pause button is a one-tap way to break a capture
+silently.
+
+**Minimum deployment is now watchOS 11.0**, and it is exactly four symbols, all
+in the effort rating: `workoutEffortScore` (twice), `HKUnit.appleEffortScore()`
+and `relateWorkoutEffortSample`. Measured, not assumed: the sources typecheck
+clean at `-target arm64_32-apple-watchos11.0`, `...12.0` and `...26.0`, and fail
+at `...10.0` on those four and nothing else. The `#available` guards an earlier
+build used to hold the target at 10.0 are gone.
+
+The watch target needs the **HealthKit** capability and the **Workout
+Processing** background mode again, plus `NSHealthShareUsageDescription` and
+`NSHealthUpdateUsageDescription`. `watch/README.md` carries the full record.
+
+*Not yet verified on device.* The reversal rests on the owner's gym report and
+on the mechanism, not on a fresh instrumented capture. The check is a capture
+with a session running and 30+ s of genuine wrist-down: look for gaps in `dt`,
+not at the sample counter, which rises either way.
+
 ### C7 — the watch workout session, removed on measurement
+***Superseded by C16 above, 2026-08-01. Kept because the reasoning trail is the
+point: this entry is what a well-measured wrong conclusion looks like.***
+
 `watch/`. The app held an `HKWorkoutSession` while recording, on the documented
 belief that it was the only thing keeping Core Motion alive once the wrist drops.
 That cost the owner their own workout — watchOS allows one primary session per
@@ -298,6 +364,11 @@ background mode. The sources now typecheck at watchOS 9.0.
 genuinely REPLACED mid-capture — watch face or another app — for longer than the
 ~6.5 s the first test covered. Return to Clock will not fire inside a single set,
 which is why this is judged safe. `watch/README.md` carries the full record.
+
+**That paragraph was right about what to check and wrong about the risk.** It
+happened, it cost a session's captures, and "Return to Clock will not fire inside
+a single set" missed the case that actually bit: another app holding a live
+workout takes the foreground while the wrist is down. See C16.
 
 *(Numbering note: the watch code called this C4, which collides with C4 above.
 It is C7.)*
@@ -666,9 +737,33 @@ filesystem, so it fails exactly when an agent skips the read — and a skipped
 claim is invisible until two edits collide. A clean board means "nobody has told
 me otherwise", not "the repo is free".
 
+### C14 — task focus, and CLAUDE.md trimmed (2026-08-01)
+Process, like C13. Working style gains **"Stay on the task you were given"**:
+one problem at a time named up front, findings off to the side get *recorded not
+fixed*, no refactoring code you merely had to read, and if the task looks wrong
+say so in a sentence and do it anyway rather than silently substituting a better
+idea.
+
+Open problems was **566 of 776 lines** — CLAUDE.md had become the work log
+`TASKS.md` is supposed to be. Trimmed to 526 by compressing four things whose
+detail was verified to exist here first: P5 (a CLOSED problem carrying 67 lines
+inside *Open* problems), P4's retracted 2° attitude error, P1's C5 mechanism
+walkthrough, and a P2 paragraph that re-explained the C12 finding stated at the
+top of the same section. **Nothing was deleted outright** — the detail moved to
+C5/C6 here, and CLAUDE.md now points at them.
+
+Deliberately left long: P1's live caveats, P2's measurement tables, P3 and P6.
+That is the live state of the problems, and `Working style`'s "correct the old
+reasoning rather than deleting it" makes the corrections themselves load-bearing
+— this project has been bitten four times by a claim outliving its evidence, and
+the stacked corrections are the defence. If more trimming is wanted, P2's
+chronological "READ THIS FIRST / SECOND / third / fourth" stacking is the next
+target, and it is a reorganisation rather than a deletion.
+
+
 ### C15 — the sticker tracker (2026-08-01)
 
-`src/markers.py`, `tests/test_markers.py`, `analysis/35` and `36`.
+`src/markers.py`, `tests/test_markers.py`, `analysis/35`, `36` and `37`.
 
 The 2026-08-01 gym session produced **video only, no IMU** — so `data_v2/` has a
 `video_only/` directory and five clips, and nothing here can be scored against a
@@ -730,6 +825,19 @@ scale is measured properly and is worth 0.6-1.4 cm on deadlift.
 IMU capture to compare against. It says the referee got better, not the
 pipeline. `data/video/` has no markers, so every number the pipeline is
 currently scored on is still measured through `truth.py`.
+
+**A correction made while drawing `analysis/37`.** The comparison plot was first
+captioned "no height dependence" for the sticker tracker, against the template's
+collapse. The scatter falsifies it: pooled over the three deadlifts the sticker
+fit residual runs 0.16 px at the floor to 0.81 px at lockout, correlation +0.54,
+with per-capture lockout medians of 0.78, 0.71 and **1.60** px — the last above
+the 1.5 px gate, which passes only because it tests the whole-clip median. The
+marker is smaller and dimmer at the top of frame and the centroid is noisier for
+it. The surviving claim is narrower: the stickers degrade **within** tolerance
+and never lose the bar, where the template degrades **past** the point `truth.py`
+says to stop believing it — 100% of its top-10 cm frames below `GOOD_SCORE`
+against 31% at the floor.
+
 
 ---
 
@@ -1119,11 +1227,17 @@ Not code, and the highest value per effort available:
   fixes a defect on all three lifts.** Note what does NOT fix it: shrinking the
   template raises NCC and makes the track worse (ROM 60.5 → 74.1 cm). See
   `analysis/34`.
-- **A sessionless capture with 30+ s of wrist-down.** C7 deleted the
-  `HKWorkoutSession` after measuring that 100 Hz survives a dimmed frontmost app
-  for **20 s**. Nothing tests longer, and a real set plus setup is longer. This
-  is the falsifier for that decision and it has never been collected. If the
-  rate drops, every capture taken since C7 is suspect. See `watch/README.md`.
+- **A capture with the session running and 30+ s of wrist-down.** *Rewritten
+  2026-08-01.* This used to ask for a **sessionless** capture, as the falsifier
+  for C7's deletion of the `HKWorkoutSession`. **It was collected by accident and
+  C7 lost** — the captures truncated and a Workout-app session took priority
+  while the wrist was down. C16 put the session back, so what is now wanted is
+  the same test *with* it: if the rate still drops, the session is not what keeps
+  Core Motion alive and the cause is elsewhere. Check gaps in `dt`, never the
+  sample counter, which rises either way. Note the standing consequence is
+  unchanged in direction: **every capture taken between C7 and C16 is suspect**,
+  and any that show wrist-down truncation should be re-taken. See
+  `watch/README.md`.
 - **Tape the wrist-to-bar offset `d`.** Watch centre to bar centre, in watch
   axes, once. B2 showed `d` is *not* identifiable from the video — fitting it
   against `vs_truth` is ill-conditioned because P3 is also a body-frame constant
