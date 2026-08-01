@@ -666,6 +666,29 @@ filesystem, so it fails exactly when an agent skips the read — and a skipped
 claim is invisible until two edits collide. A clean board means "nobody has told
 me otherwise", not "the repo is free".
 
+### C14 — task focus, and CLAUDE.md trimmed (2026-08-01)
+Process, like C13. Working style gains **"Stay on the task you were given"**:
+one problem at a time named up front, findings off to the side get *recorded not
+fixed*, no refactoring code you merely had to read, and if the task looks wrong
+say so in a sentence and do it anyway rather than silently substituting a better
+idea.
+
+Open problems was **566 of 776 lines** — CLAUDE.md had become the work log
+`TASKS.md` is supposed to be. Trimmed to 526 by compressing four things whose
+detail was verified to exist here first: P5 (a CLOSED problem carrying 67 lines
+inside *Open* problems), P4's retracted 2° attitude error, P1's C5 mechanism
+walkthrough, and a P2 paragraph that re-explained the C12 finding stated at the
+top of the same section. **Nothing was deleted outright** — the detail moved to
+C5/C6 here, and CLAUDE.md now points at them.
+
+Deliberately left long: P1's live caveats, P2's measurement tables, P3 and P6.
+That is the live state of the problems, and `Working style`'s "correct the old
+reasoning rather than deleting it" makes the corrections themselves load-bearing
+— this project has been bitten four times by a claim outliving its evidence, and
+the stacked corrections are the defence. If more trimming is wanted, P2's
+chronological "READ THIS FIRST / SECOND / third / fourth" stacking is the next
+target, and it is a reorganisation rather than a deletion.
+
 ---
 
 ## To do

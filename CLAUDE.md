@@ -179,8 +179,22 @@ The learning goal survives the lockout that used to enforce it, and it changes
 
 - Use plan mode for anything changing the pipeline's shape, or changing an
   assumption about the error model rather than the code implementing it.
-- Work one open problem at a time, and state which one. A change that is not
-  attached to a problem in the list below needs a reason.
+- **Stay on the task you were given.** Work one open problem at a time and name
+  it at the start; a change not attached to that problem does not belong in the
+  diff, however obviously right it looks. This repo is unusually full of
+  inviting tangents, and the cost of taking one is not the time — it is that the
+  owner now has to review a change nobody asked for in order to get the one they
+  did. Specifically:
+  - Something broken that you find on the way gets **recorded, not fixed** — a
+    line in `TASKS.md`, or say so in your reply. That is not the lesser outcome
+    here; the record is what this project runs on.
+  - Do not refactor, rename, re-tune or tidy code you merely had to read.
+  - Finish the task before starting anything else, and finish it *completely*:
+    the docs it falsifies are part of it, not a tangent from it. See the
+    same-commit rule below.
+  - If you think the task is the wrong thing to do, say so in a sentence or two
+    and then do it anyway unless it is unsafe. Do not silently substitute your
+    own better idea — an unrequested change is the one the owner cannot check.
 - A gate only counts if it runs on real captures. Synthetic gates are unit
   tests now, not evidence.
 - Commit when a problem's status changes — including to "worse" — plots
@@ -236,23 +250,18 @@ counted as a rep — hidden because `REP_LABEL` did not match the `spoto` varian
 token, so `expected_reps` was `None` and every count gate silently skipped all
 three new benches.
 
-C5 fixed it on 2026-07-31 and counting is **72/72**. The cause was
-`segment._longest_cadence`'s cadence tolerance of 1.6: that capture's five reps
-sit 2.78–2.94 s apart and the first post-set movement follows 4.50 s after the
-last, so admitting it needs 4.50/2.86 = 1.573, which 1.6 allowed — growing a run
-of six that beat the true run of five *on length alone*. It is 1.45 now, the
-middle of a plateau where every value in 1.35–1.55 gives 17/17. That plateau is
-bounded by real data on both sides and the margins are not large: 1.30 and below
-splits `squat_140x4_3`, whose four reps genuinely vary 5.00/5.60/6.55 s (ratio
-1.310), and 1.60 and above restores the failure. **A rest-pause or cluster set
-would have a real mid-set gap above 1.45 and would be split.** No such capture
-exists in `data/raw/`, so this holds for touch-and-go and straight sets only.
+C5 fixed it on 2026-07-31 and counting is **72/72** — `_longest_cadence`'s
+tolerance was 1.6, admitting a post-set gap and growing a run of six that beat
+the true five on length alone. It is 1.45 now, mid-plateau of a 1.35–1.55 band
+bounded by real data on both sides. **The live limitation: a rest-pause or
+cluster set has a real mid-set gap above 1.45 and would be split.** No such
+capture exists, so 72/72 holds for touch-and-go and straight sets only.
 
-Two things that fix taught us. The old segmenter was also *missing rep 1* on
-that capture — it was 4 real reps plus 2 spurious, not 5 plus 1, so a right-ish
-count concealed two errors. And duration was blind to it: the spurious windows
-ran 2.1 and 2.6 s against real reps of 2.5–2.9 s. Only their 45.7 and 88.7 cm of
-vertical gave them away.
+Two things that fix taught us, both about how a right-ish count hides errors.
+The old segmenter was *also missing rep 1* there — 4 real plus 2 spurious, not
+5 plus 1. And duration was blind to it: the spurious windows ran 2.1 and 2.6 s
+against real reps of 2.5–2.9 s, and only their 45.7 and 88.7 cm of vertical gave
+them away. *Mechanism and plateau margins:* TASKS.md C5.
 
 *Window extent, which is new.* Counts cannot see phase — the segmenter scored a
 perfect 44/44 while every window ran lockout-to-lockout, half a rep out of step.
@@ -293,16 +302,13 @@ for a 160 kg single at a correct count of 1 of 1: the first time a gate in this
 project caught a right-count-wrong-window failure.
 
 C5 fixed that one too, and its cause is worth keeping because it is a hole in an
-argument rather than a bad constant. `_similar_cluster` ranks candidate clusters
-by `(size, median_time)`, and the lateness tie-break rests on "a lifter sets up
-first and lifts second". That argument correctly rejects everything *before* the
-reps — approach, unrack, walkout — and says **nothing about what comes after
-them, and something always does.** On a multi-rep set it never bites, because
-the reps are the largest cluster and size decides first. On a *single* there is
-no cluster to be largest: every candidate is a cluster of one, size is
-degenerate, lateness decides alone, and the latest movement in any capture is by
-construction the re-rack. Singletons now rank by concentric displacement
-instead — an argmax, so no threshold — and the capture reconstructs 67.0 cm.
+argument rather than a bad constant. `_similar_cluster`'s lateness tie-break
+encodes "a lifter sets up first and lifts second", which correctly rejects
+everything *before* the reps and says **nothing about what comes after them, and
+something always does.** On a multi-rep set size decides first, so it never
+bites; on a *single* every cluster is size 1, lateness decides alone, and the
+latest movement in any capture is by construction the re-rack. Singletons now
+rank by concentric displacement — an argmax, no threshold — and it reads 67.0 cm.
 
 **That rule is unfalsified on bench rather than verified there, and the
 distinction is load-bearing.** It claims a working rep moves the bar further
@@ -440,15 +446,13 @@ is that the scale is calibrated on a plate resting on the floor and applied to
 travel reaching the top of frame.
 
 **That last guess was right, and C12 gives it a mechanism (2026-07-31.)** The
-tracker does not merely apply a floor-calibrated scale to the top of frame — it
-*loses the plate* there, on 97–100% of the frames in the top 10 cm of travel.
-Per-rep ROM is the difference between the lowest and the HIGHEST tracked point,
-so the highest point is the one measurement taken where the tracker is least
-reliable. That is a far better explanation of a 19 cm spread on a fixed anatomy
-than a scale subtlety, and it predicts the spread should be worst on the capture
-whose lockout tracks worst. It is not a proven cause — the three ruled-out
-candidates were tested and this one has not been, because testing it needs
-footage that tracks at lockout. See the C12 note at the top of P2.
+tracker does not merely misapply a floor-calibrated scale at the top of frame —
+it *loses the plate* there entirely (see the C12 note at the top of P2). Per-rep
+ROM is the highest tracked point minus the lowest, so the highest is measured
+exactly where the tracker is least reliable. That explains a 19 cm spread on a
+fixed anatomy better than a scale subtlety does, and it predicts the spread is
+worst where lockout tracks worst. **Unproven** — unlike the three ruled-out
+candidates, testing it needs footage that tracks at lockout.
 
 So: the horizontal numbers stand — fore-aft travel is a few centimetres, well
 inside the frame region the plate calibrates, and the sync still matches to
@@ -653,26 +657,20 @@ it is the size an attitude error of two degrees would leak, and that redirects
 P3 at attitude rather than at sensor bias. C6 measured it and **both halves of
 that inference are wrong.**
 
-*Wrong projection.* The 0.035 g comes from `analysis/11`, and it is a
-**vertical** residual. `orient.py`'s docstring states the asymmetry that makes
-this matter: a tilt θ leaks g·sin(θ) into horizontal but only g·(1−cos θ) into
-vertical. Converting a vertical number with the horizontal formula is what
-produced "2 degrees". Done correctly, 0.035 g of vertical needs **15.2°** — and
-a genuine 2° tilt puts 0.0006 g into vertical, 58× less than what was seen.
+*Wrong projection.* The 0.035 g is a **vertical** residual, and a tilt θ leaks
+g·sin(θ) into horizontal but only g·(1−cos θ) into vertical — see `orient.py`'s
+docstring. Converting a vertical number with the horizontal formula is what
+produced "2 degrees"; done correctly it needs **15.2°**.
 
-*Wrong number.* That 0.035 g is an off-pipeline figure from before the
-acceleration sign fix (`3c2cbed`), and it does not survive it. `bench_92.5x2`,
-the very capture it was measured on, now reads **0.0005 g** of per-rep vertical
-residual; bench overall runs 0.0003–0.0014 g.
+*Wrong number.* That 0.035 g predates the acceleration sign fix (`3c2cbed`) and
+does not survive it. The capture it was measured on now reads **0.0005 g**.
 
-*And the direct measurement.* Core Motion's attitude at a still hold is
-**0.05° before a set and 0.14° after** — see P5. 15° is excluded by two orders
-of magnitude, and so is 2°.
+*And measured directly:* attitude at a still hold is 0.05°/0.14° (P5), which
+excludes 15° by two orders of magnitude and 2° with it.
 
-So P3 is **not** redirected at attitude. What survives is that P3's error is
-real, is at rep frequency, and now has a location: see P5 and P6.
-*Evidence:* `stationary_table_20260730` and `analysis/24`, both gated in
-`tests/test_real_data.py`.
+So P3 is **not** redirected at attitude. What survives is that its error is real,
+sits at rep frequency, and now has a location: see P6. *Evidence:*
+`stationary_table_20260730`, `analysis/24`, TASKS.md C6.
 
 The original framing, still true as far as it goes: the "stillest" window
 carries 7.2 °/s peak-to-peak of ~6.5 Hz physiological tremor; the bias being
@@ -685,69 +683,45 @@ is tremor, not bias. More captures will not help; the estimator is the limit.
 also negligible.** Both halves matter, and they arrived from opposite
 directions.
 
-*Unobservable:* the plan was to log raw `CMGyroData` alongside the
-already-corrected `dm.rotationRate` and take the difference.
-**`CMMotionManager.isGyroAvailable` returns false on watchOS** — the raw gyro
-service is not offered. Tried on one motion manager and on two; the watch
-reported no hardware. There is no public-API route, so do not re-propose this.
+*Unobservable:* **`CMMotionManager.isGyroAvailable` returns false on watchOS**,
+so raw `CMGyroData` cannot be logged alongside the already-corrected
+`dm.rotationRate`. Tried on one motion manager and on two. There is no
+public-API route — **do not re-propose this.**
 
 *Negligible:* P4's stationary captures put the residual *after* Core Motion at
 **0.002 °/s**, unresolvable above its own noise. There was never much for the
-internal estimate to explain. Raw accelerometer adds nothing either —
-`userAccel + R⁻¹·g` already reconstructs it exactly (9.8065 m/s² measured at
-rest against 9.80665 expected) — and B5 showed sample rate is not a limit,
-since the floor impulse is already captured at 100 Hz to a median ratio of 1.04
-against video.
+internal estimate to explain.
 
-**What replaced it, and how that came out.** Everything above was measured AT
-REST, so the open question became whether Core Motion's attitude survives a
-working set — 20 g impacts, fast rotation, its gravity reference corrupted by
-the lift's own acceleration. C1's two-anchor protocol was built to answer it and
-**C6 measured it on 2026-07-30. The answer is that a set does no lasting damage.**
+**What replaced it: does attitude survive a working set?** Everything above was
+measured at rest. C6 answered it on 2026-07-30 and **a set does no lasting
+damage** — across all seven captures with both holds, attitude error at a still
+hold bounds at **0.05° opening, 0.14° closing**, worst case 0.27°, over 39–56 s
+of loaded lifting, while the logged gyro propagated alone drifts 0.35–1.49°.
+Core Motion's fusion is winning, through the impacts rather than despite them.
 
-Across all seven captures with both holds, the attitude error at a still hold
-**bounds at 0.05° at the opening anchor and 0.14° at the closing anchor**, worst
-case 0.27°, over 39–56 s of loaded lifting. Propagating the logged gyro alone
-across the same span drifts **0.35–1.49°**, median 0.69 — so Core Motion's
-fusion is doing real work and winning, through the impacts rather than despite
-them.
+**Read those as upper bounds, and do not read the change between them at all.**
+The world-frame residual is the tilt leak plus the body-frame accel bias rotated
+into the world, and the watch's posture differs at the two anchors. Decisively:
+0.0025 g of accel bias is g·sin(0.143°), the closing-anchor median itself. "It
+degraded from 0.05 to 0.14 across the set" was claimed here in error.
 
-**Read these as upper bounds, not measurements, and do not read the change
-between them at all.** The world-frame residual is the tilt leak PLUS the
-body-frame accel bias rotated into the world, and the watch is not in the same
-posture at the two anchors — measured, it rotates by 3.5–161°, mostly yaw. So
-the bias term projects differently at each end. Decisively: 0.0025 g of accel
-bias is g·sin(0.143°), which is the closing-anchor median itself. The body-frame
-residual is 0.0012–0.0050 g at both anchors, i.e. at that floor throughout. The
-true tilt error is somewhere between zero and 0.14°, and nothing here separates
-the two. The conclusion survives — it is small either way — but "it degraded
-from 0.05 to 0.14 across the set" does not, and was claimed here in error.
+**This measures two of three attitude degrees of freedom.** Gravity constrains
+roll and pitch, not yaw, and the logger requests `.xArbitraryZVertical`, so no
+absolute yaw reference exists in the system. Yaw is bounded only indirectly, by
+gyro-vs-Core-Motion divergence of 0.0–1.4° per set — enough to close it, since
+1.4° moves a point on a 10 cm excursion by 2.4 mm, under spec and nothing like
+the 180° disagreement P2 reports on fore-aft sign.
 
-**And this measures two of the three attitude degrees of freedom.** Gravity
-constrains roll and pitch. It says nothing about yaw, and the logger requests
-`.xArbitraryZVertical`, so no absolute yaw reference exists anywhere in the
-system. Yaw error is therefore unobservable here — bounded only indirectly, by
-the gyro-vs-Core-Motion yaw divergence of 0.0–1.4° per set. That bound is small
-enough to close the question: a 1.4° frame rotation moves a point on a 10 cm
-excursion by 2.4 mm, under the 1 cm spec, and it is nothing like the 180°
-disagreement P2 reports on fore-aft sign.
+Two things follow, the second mattering more. *B1's default is confirmed on the
+evidence `calibrate.py`'s docstring asked for:* the implied drift is 0.69° over
+~50 s ≈ **0.014 °/s** against a pause estimate of 0.1–0.9. Never apply it. And
+*C1 cannot see P3's error, by construction* — the anchors sample attitude at the
+two moments it is most likely to be right, still and unaccelerated, while P3
+lives DURING the rep. What sees it is the per-rep mean: bench and squat leave
+**0.003 g**, deadlift **0.010–0.030 g**. See P6.
 
-Two things follow, and the second matters more.
-
-*B1's default is now confirmed on the evidence it asked for.* `calibrate.py`'s
-docstring named exactly this test: two anchors 40 s apart, a baseline over which
-real rotation cancels and bias does not. The implied drift rate is 0.69° over
-~50 s ≈ **0.014 °/s**, against a pause estimate of 0.1–0.9 °/s. The pause
-estimate is 10–60× too large. Never apply it.
-
-*C1 cannot see the error it was hoped to find, by construction.* The anchors
-sample the attitude at the two moments it is most likely to be right — still,
-with no linear acceleration corrupting the gravity reference. P3's error lives
-DURING the rep, and a good number at the anchors says nothing about it. What
-does see it is the per-rep mean, which must be zero because a rep starts and
-ends at rest: bench and squat leave **0.003 g**, indistinguishable from the
-0.0025 g accel bias measured on a table, and deadlift leaves **0.010–0.030 g**.
-See P6. *Evidence:* `analysis/24`, `calibrate.anchor_tilt`.
+*Evidence:* `analysis/24`, `calibrate.anchor_tilt`, TASKS.md C6 for the full
+derivation of the bounds and the posture argument behind them.
 
 Validate on **deadlift** first — not because the pipeline differs by lift
 (it does not) but because it has the most external ground truth: the bar starts
