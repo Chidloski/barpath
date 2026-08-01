@@ -64,21 +64,24 @@ timestamp** and let the pipeline use `dt = diff(t)`. Do not resample.
 
 ## Why the two pieces
 
-- **Watch app** — records. Nothing else: no workout session, no HealthKit, no
-  background mode. See below for what was removed and why.
+- **Watch app** — records, and holds the HealthKit workout session that keeps it
+  recording once the wrist drops. Two screens: **Workout** and **Capture**. See
+  below for why the session was removed and then put back.
 - **iPhone app** — receives each finished log over `WatchConnectivity` and
   writes it to its Documents folder, which is exposed to the Files app. Grab
   it from **Files → On My iPhone → BarpathLogger**, or plug the phone into the
   Mac and pull it from the container.
 
-### The workout session that was removed (C7, 2026-07-30)
+### The workout session: removed on measurement (C7), restored on measurement (C16)
 
-This app used to hold an `HKWorkoutSession` while recording. The reasoning, held
-for as long as the app existed: Core Motion stops delivering the moment watchOS
-suspends the app, watchOS suspends it seconds after the wrist drops, and an
-`HKWorkoutSession` with the Workout Processing background mode is Apple's
-documented way to prevent that. All of it read off the documentation. None of it
-measured.
+The session has been argued both ways and it is worth keeping both, because the
+mistake was the same shape each time.
+
+**The original belief.** This app held an `HKWorkoutSession` while recording,
+because Core Motion stops delivering the moment watchOS suspends the app,
+watchOS suspends it seconds after the wrist drops, and a workout session with
+the Workout Processing background mode is Apple's documented way to prevent
+that. All of it read off the documentation. None of it measured.
 
 **It cost something real.** watchOS permits exactly one PRIMARY workout session
 per device — `HKErrorAnotherWorkoutSessionStarted` is "by this or another
@@ -86,37 +89,67 @@ application" — so taking one ended whatever workout the owner had started in t
 Workout app before walking into the gym. Reported as *"logging data stops my
 workout"*.
 
-The first fix ran the other way: keep the session, save it to Health as a
-Traditional Strength Training workout, and have this app **replace** the Workout
-app — paged live metrics, an effort rating, ring credit — so nothing was lost by
-the switch. It worked. It was also a workflow change imposed on the owner to
-solve a problem nobody had checked was real.
-
-**So it was checked.** Two captures with no session at all:
+**C7 checked whether the session was needed at all**, on 2026-07-30, with no
+session running:
 
 | capture | duration | rate | gaps |
 |---|---|---|---|
 | `drop_test_20260730_183925` | 47.08 s | 100.06 Hz | zero > 15 ms |
 | `better_drop_test_20260730_184839` | 58.78 s | 100.06 Hz | **zero at any threshold** |
 
-The second settled it: a **19.9 s** span and a **16.5 s** span with the wrist
-still and the screen dimmed, plus a notification raised and dismissed
-mid-capture, and not one sample lost. Zero repeated rows in either, unit
-quaternions, `io.check_log` clean.
+A **19.9 s** span and a **16.5 s** span with the wrist still and the screen
+dimmed, a notification raised and dismissed mid-capture, and not one sample
+lost. Zero repeated rows in either, unit quaternions, `io.check_log` clean. On
+that evidence the session, the workflow change, the metrics screens and the
+effort rating were all deleted.
 
-**The premise was false for the case that matters.** A capture is 40-60 s, the
-app stays frontmost for that long, and Core Motion keeps streaming at 100 Hz
-while frontmost-and-dimmed. So the session, the workflow change, the metrics
-screens and the effort rating are all gone, and the watch target no longer needs
-HealthKit at all. Start your workout in the Workout app again if you want one;
-this app will not touch it.
+#### C16 — that was wrong, and C7 named the reason itself
 
-**What would bring it back.** The untested case is the app being genuinely
-REPLACED mid-capture — the watch face returning, or another app opened — for
-longer than the ~6.5 s the first test covered. watchOS's *Return to Clock*
-default will not fire inside a single set, which is why this is judged safe. If
-captures ever start truncating, check that first — and read this section before
-re-adding a session, because the fix is not automatically a workout session.
+C7 wrote down its own falsifier: *"the app being genuinely REPLACED mid-capture
+— the watch face returning, or another app opened — for longer than the ~6.5 s
+the first drop test covered."* It went on the shot list in `TASKS.md` and
+`HANDOFF.md` as never collected. **It has now been collected, by accident, in a
+real gym session**, and it came back the other way:
+
+- captures stopped surviving the wrist going down, and
+- a workout already running in the **Workout app** took priority while the wrist
+  was down, so this app was the one that got suspended.
+
+Too few samples to use. That session's raw data is unusable.
+
+**What the drop tests actually proved is narrower than what was concluded from
+them.** Both were taken with the app **frontmost** and the screen merely
+**dimmed**. That is a real state, and Core Motion does keep streaming through it
+— the table above is not in dispute. It is simply not the gym state. In the gym
+the wrist drops, watchOS returns to the clock or hands the foreground to
+whichever app has a live workout, and a backgrounded app with no session of its
+own is suspended. *Frontmost-and-dimmed* and *replaced* are different cases, and
+only the first was ever tested.
+
+This is the project's recurring failure shape once more: **an aggregate that
+passes while the thing fails exactly where it matters.** It is the same error as
+`truth.validate` checking a whole-clip median while the tracker was lost at
+lockout. Measure the case you care about, not the neighbouring one that is
+easier to stage.
+
+**So the session is back, and it is the workout of record again.** One session
+per device means this app and the Workout app cannot both hold one, and there is
+no API to share, join or even detect the other's — see `MotionRecorder.swift`
+for the three routes that do not exist. Taking it quietly would end the owner's
+workout, which was the original bug. So this app does not compete with the
+Workout app, it **replaces** it for a lifting session: live metrics on a screen
+of its own, saved to Health as Traditional Strength Training with ring credit,
+and an effort rating afterwards.
+
+**The trade, plainly.** Start the workout *here*. If the Workout app is opened
+during a recording it preempts us and the capture can truncate — watchOS gives
+no way to prevent that, only to notice it, which is what the session delegate
+does: the status line says so and the watch plays a failure haptic.
+
+**What would falsify the restoration.** If a capture taken with a session of
+ours running still truncates when the wrist drops, the session is not what keeps
+Core Motion alive and the problem is elsewhere. Check `dt` for gaps, below — not
+the sample counter.
 
 **Check a capture the right way.** The sample counter cannot show a dropout: a
 dropout is a gap in the timestamps, and the count keeps rising either way.
@@ -130,10 +163,38 @@ print(len(l['t']), 'samples', round(l['t'][-1],1), 's',
 print('max gap ms', round(dt.max()*1000,1), ' gaps>50ms', int((dt>0.05).sum()))"
 ```
 
+## The two screens
+
+Paged with the crown. It opens on **Workout**, because the recurring failure is
+a capture taken with no session; it pages itself to **Capture** as soon as one
+is running.
+
+**Workout** — reserved for the workout and nothing else. Elapsed clock, heart
+rate with average and peak, active and total calories, and the number of
+captures saved so far this workout. `Start Workout` / `End Workout & Save`.
+Ending is disabled while a capture is running, because ending drops the
+keep-alive with the recording still going — the exact failure this build exists
+to prevent. Finish the capture, then end the workout.
+
+**Capture** — the capture protocol, unchanged. Name, opening anchor, reps,
+closing anchor. It warns in red if no workout session is running while a
+recording is in progress.
+
+There is deliberately **no pause control**, though the Workout app has one. A
+paused session is not a running session, and "the session is running" is the
+whole reason this app can record with the wrist down — a pause button is a
+one-tap way to silently break a capture.
+
+**Rate your effort** appears full-screen once the workout is saved: 1–10 on
+Apple's own wording, crown or slider, `Skip` a first-class option. An unrated
+workout is still a saved workout.
+
 ## Usage (on the fly)
 
-0. Start a workout in the **Workout app** if you want one. This app no longer
-   holds a session and will not disturb yours — that is C7, above.
+0. **Start Workout**, on the Workout screen — **not** in the Workout app. One
+   session exists per device, so a workout started over there takes ours and the
+   captures truncate. That is C16, above. (If you forget, `Calibrate` starts one
+   for you.)
 1. Type the movement name (e.g. `deadlift_80`).
 2. **Calibrate** — starts recording. Hold the bar still ~3 s (racked / on the
    floor). This is the *opening anchor*; it must be at the start and genuinely
@@ -145,6 +206,11 @@ print('max gap ms', round(dt.max()*1000,1), ' gaps>50ms', int((dt>0.05).sum()))"
    it run out — it **saves itself**. Do not reach for the watch, because tapping
    it is exactly the motion that ruins the anchor. There is a "Save now" button
    if you must, and the status line then flags the capture as single-anchor.
+5. Between sets, swipe up for the Workout screen. Repeat 1–4 for each set — one
+   workout spans the whole gym session, so do **not** end it between sets.
+6. **End Workout & Save** when you leave, then rate the effort. This is what
+   puts the workout in Health with its ring credit; it is the other half of
+   taking the device's only session.
 
 **Why the closing hold matters more than the opening one.** With one anchor, gyro
 bias must be estimated from a single 1–3 s window, and the residual we are
@@ -177,29 +243,39 @@ these sources in.
    companion phone app — add `PhoneApp/*.swift`.
 2. **File → New → Target → watchOS → Watch App for iOS App** (embeds a watch
    app in the same project). Add `WatchApp/*.swift` to that target.
-3. **Capabilities**
+3. **Capabilities** — these are load-bearing now, unlike between C7 and C16.
    - Both targets get **WatchConnectivity** automatically (no toggle).
-   - **Nothing else.** No HealthKit, no background modes. If your project still
-     carries the HealthKit capability and the Workout Processing background mode
-     from before 2026-07-30, remove them — C7 above is why, and leaving them
-     asks the owner for permissions the app no longer uses.
+   - Watch target: **HealthKit**, and tick **Workout Processing** under it.
+     That background mode is what lets the app keep running with the wrist down.
+     Without it the session starts and the capture still truncates, which looks
+     identical to the bug C16 fixed.
+   - Watch target: **Background Modes → Workout processing** if your Xcode does
+     not add it with the HealthKit capability.
 4. **Info.plist keys**
-   - Watch: `NSMotionUsageDescription`. The two HealthKit strings
-     (`NSHealthShareUsageDescription`, `NSHealthUpdateUsageDescription`) can go
-     with the capability.
+   - Watch: `NSMotionUsageDescription`, `NSHealthShareUsageDescription` and
+     `NSHealthUpdateUsageDescription`. The app will crash on first launch
+     without the two HealthKit strings.
    - Phone: `UIFileSharingEnabled = YES` and
      `LSSupportsOpeningDocumentsInPlace = YES` (so logs show in the Files app).
-5. Set the deployment targets to your OS versions, pick your team for signing,
-   build the **watch** scheme to your paired watch.
+5. **Watch deployment target: watchOS 11.0 or newer.** Pick your team for
+   signing on *both* targets, then build the **watch** scheme to your paired
+   watch.
 
-   **No minimum beyond whatever your watch runs.** The sources use no API newer
-   than the base SwiftUI/CoreMotion/WatchConnectivity set and typecheck clean at
-   `-target arm64_32-apple-watchos9.0`, `...10.0` and `...26.0`. This briefly was
-   not true — the effort rating pinned it to watchOS 11 and broke a build set to
-   10.0 — and it is worth remembering why: **availability is checked against the
-   deployment target, not against your watch.** A watchOS 26 wrist does not make
-   a watchOS 11 symbol legal in a target that says 10.0; the compiler has no idea
-   which device you will install on.
+   The floor is watchOS 11 and it is exactly four symbols, all in the effort
+   rating: `HKQuantityTypeIdentifier.workoutEffortScore`,
+   `HKUnit.appleEffortScore()`, and
+   `HKHealthStore.relateWorkoutEffortSample(_:with:activity:completion:)`.
+   Verified rather than assumed — the sources typecheck clean at
+   `-target arm64_32-apple-watchos11.0`, `...12.0` and `...26.0`, and fail at
+   `...10.0` on those four and nothing else.
+
+   Earlier builds guarded them with `#available` to hold the target at 10.0.
+   That is no longer done: watchOS 11+ is the supported floor, so the guard buys
+   nothing. Remember why the guard ever existed, because the mistake recurs —
+   **availability is checked against the deployment target, not against your
+   watch.** A watchOS 26 wrist does not make a watchOS 11 symbol legal in a
+   target that says 10.0; the compiler has no idea which device you will install
+   on.
 
 ## Loading an updated build onto the watch
 
@@ -215,23 +291,28 @@ update path, not first-time setup.
    scheme (not the phone app) and your watch as the destination. That installs
    the phone app and the embedded watch app in one shot; you do not need a
    separate phone install.
-3. **First launch on the watch: only the motion prompt.** There is no longer a
-   HealthKit prompt. If you still get one, the old capability is still on the
-   target — remove it (step 3 of setup).
-4. **Check it took.** Two things. The idle screen shows **only** the movement
-   field and **Calibrate**; if there is a Start Workout button or a swipe-up
-   metrics page, the pre-C7 build is still installed. And "Finish Set" is
-   **orange** rather than red, showing a `HOLD STILL / closing anchor` countdown
-   instead of saving immediately.
+3. **First launch on the watch: a motion prompt and a HealthKit prompt.** Grant
+   both. If no HealthKit prompt appears, the capability is missing from the
+   watch target — add it (step 3 of setup), or the session will never start and
+   the captures will truncate exactly as before.
+4. **Check it took.** Three things. The app opens on a **Workout** screen with
+   an elapsed clock and a `Start Workout` button; if it opens straight onto the
+   movement field with no page above it, the C7 build is still installed. There
+   is a **Capture** screen below it, reached by swiping down. And "Finish Set"
+   is **orange** rather than red, showing a `HOLD STILL / closing anchor`
+   countdown instead of saving immediately.
 5. **Check the phase column arrived.** `head -1` the CSV: the header should end
    `...,gx,gy,gz,phase`, and `io.check_log` will tell you if the closing hold ran
    for less than 2 s.
 
 If the install fails, in this order — this is what cost time last time:
 
-- **Watch target's minimum deployment must not exceed your watch's watchOS.**
-  This was the actual cause before: Xcode 15.4's bundled SDK was older than the
-  watch's OS. The sources typecheck clean against the watchOS 26.5 SDK here.
+- **Watch target's minimum deployment must be watchOS 11.0 or newer, and must
+  not exceed your watch's watchOS.** Too low and the effort rating will not
+  compile (step 5 of setup names the four symbols). Too high — or an Xcode whose
+  bundled SDK is older than the watch's OS — and the install fails; that was the
+  actual cause before, with Xcode 15.4. The sources typecheck clean against the
+  watchOS 26.5 SDK here.
 - **Signing team set on *both* targets**, phone and watch.
 - **Ghost placeholder icon that survives restarts, with the iPhone Watch app
   only offering "Install":** delete the *parent iOS app* from the iPhone. The
@@ -241,9 +322,10 @@ If the install fails, in this order — this is what cost time last time:
 ## Sanity check before a real set
 
 Record a 10 s clip holding the watch still on a table — press Calibrate, Start
-Set, Finish Set, and let the closing hold run out. Nothing else to clean up
-afterwards: since C7 the app starts no workout session, so a bench-test clip no
-longer leaves a strength workout accruing in Health all afternoon. Then:
+Set, Finish Set, and let the closing hold run out. **Then end the workout**, or
+`Calibrate`'s auto-start leaves a strength workout accruing in Health all
+afternoon; that is the cost of C16 putting the session back, and it is a
+deliberate one. Then:
 
 ```python
 from src import io
