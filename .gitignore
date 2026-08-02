@@ -26,6 +26,19 @@ data_v2/video/*
 !data_v2/video/.gitkeep
 data_v2/video_only/*
 !data_v2/video_only/.gitkeep
+# Diagnostic captures that are not lifts — drop tests, wrist-down tests, the
+# C16 workout-session arms. Same rule as every other capture directory: they
+# are immutable inputs, backed up separately, never source. This directory was
+# the ONE capture directory not covered here, and `git add -A` duly swept four
+# CSVs into the index on 2026-08-02.
+data_v2/non_gym_tests/*
+!data_v2/non_gym_tests/.gitkeep
+
+# Agent worktrees. `git add -A` in the shared checkout stages one of these as an
+# embedded git repository — a gitlink that clones cannot resolve — and then
+# `git rm --cached` refuses it without -f. Scoped to `worktrees/` rather than
+# all of `.claude/` so a shared settings.json could still be tracked.
+.claude/worktrees/
 
 # Per-run diagnostics from `python run.py --plot`. Regenerable; the curated
 # records in analysis/ are numbered and committed, these are not.

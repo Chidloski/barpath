@@ -71,6 +71,15 @@ every other agent and is therefore not a claim.
   the shared checkout indefinitely — that is it working — and never `git stash`,
   `git checkout .` or `git reset --hard` there, which silently destroys every
   live claim in the repo, other agents' included.
+- **`git add -A` in the shared checkout stages the board, and nothing can stop
+  it.** `HEARTBEAT.md` is tracked, so no `.gitignore` rule reaches it — the
+  protection has to be the habit. Stage explicitly; if you have already run it,
+  plain `git reset` unstages everything and destroys nothing. **Do not reach for
+  `git checkout .` or `git reset --hard` to tidy up afterwards**, which is the
+  line above and is how a fumble becomes lost work. Learned on 2026-08-02, when
+  one `git add -A` staged the board, four capture CSVs and an agent worktree as
+  an embedded git repository. `.gitignore` now covers the last two; the board is
+  the one that needs you.
 - `tests/test_heartbeat.py` checks the board parses and that no two active claims
   overlap. It is a format gate, not a lock manager; passing it does not mean you
   hold what you think you hold.
