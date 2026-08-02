@@ -178,10 +178,96 @@ def test_fit_residual_is_sub_pixel(paths, stem):
     Note this is only meaningful because `track` refuses to report a frame on
     fewer than three markers here — a two-marker fit is exact and its residual
     is zero whatever it is looking at. See `track`.
+
+    Kept as a floor, but it is NOT the gate that says the tracker is good — see
+    the next test for why a whole-clip median cannot say that.
     """
     if stem not in paths:
         pytest.skip(f"{stem} not present")
     assert np.nanmedian(paths[stem]["residual_px"]) < 1.5
+
+
+@pytest.mark.parametrize("stem", CAPTURES)
+def test_fit_residual_holds_at_the_top_of_travel(paths, stem):
+    """The gate the whole-clip median could not be.
+
+    `deadlift_190x1` is why this exists. It has the LOWEST whole-clip residual
+    of the five (0.150 px, passing the test above with a tenfold margin) and the
+    HIGHEST at lockout (1.595 px, over that same limit). An aggregate ranked it
+    the best capture we hold while it was the worst where the measurement is
+    actually taken — the same shape as C12's whole-clip NCC median, which is the
+    defect this module was written to fix in `truth.py`.
+
+    Asserted in centimetres rather than pixels, because that is the unit of the
+    thing being refereed. A referee whose own fit error approaches the 1 cm spec
+    cannot judge it; `MAX_TOP_RESIDUAL_CM` puts the limit at half the spec, and
+    the residual over-states position error by about sqrt(3) anyway since three
+    markers determine one centroid.
+    """
+    if stem not in paths:
+        pytest.skip(f"{stem} not present")
+    top = markers.top_of_travel_residual(paths[stem])
+    assert top["n"] > 20, f"{stem}: only {top['n']} frames at the top of travel"
+    assert top["median_cm"] < markers.MAX_TOP_RESIDUAL_CM, (
+        f"{stem}: fit residual at lockout is {top['median_cm']:.3f} cm "
+        f"({top['median_px']:.2f} px) against a "
+        f"{markers.MAX_TOP_RESIDUAL_CM} cm limit; whole-clip "
+        f"{top['whole_cm']:.3f} cm")
+
+
+def test_top_of_travel_residual_sees_what_a_whole_clip_median_cannot():
+    """The gate discriminates — asserted, not assumed.
+
+    Algebraic, so it runs without `data_v2`. Builds the exact blind spot: a
+    track that is excellent everywhere except the top of travel. The old
+    whole-clip gate passes it with a 30x margin; the new one must fail it.
+
+    Worth having as a test rather than a comment because "we replaced an
+    aggregate with a stratified statistic" is only worth anything if the
+    stratified one actually responds to the stratification.
+    """
+    n = 400
+    h = np.linspace(0.0, 1.0, n)
+    r = np.where(h > 0.85, 6.0, 0.05)
+    path = {"height": h, "residual_px": r, "m_per_px_t": np.full(n, 0.002)}
+
+    top = markers.top_of_travel_residual(path)
+    assert np.nanmedian(r) < 1.5                       # old gate: passes
+    assert top["median_cm"] > markers.MAX_TOP_RESIDUAL_CM   # new gate: fails
+    assert top["ratio"] > 50
+    assert top["n"] > 20
+
+    # and it stays quiet on a track that is uniformly good
+    flat = {"height": h, "residual_px": np.full(n, 0.4),
+            "m_per_px_t": np.full(n, 0.002)}
+    good = markers.top_of_travel_residual(flat)
+    assert good["median_cm"] < markers.MAX_TOP_RESIDUAL_CM
+    assert 0.9 < good["ratio"] < 1.1
+
+
+# Measured 2026-08-02. Pinned per capture so the numbers can only improve,
+# which is how this project gates everything it cannot yet derive: the
+# whole-clip figure hid a tenfold spread, so the spread itself is now recorded
+# rather than an average of it.
+TOP_RESIDUAL_CM = {
+    "deadlift_150x5_20260801": 0.177,
+    "deadlift_160x5_20260801": 0.168,
+    "deadlift_190x1_20260801": 0.333,
+    "bench_85x6_20260801": 0.279,
+    "bench_110x1_20260801": 0.226,
+}
+
+
+@pytest.mark.parametrize("stem", CAPTURES)
+def test_top_of_travel_residual_does_not_regress(paths, stem):
+    """Non-regression floor at 25% headroom over what was measured."""
+    if stem not in paths:
+        pytest.skip(f"{stem} not present")
+    top = markers.top_of_travel_residual(paths[stem])
+    ceiling = TOP_RESIDUAL_CM[stem] * 1.25
+    assert top["median_cm"] < ceiling, (
+        f"{stem}: {top['median_cm']:.3f} cm against a {ceiling:.3f} cm ceiling "
+        f"(was {TOP_RESIDUAL_CM[stem]:.3f})")
 
 
 @pytest.mark.parametrize("stem", CAPTURES)

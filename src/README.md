@@ -127,6 +127,40 @@ carelessly and every distance from that capture is wrong by the same fraction.
 
 Requires `ffmpeg` on PATH. No new Python dependencies.
 
+### Which referee scores a capture (C17, 2026-08-02)
+
+`metrics.vs_truth` and `metrics.momentum_closure` take either tracker. You
+normally say nothing and it is inferred from where the clip lives:
+
+```python
+metrics.vs_truth(result, "data/video/deadlift_180x3_20260728.mov")     # template
+metrics.vs_truth(result, "data_v2/video/deadlift_150x5_20260801.mov")  # markers
+
+metrics.vs_truth(result, clip, tracker="markers")   # or say so explicitly
+metrics.vs_truth(result, markers.bar_path(clip))    # or hand it a tracked path
+```
+
+The third form is how you track once and score several ways without decoding
+twice. `pipeline.find_video` pairs a capture inside its own dataset, so a
+`data_v2/raw` CSV finds `data_v2/video` and never reaches across.
+
+**The inference is about the directory, not the footage.** `data_v2/` exists
+because the capture protocol changed, so the layout already records the answer;
+sniffing frames for markers would be a second tracker on every call and a new way
+to be wrong. A capture cannot be scored by the tracker its footage was not shot
+for — the template does not reliably find a marker-less bench plate, and the
+constellation cannot find stickers nobody applied.
+
+`vs_truth` reports `video_tracker`, and `video_top_ncc` **or**
+`video_top_residual_cm` with NaN for the other, because one field that silently
+means two things is a failure mode this project already has a collection of.
+
+**Nothing has yet been scored through the markers**, because no `data_v2`
+capture has an IMU log beside it. The plumbing is gated; the agreement is not.
+Specifically unmeasured: whether a landing found on marker footage falls at the
+same instant as one on template footage, which matters at the deadlift sync's
+13.5 ms.
+
 ---
 
 ## Drawbacks
@@ -369,15 +403,34 @@ Gated by `tests/test_markers.py`, which skips cleanly when `data_v2/` is absent.
 **The fit residual rises with height, and is reported here so it is not
 discovered later as a surprise.** Pooled over the three deadlifts it runs 0.16 px
 at the floor to 0.81 px at lockout, correlation +0.54; per capture the lockout
-medians are 0.78, 0.71 and 1.60 px. The last is above the 1.5 px gate in
-`tests/test_markers.py`, which passes because it tests the whole-clip median
-(0.15 px on that capture). So the stickers are **not** immune to what breaks the
-plate template — the marker is smaller and dimmer at the top of frame, and the
-centroid is correspondingly noisier. The difference is that they degrade inside
-tolerance and never lose the bar, while the template degrades past
-`GOOD_SCORE`: 100% of its top-10 cm frames are untrusted against 31% at the
+medians are 0.78, 0.71 and 1.60 px. So the stickers are **not** immune to what
+breaks the plate template — the marker is smaller and dimmer at the top of
+frame, and the centroid is correspondingly noisier. The difference is that they
+degrade inside tolerance and never lose the bar, while the template degrades
+past `GOOD_SCORE`: 100% of its top-10 cm frames are untrusted against 31% at the
 floor. Do not restate this as "height does not affect the sticker tracker".
 Measured in `analysis/37`.
+
+**That paragraph used to end by noting the 1.60 px lockout sat above the 1.5 px
+gate, "which passes because it tests the whole-clip median". C17 stopped writing
+that down and fixed it (2026-08-02).** `markers.top_of_travel_residual` measures
+the fit over `truth.TOP_FRAC` of travel — the same span `truth.top_of_travel_
+score` uses, so the two referees stay comparable — `validate` warns on it, and
+`tests/test_markers.py` gates on it per capture.
+
+Two things fell out of measuring it properly, and the second is the reassuring
+one. **`deadlift_190x1` has the lowest whole-clip residual of the five (0.150 px)
+and the highest at lockout (1.595 px), a 10.6x spread**: the old gate ranked it
+the best-fitting capture held while it was the worst where the measurement is
+taken. That is C12's shape exactly, in the module written to fix C12. And
+**converted through each frame's own scale the same five read 0.177 / 0.168 /
+0.333 / 0.279 / 0.226 cm**, so the worst lockout fit in the set is a third of the
+1 cm spec. The stratification is real; the tracker is still comfortably usable
+at its worst point, which is precisely the claim C15 made against the template
+and it survives being measured properly. The gate is therefore in **centimetres
+against the spec** rather than pixels — `markers.MAX_TOP_RESIDUAL_CM`, set at
+half the accuracy the referee is asked to judge — with the per-capture values
+pinned at 25% headroom so they can only improve.
 
 **It tracks at full resolution and holds the whole clip, so mind the memory.**
 The stickers are ~5 px at 360x640 and `truth.bar_path`'s `scale=0.5` would throw

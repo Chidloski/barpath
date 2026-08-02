@@ -74,9 +74,24 @@ def find_video(path: str | Path, video_dir: str | Path | None = None) -> Path | 
     Nothing enforces that convention, so a miss returns None rather than
     guessing at a pairing — comparing a capture against the wrong set's video
     would produce a confident, meaningless number.
+
+    **A capture keeps its own dataset's video (C17, 2026-08-02.)** A CSV in
+    `data_v2/raw/` is paired against `data_v2/video/`, not `data/video/`, and
+    the search never crosses between the two. That is not tidiness: the datasets
+    are refereed by different trackers — `data/video/` has no markers on the
+    plate and `data_v2/` is filmed for them — so a cross-dataset pairing would
+    hand `metrics.resolve_path` footage its inferred tracker cannot read, and
+    the failure would arrive as a tracking error rather than as the pairing
+    mistake it is. Explicit `video_dir` still wins, for tests and for one-offs.
     """
     path = Path(path)
-    root = Path(video_dir) if video_dir else path.resolve().parents[2] / "data" / "video"
+    if video_dir:
+        root = Path(video_dir)
+    else:
+        # data/raw -> data/video, data_v2/raw -> data_v2/video. The dataset is
+        # the CSV's grandparent, whatever it is called.
+        dataset = path.resolve().parents[1]
+        root = dataset / "video"
     if not root.is_dir():
         return None
     hits = sorted((v for v in root.glob("*.mov") if path.stem.startswith(v.stem)),

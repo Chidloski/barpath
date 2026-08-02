@@ -100,6 +100,18 @@ Limits, honestly
   **transferred rather than measured**, because that is a different plate
   carrying its own stickers. What this module removes is the *extrapolation* of
   the scale across the frame, not the calibration itself.
+- **The fit degrades with height, like the template does — but inside
+  tolerance rather than past it, and the distinction is the whole claim of this
+  module.** Pooled over the deadlifts the residual runs 0.16 px at the floor to
+  0.81 px at lockout; per capture the lockout medians are 0.78, 0.71 and
+  **1.60** px, correlation with height +0.24 to +0.93. The marker is smaller and
+  dimmer at the top of frame and its centroid is noisier for it. In metres that
+  worst case is 0.33 cm against a 1 cm spec, so the tracker never stops being
+  usable — where the template's top-of-travel frames are 100% below
+  `truth.GOOD_SCORE`, i.e. past the point `truth.py` itself says to stop
+  believing it. **Do not restate this as "no height dependence"**; that caption
+  was written once, on `analysis/37`, and the scatter falsified it.
+  `top_of_travel_residual` measures it and `validate` reports it.
 - **The perspective correction assumes the principal point is the frame
   centre.** True enough for a phone, and untested here. `bar_path` returns the
   uncorrected path as well, so the correction's size is always visible rather
@@ -965,6 +977,81 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
     return path
 
 
+MAX_TOP_RESIDUAL_CM = 0.5   # the referee's own fit error, where it is worst
+
+
+def top_of_travel_residual(path: dict, frac: float = truth.TOP_FRAC) -> dict:
+    """How well the rigid model fits WHERE THE FIT IS WORST, not on average.
+
+    The exact counterpart of `truth.top_of_travel_score`, and it exists for the
+    same reason that one does. This project has now been bitten five times by an
+    aggregate that passes while the thing fails exactly where it matters —
+    milestones 1-6, C8's peak-height threshold, C10's clip-composition artefact,
+    C12's whole-clip NCC median, and this. **A referee needs checking where it
+    is used.**
+
+    `frac` matches `truth.TOP_FRAC` deliberately, so "at lockout" means the same
+    span of travel for both trackers and the two remain comparable.
+
+    What it found, measured 2026-08-02 over all five `data_v2` captures. The
+    whole-clip median is the quantity the old gate tested:
+
+        capture                whole    top 15%    ratio
+        deadlift_150x5         0.519      0.775      1.5
+        deadlift_160x5         0.611      0.724      1.2
+        deadlift_190x1         0.150      1.595     10.6
+        bench_85x6             1.096      1.311      1.2
+        bench_110x1            1.066      1.075      1.0
+
+    all in px, and the third row is the point. **`deadlift_190x1` has the
+    lowest whole-clip residual of the five and the highest at lockout** — the
+    old gate ranked it the best-fitting capture we hold while it was the worst
+    where the measurement is taken. It passed at 0.150 against a 1.5 px limit
+    with a tenfold margin, and its lockout sits at 1.595, over the line.
+
+    **But read the pixels in metres before alarming anyone**, which is why this
+    reports both. Converted through each frame's own scale the same column is
+    0.177 / 0.168 / **0.333** / 0.279 / 0.226 cm. The worst lockout fit in the
+    set is a third of the 1 cm spec, so the stratification is real and the
+    tracker is still comfortably inside tolerance — which is exactly the
+    distinction C15 drew against the template, and it survives being measured
+    properly. The template does not degrade, it *fails*: 100% of its top-10 cm
+    frames fall below `truth.GOOD_SCORE`.
+
+    Why the residual degrades with height at all: the marker is further from the
+    camera at lockout and subtends fewer pixels, so its centroid is noisier.
+    Correlation with height is +0.24 to +0.93 across the five.
+
+    Conservative by about sqrt(3). The residual is the misfit of three markers
+    to a rigid triangle; the CENTROID those markers determine is better
+    conditioned than any one of them. So this over-states the position error,
+    and is the right way round for a gate.
+    """
+    h, r = path["height"], path["residual_px"]
+    mpp = path["m_per_px_t"]
+    ok = np.isfinite(h) & np.isfinite(r)
+    if not ok.any():
+        return {"median_px": float("nan"), "median_cm": float("nan"),
+                "whole_px": float("nan"), "whole_cm": float("nan"),
+                "ratio": float("nan"), "n": 0}
+
+    top = np.nanmax(h[ok])
+    span = top - np.nanmin(h[ok])
+    near = ok & (h > top - frac * span)
+    cm = r * mpp * 100.0
+
+    whole_px = float(np.nanmedian(r[ok]))
+    med_px = float(np.nanmedian(r[near])) if near.any() else float("nan")
+    return {
+        "median_px": med_px,
+        "median_cm": float(np.nanmedian(cm[near])) if near.any() else float("nan"),
+        "whole_px": whole_px,
+        "whole_cm": float(np.nanmedian(cm[ok])),
+        "ratio": med_px / whole_px if whole_px > 0 else float("nan"),
+        "n": int(near.sum()),
+    }
+
+
 def validate(path: dict, video: str | Path = "") -> None:
     """Raise or warn on the ways a sticker track can be wrong.
 
@@ -1022,6 +1109,28 @@ def validate(path: dict, video: str | Path = "") -> None:
             f"spacing could be moving the reported path by up to "
             f"{cal['spacing_bias_cm']:.1f} cm — at or above the 1 cm spec. See "
             f"calibration_report.", stacklevel=2)
+
+    # Where the fit is worst, not on average. A whole-clip median cannot see a
+    # failure confined to part of the movement, and that is the exact defect
+    # this module was written to fix in `truth.py` — so it must not be the only
+    # thing checked here. See `top_of_travel_residual`.
+    top = top_of_travel_residual(path)
+    if np.isfinite(top["median_cm"]) and top["median_cm"] > MAX_TOP_RESIDUAL_CM:
+        warnings.warn(
+            f"{name}: the constellation fit residual over the top "
+            f"{truth.TOP_FRAC:.0%} of travel is {top['median_cm']:.2f} cm "
+            f"({top['median_px']:.2f} px), above the {MAX_TOP_RESIDUAL_CM} cm "
+            f"this module treats as usable, against {top['whole_cm']:.2f} cm "
+            f"over the whole clip. Distances near lockout carry that error. "
+            f"See markers.top_of_travel_residual.", stacklevel=2)
+    elif np.isfinite(top["ratio"]) and top["ratio"] > 4.0:
+        warnings.warn(
+            f"{name}: the fit residual is {top['ratio']:.1f}x worse over the "
+            f"top {truth.TOP_FRAC:.0%} of travel ({top['median_px']:.2f} px) "
+            f"than over the whole clip ({top['whole_px']:.2f} px). Still inside "
+            f"tolerance at {top['median_cm']:.2f} cm, so this is a note rather "
+            f"than a fault — but the whole-clip figure is not representative of "
+            f"this capture and should not be quoted alone.", stacklevel=2)
 
     try:
         lift = truth.lift_of(video)

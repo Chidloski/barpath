@@ -369,3 +369,45 @@ def test_synth_emits_a_closing_stillness_hold():
     from src.synth import SetConfig
     none = as_log(synth.generate(set_cfg=SetConfig(settle_pause=0.0)))
     assert any("closing stillness" in w for w in io.check_log(none))
+
+
+# ------------------------------------------------- dataset pairing (C17) --
+def test_find_video_keeps_a_capture_within_its_own_dataset(tmp_path):
+    """`data_v2/raw` pairs to `data_v2/video`, never across to `data/video`.
+
+    Algebraic, so it belongs here: it asserts a path rule, not a fact about
+    lifting. It matters because the two datasets are refereed by DIFFERENT
+    trackers — `data/video/` has no markers on the plate and `data_v2/` is
+    filmed for them — so a cross-dataset pairing hands `metrics.resolve_path`
+    footage its inferred tracker cannot read, and the failure surfaces as a
+    tracking error rather than as the pairing mistake it actually is.
+
+    Before C17 the search was `parents[2] / "data" / "video"`, which sent every
+    dataset to `data/video/` regardless of where the capture lived.
+    """
+    from src import pipeline
+
+    for ds in ("data", "data_v2"):
+        (tmp_path / ds / "raw").mkdir(parents=True)
+        (tmp_path / ds / "video").mkdir(parents=True)
+
+    # The same stem exists in both datasets' video dirs.
+    (tmp_path / "data" / "video" / "deadlift_150x5_20260801.mov").touch()
+    (tmp_path / "data_v2" / "video" / "deadlift_150x5_20260801.mov").touch()
+
+    v1 = tmp_path / "data" / "raw" / "deadlift_150x5_20260801_120000.csv"
+    v2 = tmp_path / "data_v2" / "raw" / "deadlift_150x5_20260801_120000.csv"
+    v1.touch()
+    v2.touch()
+
+    assert pipeline.find_video(v1).parents[1].name == "data"
+    assert pipeline.find_video(v2).parents[1].name == "data_v2"
+
+    # A dataset with no matching clip returns None rather than reaching sideways
+    # into the other one.
+    (tmp_path / "data_v2" / "video" / "deadlift_150x5_20260801.mov").unlink()
+    assert pipeline.find_video(v2) is None
+
+    # An explicit video_dir still wins, for tests and one-offs.
+    forced = pipeline.find_video(v2, tmp_path / "data" / "video")
+    assert forced is not None and forced.parents[1].name == "data"

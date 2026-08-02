@@ -562,3 +562,95 @@ def test_bench_video_truth_survives_the_top_of_travel(video, reps):
     assert top > floor, (
         f"{video}: top-of-travel NCC {top:.3f} has fallen below {floor}. Bench "
         f"was the control showing the deadlift lockout failure is specific")
+
+
+# ------------------------------------------------- which referee applies --
+# C17, 2026-08-02. This project now has two video referees and which one applies
+# is decided by the footage. These gate the dispatch, and the first one is the
+# safety argument for the whole refactor: a plain path outside data_v2 must
+# still resolve to the template tracker, or every number in CLAUDE.md silently
+# changes meaning.
+
+def test_tracker_is_inferred_from_where_the_clip_lives():
+    """Directory layout records the answer; do not sniff the footage.
+
+    Algebraic — no decode, which is why `infer_tracker` is a separate function.
+    """
+    from src import metrics
+
+    assert metrics.infer_tracker("data/video/deadlift_180x3_20260728.mov") == "plate"
+    assert metrics.infer_tracker("data_v2/video_only/deadlift_150x5.mov") == "markers"
+    assert metrics.infer_tracker(ROOT / "data_v2" / "video" / "x.mov") == "markers"
+    # A bare name is not marker footage. data/video/ predates data_v2 entirely.
+    assert metrics.infer_tracker("x.mov") == "plate"
+
+
+def test_resolve_path_passes_a_ready_made_path_straight_through():
+    """Tracking once and scoring several ways must not decode twice."""
+    from src import metrics
+
+    path = {"t": np.arange(3.0), "height": np.zeros(3), "x": np.zeros(3)}
+    assert metrics.resolve_path(path) is path
+    assert metrics.resolve_path(path, tracker="markers") is path
+
+
+def test_resolve_path_refuses_an_unknown_tracker():
+    from src import metrics
+
+    with pytest.raises(ValueError, match="tracker must be one of"):
+        metrics.resolve_path("data/video/x.mov", tracker="sticker")
+
+
+def test_video_quality_reports_the_statistic_that_means_something():
+    """Each referee gets its own health measure, and NaN for the other.
+
+    One field that silently means two things is how this project has been
+    caught before; `video_top_ncc` on a constellation fit would be exactly that.
+    """
+    from src import metrics
+
+    marker_path = {"height": np.linspace(0, 1, 200),
+                   "residual_px": np.full(200, 0.5),
+                   "m_per_px_t": np.full(200, 0.002)}
+    q = metrics._video_quality(marker_path)
+    assert q["tracker"] == "markers"
+    assert np.isfinite(q["top_residual_cm"])
+    assert np.isnan(q["top_ncc"])
+
+    template_path = {"height": np.linspace(0, 1, 200),
+                     "score": np.full(200, 0.8)}
+    q = metrics._video_quality(template_path)
+    assert q["tracker"] == "plate"
+    assert q["top_ncc"] == pytest.approx(0.8)
+    assert np.isnan(q["top_residual_cm"])
+
+
+def test_the_sync_route_is_tracker_agnostic_on_real_marker_footage():
+    """`truth.landings` reads only `t` and `height`, so it works on both.
+
+    That is the fact that made this refactor small: both trackers zero `height`
+    at the lowest tracked point and report seconds from the clip start, so
+    landings, `truth.sync`, `truth.to_imu_time` and `bench_sync` never needed to
+    know which produced the path. Checked on a real marker deadlift rather than
+    argued: the label says 5 reps and the landings must agree.
+
+    NOT checked, for want of a paired capture: whether a landing found on marker
+    footage falls at the same INSTANT as one found on template footage. The
+    deadlift sync matches landings to IMU impacts at 13.5 ms, so that is the
+    tolerance the first paired capture should test.
+    """
+    from src import markers, truth
+
+    clip = ROOT / "data_v2" / "video_only" / "deadlift_150x5_20260801.mov"
+    if not clip.exists():
+        pytest.skip("data_v2 marker footage not present")
+
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        path = markers.bar_path(clip)
+
+    landings = truth.landings(path)
+    assert len(landings) == 5, (
+        f"5 reps labelled, {len(landings)} landings found at {landings}")
+    assert np.all(np.diff(landings) > 1.5), "landings must not double-fire"
