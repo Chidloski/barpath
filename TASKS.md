@@ -838,6 +838,62 @@ and never lose the bar, where the template degrades **past** the point `truth.py
 says to stop believing it — 100% of its top-10 cm frames below `GOOD_SCORE`
 against 31% at the floor.
 
+*The gate described above is gone as of C17 (2026-08-02); see that entry. Noting
+the whole-clip median could not see the defect, and then leaving it as the gate,
+was this project's recurring failure written down instead of repaired.*
+
+
+### C17 — the marker referee is gated where it is used (2026-08-02)
+
+`src/markers.py` (`top_of_travel_residual`, `MAX_TOP_RESIDUAL_CM`, `validate`),
+`tests/test_markers.py`. The first half of making `data_v2` the scoring path:
+before the marker tracker can referee anything, its own gate has to be able to
+see it failing.
+
+**C15 recorded the defect and left it in place.** Its closing correction says the
+1.60 px lockout residual on `deadlift_190x1` sits above the 1.5 px gate "which
+passes only because it tests the whole-clip median". That is a true sentence
+about a broken gate, written down rather than acted on — and the whole reason
+`markers.py` exists is that `truth.validate` did exactly this with NCC (C12).
+**That is now five times: milestones 1–6, C8's peak-height threshold, C10's
+clip-composition artefact, C12's whole-clip NCC median, and this one.**
+
+**Measuring it across all five captures rather than C15's three deadlifts
+sharpened it into something worse than a missed threshold:**
+
+| capture | whole-clip | top 15% | ratio | top 15%, cm |
+|---|---|---|---|---|
+| deadlift_150x5 | 0.519 px | 0.775 | 1.5x | 0.177 |
+| deadlift_160x5 | 0.611 | 0.724 | 1.2x | 0.168 |
+| **deadlift_190x1** | **0.150** | **1.595** | **10.6x** | **0.333** |
+| bench_85x6 | 1.096 | 1.311 | 1.2x | 0.279 |
+| bench_110x1 | 1.066 | 1.075 | 1.0x | 0.226 |
+
+**`deadlift_190x1` is the best capture we hold by the old statistic and the worst
+by the new one.** It passed at 0.150 px against a 1.5 px limit — a tenfold margin
+— while being the single worst fit at the height where the measurement is taken.
+An aggregate did not merely hide the failure; it inverted the ranking.
+
+**And the fix is in centimetres, not pixels, which changes the conclusion.**
+Converted through each frame's own scale, the worst lockout fit in the set is
+**0.333 cm against a 1 cm spec**. So the stratification is real and the tracker
+is still comfortably usable at its worst point — C15's claim against the template
+survives being measured properly, and it is now the gate rather than a caption.
+A referee whose own error approaches the spec cannot judge it, so
+`MAX_TOP_RESIDUAL_CM` is half the spec. The residual over-states position error
+by about sqrt(3) anyway: three markers determine one centroid.
+
+`truth.TOP_FRAC` is reused rather than redefined, so "at lockout" means the same
+span of travel for both trackers and C12's numbers stay comparable with these.
+
+**Three gates, and the third is the one that matters.** A per-capture limit in
+cm; a non-regression floor pinned at 25% headroom over the table above; and an
+*algebraic* test that builds the blind spot directly — a track that is excellent
+everywhere except the top of travel — and asserts the old whole-clip median
+passes it while the new statistic fails it. Replacing an aggregate with a
+stratified statistic is worth nothing unless the stratified one demonstrably
+responds, and that test is the demonstration. It needs no `data_v2`, so it runs
+on a fresh clone.
 
 ---
 

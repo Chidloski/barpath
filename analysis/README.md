@@ -1275,6 +1275,18 @@ which the scatter falsifies: median fit residual runs 0.16 px at the floor to
 0.71 and **1.60** px — the last above the 1.5 px gate, though that gate is on the
 whole-clip median (0.15 px there) and still passes.
 
+*That last clause was a defect being written down rather than fixed, and C17
+fixed it on 2026-08-02.* `markers.top_of_travel_residual` now measures the fit
+over the top `truth.TOP_FRAC` of travel and `tests/test_markers.py` gates on it.
+Measuring it across all five captures rather than the three deadlifts sharpened
+the finding: **`deadlift_190x1` is the best capture held by the old statistic and
+the worst by the new one** — 0.150 px whole-clip against 1.595 px at lockout,
+a 10.6x spread, where the other four sit between 1.0x and 1.5x. It is also worth
+converting before alarming anyone, which the pixel figures invite: through each
+frame's own scale those lockout medians are 0.177 / 0.168 / **0.333** / 0.279 /
+0.226 cm, so the worst is a third of the 1 cm spec. The gate is in centimetres
+now, at half the spec, because that is the unit of the thing being refereed.
+
 So the honest claim is not that stickers are immune to height. It is that they
 degrade **within tolerance while never losing the bar**, where the template
 degrades **past the point its own module says to stop believing it**. Coverage is
