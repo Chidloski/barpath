@@ -127,6 +127,40 @@ carelessly and every distance from that capture is wrong by the same fraction.
 
 Requires `ffmpeg` on PATH. No new Python dependencies.
 
+### Which referee scores a capture (C17, 2026-08-02)
+
+`metrics.vs_truth` and `metrics.momentum_closure` take either tracker. You
+normally say nothing and it is inferred from where the clip lives:
+
+```python
+metrics.vs_truth(result, "data/video/deadlift_180x3_20260728.mov")     # template
+metrics.vs_truth(result, "data_v2/video/deadlift_150x5_20260801.mov")  # markers
+
+metrics.vs_truth(result, clip, tracker="markers")   # or say so explicitly
+metrics.vs_truth(result, markers.bar_path(clip))    # or hand it a tracked path
+```
+
+The third form is how you track once and score several ways without decoding
+twice. `pipeline.find_video` pairs a capture inside its own dataset, so a
+`data_v2/raw` CSV finds `data_v2/video` and never reaches across.
+
+**The inference is about the directory, not the footage.** `data_v2/` exists
+because the capture protocol changed, so the layout already records the answer;
+sniffing frames for markers would be a second tracker on every call and a new way
+to be wrong. A capture cannot be scored by the tracker its footage was not shot
+for — the template does not reliably find a marker-less bench plate, and the
+constellation cannot find stickers nobody applied.
+
+`vs_truth` reports `video_tracker`, and `video_top_ncc` **or**
+`video_top_residual_cm` with NaN for the other, because one field that silently
+means two things is a failure mode this project already has a collection of.
+
+**Nothing has yet been scored through the markers**, because no `data_v2`
+capture has an IMU log beside it. The plumbing is gated; the agreement is not.
+Specifically unmeasured: whether a landing found on marker footage falls at the
+same instant as one on template footage, which matters at the deadlift sync's
+13.5 ms.
+
 ---
 
 ## Drawbacks

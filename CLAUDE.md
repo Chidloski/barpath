@@ -142,7 +142,25 @@ clips it tracks 100% of frames where the plate template loses the bar at every
 lockout and reports 0.2 cm of travel on one bench set. See `src/README.md` and
 `analysis/35`–`37`. It is not immune to what breaks `truth.py`, only better
 behaved: its fit residual also degrades with height, 0.16 to 0.81 px, but stays
-inside tolerance instead of crossing it.
+inside tolerance instead of crossing it — worst case 0.33 cm against the 1 cm
+spec, measured by `markers.top_of_travel_residual` and gated per capture (C17).
+
+**The scoring path takes either referee as of C17 (2026-08-02), so the day a
+marker capture arrives with an IMU log beside it there is nothing to build.**
+`metrics.resolve_path` picks the tracker from where the clip lives — anything
+under `data_v2/` is marker footage — or takes an explicit `tracker=`, or takes
+an already-tracked path dict. `vs_truth` and `momentum_closure` both accept it.
+`pipeline.find_video` pairs a capture within its own dataset, so a `data_v2/raw`
+CSV never reaches across to `data/video`.
+
+Two things that made this small, and one that is still unmeasured. The path
+dicts were already compatible — `markers.bar_path` returns a superset of
+`truth.bar_path`'s keys — and `truth.landings`, `truth.sync`, `truth.to_imu_time`
+and `bench_sync` read only `t` and `height`, so the whole sync apparatus was
+tracker-agnostic before anyone tried. What is **not** checked: whether a landing
+found on marker footage falls at the same instant as one on template footage.
+Nothing in `data_v2/` has an IMU log, so the deadlift sync's 13.5 ms is the
+tolerance the first paired capture should test.
 
 `synth.py` generates logs from a known bar path with injected bias. It was
 the keystone and is no longer. Its model of lifting is wrong in ways real

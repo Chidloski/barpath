@@ -895,6 +895,64 @@ stratified statistic is worth nothing unless the stratified one demonstrably
 responds, and that test is the demonstration. It needs no `data_v2`, so it runs
 on a fresh clone.
 
+**Part two, the same day: the scoring path takes either referee.**
+`metrics.resolve_path` / `infer_tracker` / `_video_quality`,
+`metrics.vs_truth(..., tracker=)`, `metrics.momentum_closure(..., tracker=)`,
+`pipeline.find_video`, `tests/test_video_truth.py`, `tests/test_pipeline.py`.
+
+The bottleneck this removes: `data_v2` now holds the better referee and nothing
+could be scored through it. Every horizontal number in the project ran through a
+single hardcoded `truth.bar_path` call inside `_video_on_imu_clock`. Feed it
+marker footage and nothing happened.
+
+**It turned out to be a five-line change surrounded by tests, and the reason is
+worth recording because it was not luck.** `markers.bar_path` already returned a
+superset of `truth.bar_path`'s keys, and `truth.landings`, `truth.sync`,
+`truth.to_imu_time` and `bench_sync` read only `t` and `height` — both trackers
+zero `height` at the lowest tracked point and report seconds from clip start. So
+the entire sync apparatus was tracker-agnostic before anyone tried it. The only
+thing that ever needed to know the difference was which tracker to call.
+Confirmed rather than assumed: `truth.landings` on the marker `deadlift_150x5`
+returns exactly **5 landings**, matching the label, and that is now a gate.
+
+Three ways to choose, in order of precedence: pass a **path dict** already
+tracked by either module (so a caller can track once and score several ways
+without paying for the decode twice); pass **`tracker=`**; or pass neither and
+let it infer from where the clip lives, since anything under `data_v2/` is
+marker footage. **The inference is about the directory, not the footage** — the
+layout already records the answer, and sniffing frames for markers would be a
+second tracker running on every call and a new way to be wrong.
+
+`pipeline.find_video` was the other half and would have been missed: it searched
+`parents[2]/data/video` unconditionally, so a `data_v2/raw` capture would have
+been paired against `data/video` footage its inferred tracker cannot read, and
+the failure would have surfaced as a tracking error rather than a pairing bug.
+A capture now stays inside its own dataset.
+
+**The safety argument is a measurement, not a promise.** A plain path outside
+`data_v2` still resolves to `truth.bar_path` with its own defaults, so every
+pre-existing call is bit-identical — checked against the C10 table: 5.05 / 9.19 /
+15.44 / 1.88 / 0.64 cm horizontal and 3.55 / 3.23 / 1.96 / 2.07 / 3.08 null,
+all exact, with `video_top_ncc` reproducing C12's 0.371 / 0.395 / 0.440.
+
+`vs_truth` gains `video_tracker`, and `video_top_residual_cm` alongside
+`video_top_ncc` — each referee reports the statistic that means something for it
+and NaN for the other, rather than one field that silently means two things.
+
+**What this does NOT do.** It says the plumbing works, not that the marker
+referee agrees with the template one. Nothing in `data_v2/` has an IMU log, so
+no `vs_truth`, no sync and no `beats_null` has ever been computed through
+markers. The specific unmeasured thing: whether a landing found on marker
+footage falls at the same INSTANT as one found on template footage. The deadlift
+sync matches landings to IMU impacts at 13.5 ms, so that is the tolerance the
+first paired capture should test — and it is written into the gate's docstring
+so it is not left to be rediscovered.
+
+*`analysis/38_marker_referee.png` was claimed and not drawn.* The finding is a
+five-row table and it is in three documents already; a plot would have meant
+claiming `run.py` and `plot.py` and adding a CLI flag to regenerate it, which is
+more surface area than the picture is worth. **38 is free again.**
+
 ---
 
 ## To do

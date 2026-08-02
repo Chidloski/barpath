@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import butter, filtfilt, savgol_filter
 
-from . import correct, orient, project, segment, truth
+from . import correct, markers, orient, project, segment, truth
 
 GRID = 100          # samples per rep on the normalised-time grid
 
@@ -416,7 +416,87 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
 
 
 # ---------------------------------------------------------------- vs truth --
-def _video_on_imu_clock(result: dict, video: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+TRACKERS = ("plate", "markers")
+
+
+def resolve_path(video: str | Path | dict, tracker: str | None = None) -> dict:
+    """Get a tracked bar path, from either referee, or accept a ready-made one.
+
+    THIS PROJECT HAS TWO VIDEO REFEREES AND WHICH ONE APPLIES IS DECIDED BY THE
+    FOOTAGE, NOT BY PREFERENCE. `truth.bar_path` matches a template to the dark
+    plate and is the referee for `data/video/`. `markers.bar_path` fits a rigid
+    constellation of retroreflective stickers and is the referee for `data_v2/`,
+    which is filmed from a tripod with markers applied. A capture cannot be
+    scored by the tracker its footage was not shot for: the template does not
+    find the plate on marker-less bench reliably, and the constellation cannot
+    find stickers that were never applied.
+
+    Three ways to say which:
+
+    * pass a **dict** — an already-tracked path from either module, used as-is.
+      This is how a caller tracks once and scores several ways without paying
+      for the decode twice, and how the tests feed synthetic paths in.
+    * pass **`tracker=`** explicitly, one of `TRACKERS`.
+    * pass **neither** and it is inferred from the location: anything under a
+      `data_v2` directory is marker footage, everything else is not.
+
+    The inference is deliberately about WHERE THE FILE IS rather than what is
+    in it, because that is the fact that is actually known. Sniffing the footage
+    for markers would be a second tracker running on every call and a new way to
+    be wrong; the directory layout already records the answer, and `data_v2/`
+    exists precisely because the capture protocol changed.
+
+    Back-compatible by construction: a plain path outside `data_v2` resolves to
+    `truth.bar_path` with its own defaults, so every pre-existing call is
+    unchanged. `tests/test_video_truth.py` pins that.
+    """
+    if isinstance(video, dict):
+        return video
+
+    tracker = infer_tracker(video) if tracker is None else tracker
+    if tracker not in TRACKERS:
+        raise ValueError(f"tracker must be one of {TRACKERS}, got {tracker!r}")
+
+    return markers.bar_path(video) if tracker == "markers" else truth.bar_path(video)
+
+
+def infer_tracker(video: str | Path) -> str:
+    """Which referee a clip belongs to, from where it lives.
+
+    Split out from `resolve_path` so it can be tested without decoding a video,
+    which is the only reason it is separate.
+    """
+    parts = {p.lower() for p in Path(video).resolve().parts}
+    return "markers" if any(p.startswith("data_v2") for p in parts) else "plate"
+
+
+def _video_quality(path: dict) -> dict:
+    """The referee's own health, measured WHERE IT IS USED.
+
+    Each tracker gets the statistic that means something for it, and NaN for the
+    other, rather than one field that silently means two things. Both are
+    top-of-travel figures over `truth.TOP_FRAC`, because lockout is where both
+    referees are weakest and where C12 found the template failing while its
+    whole-clip median passed.
+
+    `top_ncc` — template only. Below `truth.GOOD_SCORE` the tracker has lost the
+    plate at lockout and the fore-aft motion it reports there is invented.
+
+    `top_residual_cm` — markers only. The constellation cannot lose the bar the
+    way a template can, so what is reported is fit quality in the unit of the
+    spec. Above `markers.MAX_TOP_RESIDUAL_CM` its distances near lockout are not
+    good enough to referee a 1 cm target.
+    """
+    if "residual_px" in path:
+        top = markers.top_of_travel_residual(path)
+        return {"tracker": "markers", "top_ncc": float("nan"),
+                "top_residual_cm": top["median_cm"]}
+    return {"tracker": "plate", "top_ncc": truth.top_of_travel_score(path),
+            "top_residual_cm": float("nan")}
+
+
+def _video_on_imu_clock(result: dict, video: str | Path | dict,
+                        tracker: str | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """Tracked bar path resampled onto the IMU clock.
 
     Returns (t_imu, fore_aft, height, sync_fit), NaN samples dropped.
@@ -434,10 +514,26 @@ def _video_on_imu_clock(result: dict, video: str | Path) -> tuple[np.ndarray, np
     through it: it fits one scalar from the vertical channel, so bench VERTICAL
     error partly inherits that and bench horizontal does not, and its validation
     is transferred from deadlift rather than measured on bench.
+
+    **Both routes work unchanged on a marker path, and that is a fact about the
+    path dicts rather than luck.** `truth.landings` reads only `t` and `height`,
+    and both trackers zero `height` at the lowest tracked point and report
+    seconds from the clip start — so landings, `truth.sync`, `truth.to_imu_time`
+    and `bench_sync` are all tracker-agnostic already. `markers.bar_path`
+    returns a superset of `truth.bar_path`'s keys for the same reason. The only
+    thing that ever had to know the difference was which tracker to call, which
+    is now `resolve_path`.
+
+    What has NOT been checked, because nothing in `data_v2/` has an IMU log
+    beside it: whether a deadlift landing detected on marker footage lands at
+    the same instant as one detected on template footage. The two trackers agree
+    on the bar to 4.8 cm of travel against 10.7 (`analysis/37`), so a landing
+    disagreement large enough to matter at 13.5 ms would be surprising — but
+    surprising is not measured, and the first paired capture should test it.
     """
     log = result["log"]
-    path = truth.bar_path(video)
-    result.setdefault("_video_top_ncc", truth.top_of_travel_score(path))
+    path = resolve_path(video, tracker)
+    result.setdefault("_video_quality", _video_quality(path))
 
     if truth.lift_of(Path(result["path"]).name) == "deadlift":
         impacts = np.array([float(log["t"][k]) for k in segment.impact_anchors(log)])
@@ -489,7 +585,8 @@ def _close(arr: np.ndarray, t: np.ndarray,
     return correct.detrend_rep(arr, 0, len(arr), t, axes=axes)
 
 
-def vs_truth(result: dict, video: str | Path) -> dict:
+def vs_truth(result: dict, video: str | Path | dict,
+             tracker: str | None = None) -> dict:
     """Reconstructed rep paths against the video, in cm. Deadlift and bench.
 
     `result` is a `pipeline.run` dict. **Squat still raises** — it tracks at
@@ -601,7 +698,7 @@ def vs_truth(result: dict, video: str | Path) -> dict:
     if not reps:
         raise ValueError(f"{name}: no reps to compare")
 
-    t_vid, fore_aft, height, fit = _video_on_imu_clock(result, video)
+    t_vid, fore_aft, height, fit = _video_on_imu_clock(result, video, tracker)
 
     axis = np.real(project.principal_axis(reps)[0])
     raw_pos = result["bar_position"]
@@ -693,6 +790,8 @@ def vs_truth(result: dict, video: str | Path) -> dict:
     def med(key):
         return float(np.median([r[key] for r in good]))
 
+    _q = result.pop("_video_quality", {})
+
     return {
         "capture": name,
         "n_reps": len(bounds),
@@ -730,7 +829,15 @@ def vs_truth(result: dict, video: str | Path) -> dict:
         # three deadlifts, restricting to well-tracked frames takes beats_null
         # from 0.70/0.35/0.13 down to 0.59/0.21/0.07. All three deadlifts fail
         # this; all seven benches pass. See truth.top_of_travel_score.
-        "video_top_ncc": float(result.pop("_video_top_ncc", float("nan"))),
+        "video_top_ncc": _q.get("top_ncc", float("nan")),
+        # Markers only, NaN for the template. The constellation cannot lose the
+        # bar the way a template can, so this is fit quality rather than a
+        # tracking failure — reported in cm because that is the unit of the spec
+        # it is refereeing. See markers.top_of_travel_residual.
+        "video_top_residual_cm": _q.get("top_residual_cm", float("nan")),
+        # Which referee produced the numbers above. `data/video/` has no markers
+        # and `data_v2/` is filmed for them, so this is decided by the footage.
+        "video_tracker": _q.get("tracker", "plate"),
         # The referee, checked against the same table as the reconstruction.
         # Non-empty means this capture's video vertical scale is wrong and its
         # vertical numbers — video_rom_cm, pipeline_v_rms, raw_v_rms — carry it.
@@ -769,8 +876,9 @@ def _video_zero_dwells(t: np.ndarray, v: np.ndarray, v_thresh: float,
     return np.array(out)
 
 
-def momentum_closure(result: dict, video: str | Path, v_thresh: float = 0.10,
-                     min_dwell_s: float = 0.20) -> dict:
+def momentum_closure(result: dict, video: str | Path | dict,
+                     v_thresh: float = 0.10, min_dwell_s: float = 0.20,
+                     tracker: str | None = None) -> dict:
     """Vertical impulse between two moments the bar is known to be still.
 
     THE IDENTITY
@@ -888,7 +996,7 @@ def momentum_closure(result: dict, video: str | Path, v_thresh: float = 0.10,
     t = log["t"]
     world = orient.to_world(log["accel"], log["quat"], log["quat"])
 
-    t_imu, _, height, fit = _video_on_imu_clock(result, video)
+    t_imu, _, height, fit = _video_on_imu_clock(result, video, tracker)
     v_video = np.gradient(savgol_filter(height, 9, 3), t_imu)
 
     bounds = result["bounds"]
