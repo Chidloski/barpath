@@ -783,6 +783,14 @@ def vs_truth(result: dict, video: str | Path | dict,
             # the stage had never executed.
             "curve_video": vid,
             "curve_pipeline": pipe,
+            # The same window BEFORE step 7, sign already applied. Carried for
+            # B3: an oracle over the detrend basis has to start from what the
+            # detrend is handed, not from what it produced. Without this a
+            # caller re-projecting `bar_position` by hand would have to
+            # re-derive the axis and the set's sign, which is exactly the
+            # duplication that put step 8 on screen before it ran — see
+            # `plot`'s module docstring.
+            "curve_raw": rec,
         })
 
     good = [r for r in per_rep if r["covered"]]

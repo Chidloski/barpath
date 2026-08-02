@@ -11,6 +11,7 @@
     python run.py --bias               # B6: constant-bias corrections vs the video
     python run.py --closure            # C11: vertical momentum, bench vs deadlift
     python run.py --splice             # B6: the impact splice, measured and rejected
+    python run.py --b3oracle           # B3: what is left in the per-rep detrend
     python run.py --vstruth            # the reconstruction drawn on top of the video
     python run.py --scorecard          # how well the pipeline performs, per lift
     python run.py --paths              # step 9: the bar path itself
@@ -334,6 +335,128 @@ def draw_vs_truth() -> int:
     out = ROOT / "analysis" / "33_reconstruction_vs_truth.png"
     plot.plot_vs_truth_paths(results).savefig(out, dpi=105)
     print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def b3_oracle() -> int:
+    """B3 — how much is left in the per-rep detrend, and does a quadratic pay?
+
+    **An ORACLE, not a correction.** It fits the detrend against the video it
+    is being scored on, which is forbidden in the pipeline (HANDOFF: "never fit
+    a pipeline parameter to the video") and is the whole point here: an oracle
+    bounds a FAMILY before anyone builds an estimator for it. B6 used the same
+    move to cap constant-bias correction at ~30% and save building it.
+
+    What is bounded. Step 7 subtracts one particular line per rep — the
+    endpoint-to-endpoint one. Shipping's residual is therefore `err` minus *a*
+    line, where `err` is the undetrended reconstruction minus the video. So
+    `err` minus the BEST line is a floor no linear detrend can beat, however
+    cleverly it picks that line, and `err` minus the best line-plus-quadratic
+    is the same floor one order up. Both are computed per rep, per axis, by
+    least squares on normalised rep time.
+
+    THE DECISION RULE, FIXED BEFORE ANY NUMBER IS READ
+    --------------------------------------------------
+    Both thresholds are the project's 1 cm horizontal spec. Neither is tuned,
+    and that is deliberate — HANDOFF's standing worry is that every constant
+    here was chosen on the same 17 captures it is evaluated on.
+
+    1. **Headroom.** oracle-linear must beat shipping's `pipeline_h_rms` by
+       >= 1 cm, median over the scoreable captures. If it does not, today's
+       endpoint line is already at the linear family's floor: B3's "own 2-4 cm"
+       does not exist, and the lambda=0.99 shrinkage lead in TASKS.md was a fit
+       to the validation set rather than a finding.
+
+    2. **The extra order pays.** oracle-quadratic must beat oracle-linear by
+       >= 1 cm on the same median. If it does not, a quadratic degree of
+       freedom cannot help the horizontal whatever pins it, and B3's remaining
+       value is confined to (3).
+
+    3. **The B6 unlock, which is why B3 was promoted and is measured on the
+       VERTICAL.** Independent of 1 and 2: with a quadratic detrend in place,
+       B6's splice must keep per-rep vertical ROM inside
+       `truth.VERTICAL_ROM_M["deadlift"]` -- it is 82.6 cm today against a
+       61 cm ceiling -- without regressing horizontal past shipping.
+
+    **(3) can hold while (1) and (2) both fail, and if so that is the result:**
+    B3 is then not a horizontal fix at all, only an enabler for B6, and must be
+    reported as one. Writing that down in advance is the point; B6's own rule
+    was partly mis-specified because it read horizontal columns to judge a
+    vertical correction, and this is the same trap one step later.
+
+    Caution carried from A3: `vs_truth`'s horizontal rms is insensitive to
+    gross time misalignment, so none of this is evidence the reps line up in
+    time. It is a magnitude comparison between families.
+    """
+    import numpy as np
+    from src import metrics, truth
+
+    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
+
+    def oracle(err: np.ndarray, order: int) -> float:
+        """rms of `err` after removing the best polynomial of `order` in rep time."""
+        tau = np.linspace(0.0, 1.0, len(err))
+        X = np.vander(tau, order + 1)
+        resid = err - X @ np.linalg.lstsq(X, err, rcond=None)[0]
+        return float(np.sqrt((resid ** 2).mean()) * 100)
+
+    rows = []
+    for path in sorted(raw.glob("*.csv")):
+        clip = pipeline.find_video(path, vid)
+        if clip is None:
+            continue
+        try:
+            result = pipeline.run(path)
+            out = metrics.vs_truth(result, clip)
+        except Exception as exc:                      # squat, unsynced bench
+            print(f"{path.stem.split('_2026')[0]:22s} refused — {exc}")
+            continue
+
+        per = [r for r in out["per_rep"] if r["covered"]]
+        if not per:
+            continue
+
+        # Per rep: the undetrended reconstruction's error against the video,
+        # on the horizontal (column 0) and the vertical (column 1).
+        h_ship = float(np.median([r["pipeline_h_rms"] for r in per]))
+        v_ship = float(np.median([r["pipeline_v_rms"] for r in per]))
+        h_lin = float(np.median([oracle(r["curve_raw"][:, 0] - r["curve_video"][:, 0], 1)
+                                 for r in per]))
+        h_quad = float(np.median([oracle(r["curve_raw"][:, 0] - r["curve_video"][:, 0], 2)
+                                  for r in per]))
+        v_lin = float(np.median([oracle(r["curve_raw"][:, 1] - r["curve_video"][:, 1], 1)
+                                 for r in per]))
+        v_quad = float(np.median([oracle(r["curve_raw"][:, 1] - r["curve_video"][:, 1], 2)
+                                  for r in per]))
+        null = float(np.median([r["null_h_rms"] for r in per]))
+
+        rows.append({"capture": path.stem.split("_2026")[0], "null": null,
+                     "h_ship": h_ship, "h_lin": h_lin, "h_quad": h_quad,
+                     "v_ship": v_ship, "v_lin": v_lin, "v_quad": v_quad})
+        print(f"{rows[-1]['capture']:22s} h {h_ship:6.2f} -> lin {h_lin:6.2f} "
+              f"-> quad {h_quad:6.2f}   (null {null:5.2f})   "
+              f"v {v_ship:6.2f} -> lin {v_lin:6.2f} -> quad {v_quad:6.2f}")
+
+    if not rows:
+        print("no capture with video to bound the detrend on")
+        return 1
+
+    def med(k):
+        return float(np.median([r[k] for r in rows]))
+
+    gain_1 = med("h_ship") - med("h_lin")
+    gain_2 = med("h_lin") - med("h_quad")
+    print(f"\nmedian over {len(rows)} captures, horizontal cm:")
+    print(f"  shipping {med('h_ship'):.2f}   oracle-linear {med('h_lin'):.2f}"
+          f"   oracle-quadratic {med('h_quad'):.2f}   null {med('null'):.2f}")
+    print(f"  rule 1, headroom      : {gain_1:+.2f} cm  "
+          f"{'PASS' if gain_1 >= 1.0 else 'FAIL'} (needs >= 1.00)")
+    print(f"  rule 2, quadratic pays: {gain_2:+.2f} cm  "
+          f"{'PASS' if gain_2 >= 1.0 else 'FAIL'} (needs >= 1.00)")
+    print(f"\nmedian vertical cm: shipping {med('v_ship'):.2f}   "
+          f"oracle-linear {med('v_lin'):.2f}   oracle-quadratic {med('v_quad'):.2f}")
+    print(f"  (deadlift ROM ceiling {truth.VERTICAL_ROM_M['deadlift'][1] * 100:.0f} cm; "
+          "rule 3 is measured by --splice, not here)")
     return 0
 
 
@@ -673,6 +796,8 @@ def main(argv: list[str]) -> int:
         return draw_closure()
     if "--splice" in argv:
         return draw_splice()
+    if "--b3oracle" in argv:
+        return b3_oracle()
     if "--vstruth" in argv:
         return draw_vs_truth()
     if "--scorecard" in argv:
