@@ -551,6 +551,40 @@ splice's `e·T/2` position artefact pushed vertical ROM to 82.6 cm against a
 61 cm ceiling. So B3 is not just a correctness fix now; it is the thing that
 unblocks every localised correction after it.
 
+**That last sentence was measured on 2026-08-02 (C19) and it is FALSE.** The
+reordering assumed the blocker was that the detrend could not *represent* a
+quadratic. It can now — `correct.detrend_rep(order=2)`, pinned by the rep's own
+velocity closure and needing no new anchor — and **nothing is unblocked.** Under
+it the splice breaks the ROM ceiling harder, 78.1 / 70.4 / 116.4 cm, and loses
+more horizontally, 16.41 / 19.27 / 24.87 against the linear detrend's
+10.09 / 5.90 / 14.61. Rejected; `order` defaults to 1 and is bit-identical.
+
+**The reason generalises and is the durable part.** B6 measured that a constant
+acceleration correction cannot represent an impulse. C19 measures that a
+quadratic cannot either. The obstacle was never the detrend's ORDER — any basis
+smooth across the whole rep spreads a landing-localised error across the whole
+rep, and raising the order raises what it spreads. What B6 needs is a detrend
+**local in time**, and B3 and B6 may be one problem rather than two.
+
+**What survives is the oracle, and it caps the family the way B6's capped
+constant-bias.** The best line and the best line-plus-quadratic, fitted against
+the video so that they bound every possible estimator: median over the ten
+scoreable captures, shipping 2.72 cm → best line 1.04 → best quadratic 0.33,
+null 2.85. Two things follow, and the split by lift is the point.
+
+*There is real headroom, and more than this file has claimed* — B3 has been
+described as worth 2–4 cm and the linear family alone holds ~10 cm on the worst
+capture, `deadlift_180x3` going 15.44 → 4.89. Today's endpoint line is simply
+not the best line.
+
+*But it is a BENCH result, not a P2 fix.* On bench the best quadratic reaches
+0.25–0.55 cm, inside spec. On deadlift the best **line** is 3.64 / 3.78 / 4.89
+against nulls of 3.55 / 3.23 / 1.96 — **no per-rep line, however estimated,
+beats a flat vertical line on any deadlift** — and the best quadratic only just
+does. Per-rep polynomial detrending cannot bring deadlift near spec, whoever
+writes the estimator. *Evidence:* `analysis/38`, `python run.py --b3oracle`,
+TASKS.md B3, `tests/test_real_data.py`.
+
 **P6 — The floor impact is trustworthy, and unused.** Closed as a worry and
 opened as an opportunity, by B5.
 
@@ -580,7 +614,12 @@ And any correction localised in time now has a second obstacle to clear:
 removing an error `e` over a window `T` injects about `e·T/2` of position, and
 step 7's detrend is **linear**, so it cannot remove a quadratic. The splice
 pushed per-rep vertical ROM to 82.6 cm against a 61 cm physical ceiling. **B6 is
-blocked on B3.** *Evidence:* `analysis/32`, `python run.py --splice`,
+blocked on B3.** *Corrected 2026-08-02 (C19): it is not.* B3 built the
+quadratic detrend this asked for and the splice got WORSE under it, not better
+(ROM 78.1 / 70.4 / 116.4 cm). Raising the order does not help, because a
+quadratic spreads a landing-localised error just as a constant does. B6 needs a
+correction **local in time**, not a higher-order detrend to clean up after a
+global one. See P3. *Evidence:* `analysis/32`, `38`, `python run.py --splice`,
 `tests/test_real_data.py`.
 
 One capture dissents. `deadlift_180x3` over-reads its impact step by 58–72%,

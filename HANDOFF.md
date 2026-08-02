@@ -119,11 +119,29 @@ including the one where it *replaces* the detrend rather than stacking on it.
   enough to push vertical ROM to 82.6 cm against a 61 cm physical ceiling.
   **Every remaining B6 idea inherits this, so B3 now comes first.**
 
-### 3. B3 — rework the per-rep detrend  ← NOW FIRST
+### 3. ~~B3 — rework the per-rep detrend~~ — DONE, and the promotion was wrong
 
-Promoted from "explicitly NOT pre-gym" by the splice's rejection. Its value is
-no longer its own 2–4 cm; it is that **it unblocks every localised correction
-after it**, B6's included.
+**Measured 2026-08-02 (C19). The quadratic is rejected and B6 is NOT unblocked.**
+`python run.py --b3oracle`, `analysis/38`, TASKS.md B3, CLAUDE.md P3.
+
+The promotion below assumed the blocker was that the detrend could not
+*represent* a quadratic. It can now — `correct.detrend_rep(order=2)`, pinned by
+the rep's own velocity closure, no new anchor — and nothing is unblocked: under
+it the splice breaks the ROM ceiling harder (78.1 / 70.4 / 116.4 cm) and loses
+more horizontally. **A quadratic spreads a landing-localised error just as a
+constant does.** B6 needs a correction *local in time*, and a detrend local in
+time under it; B3 and B6 may be one problem.
+
+**What survives is the oracle, and it is worth more than the fix would have
+been.** Best line vs best line-plus-quadratic, fitted against the video so they
+bound every estimator: median shipping 2.72 cm → 1.04 → 0.33, null 2.85. There
+is ~1.7 cm of real headroom in the *linear* family alone, more than the 2–4 cm
+this file claims — but it splits by lift. Bench's best quadratic reaches
+0.25–0.55 cm, inside spec; on deadlift the best **line** (3.64 / 3.78 / 4.89)
+loses to the null (3.55 / 3.23 / 1.96) on all three. **A detrend improvement is
+a bench result, not a P2 fix.**
+
+Its original framing, kept because the reasoning is the record:
 
 Two constraints on it, both measured rather than argued:
 

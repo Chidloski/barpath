@@ -2058,6 +2058,98 @@ def test_the_impact_splice_fixes_the_closure_and_loses_anyway(video, csv, reps):
         f"the e*T/2 artefact is gone and the splice deserves re-measuring")
 
 
+# ------------------------------------------------------------------- B3 --
+@pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
+def test_the_quadratic_detrend_is_worse_than_the_line(video, csv, reps):
+    """B3's order=2 detrend, measured and rejected (C19). A negative result.
+
+    The idea is the one TASKS.md B6 asks for in so many words — a detrend that
+    can absorb a quadratic, so that a correction localised in time stops
+    breaking the ROM ceiling. It is pinned by a second closure the rep already
+    supplies and needs no new anchor: a rep is periodic in VELOCITY as well as
+    position, so the reconstructed `dv` across a rep is drift, exactly as `dp`
+    is. Three constraints, three coefficients, and it degenerates to today's
+    line when `dv` is zero. See `correct.detrend_rep`.
+
+    **It breaks deadlift**, which is where the constraint it adds is largest:
+
+        capture             shipping h   order=2 h   order=2 v   order=2 ROM
+        deadlift_155x6_1        5.05       29.11       48.67         78.2
+        deadlift_155x6_2        9.19       25.20       41.75         68.4
+        deadlift_180x3         15.44       12.17       73.11        116.4
+
+    against a 61 cm ROM ceiling and a shipped vertical of 5.24 / 6.60 / 5.24.
+
+    **What is asserted below is the ROM breach, not the horizontal**, and the
+    difference is the honest part. Horizontal gets worse on two of the three
+    and BETTER on `deadlift_180x3`, 15.44 -> 12.17 — still 12x the spec and 6x
+    that capture's own null of 1.96, but better, so "it loses on horizontal"
+    is not a claim these three captures support. Vertical and ROM fail on 3 of
+    3 and are what rejects it.
+
+    The reason generalises past this attempt and is
+    the point of keeping the test: C11 established the deadlift's velocity
+    deficit is injected AT THE LANDING and nowhere else, so removing it as a
+    smooth quadratic across the rep injects `dv.T/8` at mid-rep — ~31 cm at
+    dv = 1 m/s and T = 2.5 s, an order above the 5-15 cm being corrected.
+    B6 measured that a constant acceleration correction cannot represent an
+    impulse; this measures that **a quadratic cannot either**, so the obstacle
+    was never the detrend's ORDER.
+
+    Note the median over all ten scoreable captures IMPROVES, 2.72 -> 2.23 cm,
+    because bench has no landing and moves little. Reading that number instead
+    of this one is the aggregate-that-hides failure this project keeps
+    repeating; the assertion below is per capture for that reason.
+
+    If a future change makes order=2 win, this fails and should be deleted in
+    favour of shipping it.
+    """
+    if not _has(video, csv):
+        pytest.skip(f"{video} or {csv} not present")
+    from src import correct, metrics, pipeline, truth
+
+    result = pipeline.run(RAW / f"{csv}.csv")
+    clip = VIDEO / f"{video}.mov"
+
+    def score(order):
+        reps_ = correct.detrend_set(result["bar_position"], result["bounds"],
+                                    result["log"]["t"],
+                                    velocity=result["velocity"], order=order)
+        m = metrics.vs_truth({**result, "reps": reps_}, clip)
+        roms = [float(p[:, 2].max() - p[:, 2].min()) * 100 for p in reps_]
+        return m["pipeline_h_rms"], m["pipeline_v_rms"], max(roms)
+
+    # order=1 must be bit-identical to the shipped call, which passes no
+    # velocity at all. If this drifts, every number above is measuring
+    # something other than the detrend this project ships.
+    shipped = correct.detrend_set(result["bar_position"], result["bounds"],
+                                  result["log"]["t"])
+    line = correct.detrend_set(result["bar_position"], result["bounds"],
+                               result["log"]["t"],
+                               velocity=result["velocity"], order=1)
+    for a, b in zip(shipped, line):
+        assert np.array_equal(a, b), (
+            f"{csv}: order=1 is no longer the shipped detrend, so the "
+            f"order=2 comparison has lost its baseline")
+
+    h1, v1, _ = score(1)
+    h2, v2, rom2 = score(2)
+
+    # The decisive failure, 3 of 3: the dv*T/8 artefact puts per-rep vertical
+    # travel past what the lifter can physically move a bar through.
+    assert rom2 > truth.VERTICAL_ROM_M["deadlift"][1] * 100, (
+        f"{csv}: order=2 ROM {rom2:.1f} cm is now inside the bound, so the "
+        f"dv*T/8 artefact is gone and the quadratic deserves re-measuring")
+
+    # And vertical error, which is not confounded by the fore-aft sign or by
+    # the referee's lockout failure. Deliberately not asserted on horizontal:
+    # deadlift_180x3 improves there, 15.44 -> 12.17, and a test that claimed
+    # otherwise would be asserting a convenience rather than a measurement.
+    assert v2 > v1 * 3, (
+        f"{csv}: order=2 vertical {v2:.2f} cm against the line's {v1:.2f}. "
+        f"If the quadratic has stopped wrecking vertical, re-measure B3")
+
+
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])
 def test_constant_bias_corrections_are_worse_than_none(video, csv, reps):
     """B6's first candidate, measured and rejected. Asserts a negative result.

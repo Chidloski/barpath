@@ -112,6 +112,18 @@ cm against a 5-15 cm total. This stage is doing something wrong and worth
 fixing; it is not where the horizontal failure lives. Most of the error is
 already in the acceleration that reaches the integrator.
 
+**C19 (2026-08-02) put a ceiling on this stage, and it splits by lift.** An
+oracle over the basis — the best line and the best line-plus-quadratic per rep,
+fitted against the video, so it bounds every estimator rather than being one —
+gives a median over the ten scoreable captures of 2.72 cm shipping, 1.04 for
+the best line, 0.33 for the best quadratic, against a null of 2.85. So there is
+~1.7 cm of headroom in the LINEAR family alone and today's endpoint line is not
+the best line. But on bench the best quadratic reaches 0.25-0.55 cm, inside
+spec, while on deadlift the best LINE (3.64 / 3.78 / 4.89) loses to the null
+(3.55 / 3.23 / 1.96) on all three. **No per-rep polynomial detrend can bring
+deadlift near spec, whoever writes the estimator.** A detrend improvement is a
+bench result. `python run.py --b3oracle`, `analysis/38`, TASKS.md B3.
+
 Kalman filters, factor graphs, batch smoothers and spline fits were previously
 rejected here by reference to NON_GOALS.md. That table was deleted on
 2026-07-28 because its evidence was synthetic. Nothing in this file forbids a
@@ -192,8 +204,87 @@ def apply_offset(position: np.ndarray, quat: np.ndarray,
 
 
 def detrend_rep(position: np.ndarray, start: int, stop: int, t: np.ndarray,
-                axes: tuple[int, ...] = (0, 1, 2), edge: int = 1) -> np.ndarray:
+                axes: tuple[int, ...] = (0, 1, 2), edge: int = 1,
+                velocity: np.ndarray | None = None, order: int = 1) -> np.ndarray:
     """Subtract the endpoint-to-endpoint line, on `axes` only. Step 7. B3.
+
+    `order=2` adds one quadratic term, pinned by a SECOND closure the rep
+    already supplies. **It was built, measured and REJECTED (C19, 2026-08-02);
+    it defaults to 1, which is bit-identical to the original behaviour.** The
+    mechanism and the rejection are both below, because TASKS.md B6 asks in so
+    many words for a detrend that "can absorb a quadratic" and this is the
+    obvious way to get one — so the measurement needs to be here, next to the
+    idea, or it gets re-proposed on the strength of the reasoning.
+
+    The mechanism, because this encodes a judgement about the physics
+    ----------------------------------------------------------------
+    Today's line asserts one thing: a rep ends where it began, so
+    `p(T) - p(0)` is entirely drift. That is two coefficients constrained by
+    one measured quantity, `dp`, and it fixes the line.
+
+    A rep is periodic in VELOCITY as well as position. The bar is at the same
+    phase of the same motion at both boundaries — at rest at the floor on a
+    deadlift, at rest at lockout on a touch-and-go bench — so the true
+    `v(T) - v(0)` is zero and the reconstructed `dv` is likewise entirely
+    drift. That is a second measured quantity, from the same rep boundaries
+    the position closure already trusts and from no new anchor, no video and
+    no threshold. Three constraints, three coefficients:
+
+        c(tau) = (dv / 2T) tau^2 + (dp/T - dv/2) tau
+
+    **When `dv` is zero this IS the current line**, which is the property that
+    makes it a generalisation rather than a rival. The quadratic term is
+    driven entirely by how badly velocity fails to close, which is exactly what
+    `metrics.momentum_closure` measures: ~0 on bench, -0.37 to -1.48 m/s across
+    a deadlift landing.
+
+    What it claimed, and how it was falsified
+    -----------------------------------------
+    It claimed the velocity non-closure across a rep is drift rather than
+    signal — the same class of claim the position closure makes, and seemingly
+    a safer one, since the position version is known false horizontally while a
+    rep genuinely does start and end at the same speed.
+
+    **It is false on deadlift, and expensively so.** `python run.py --b3oracle`:
+
+        capture             shipping h   order=2 h   order=2 v   order=2 ROM
+        deadlift_155x6_1        5.05       29.11       48.67         78.2
+        deadlift_155x6_2        9.19       25.20       41.75         68.4
+        deadlift_180x3         15.44       12.17       73.11        116.4
+
+    against a 61 cm ROM ceiling and a shipped vertical of 5.24 / 6.60 / 5.24.
+    **It is the vertical and the ROM that reject it, not the horizontal** —
+    `deadlift_180x3` improves fore-aft, 15.44 -> 12.17, so "it loses on
+    horizontal" is not something these captures support. Bench, which has no
+    landing and whose `dv` is near zero, moves little and in both directions:
+    3.67 -> 1.65 and 2.69 -> 0.97 on the spotos, 0.64 -> 1.13 and
+    1.88 -> 2.82 on the 90x4s.
+
+    **Do not read the median.** Over the ten scoreable captures it improves,
+    2.72 -> 2.23 cm, while deadlift is destroyed. That is this project's
+    recurring failure shape — an aggregate that passes while the thing fails
+    exactly where it matters — and it is the reason the rule was fixed per-rule
+    and in advance rather than as one summary number.
+
+    Why, and it generalises past this attempt
+    -----------------------------------------
+    `dv` across a deadlift rep is ~1 m/s, and C11 established that deficit is
+    real error injected AT THE LANDING and nowhere else. The quadratic removes
+    it, correctly in total, by spreading it smoothly across the whole rep —
+    injecting `dv.T/8` at mid-rep, ~31 cm at T = 2.5 s, an order above the
+    5-15 cm being corrected.
+
+    That is B6's finding one order up. B6 measured that **a constant
+    acceleration correction cannot represent an impulse**; this measures that
+    **a quadratic cannot either.** The obstacle was never the detrend's order.
+    Any basis that is smooth across the whole rep spreads a landing-localised
+    error over the whole rep, and raising the order raises what it spreads.
+    So "give the detrend a quadratic to absorb the splice's artefact" does not
+    work, and rule 3 measured it directly: under an order=2 detrend the splice
+    breaks the ROM ceiling harder (78.1 / 70.4 / 116.4 cm) and loses more
+    horizontally (16.41 / 19.27 / 24.87) than under the linear one.
+
+    What survives is the ORACLE, and it is the useful half. See TASKS.md B3.
 
     `axes` used to be all three implicitly. It is a parameter now because the
     closure premise is true vertically and false horizontally: the bar does
@@ -235,11 +326,26 @@ def detrend_rep(position: np.ndarray, start: int, stop: int, t: np.ndarray,
     keep = np.zeros(rep.shape[1])
     keep[[a for a in axes if a < rep.shape[1]]] = 1.0
 
-    return rep - ((t - t[0]) / span)[:, None] * (drift * keep)
+    tau = (t - t[0])[:, None]
+    if order < 2 or velocity is None:
+        return rep - (tau / span) * (drift * keep)
+
+    # The second closure. `dv` is medianed over the same `edge` samples as
+    # `drift`, so both endpoints are read the same way — reading one from a
+    # median and the other from a single sample would make the quadratic term
+    # noisier than the linear one it is being weighed against.
+    vel = velocity[start:stop]
+    dv = np.median(vel[-e:], axis=0) - np.median(vel[:e], axis=0)
+
+    a = (dv * keep) / (2.0 * span)
+    b = (drift * keep) / span - (dv * keep) / 2.0
+    return rep - (a * tau ** 2 + b * tau)
 
 
 def detrend_set(position: np.ndarray, bounds: list[tuple[int, int]],
-                t: np.ndarray, axes: tuple[int, ...] = (0, 1, 2)) -> list[np.ndarray]:
+                t: np.ndarray, axes: tuple[int, ...] = (0, 1, 2),
+                velocity: np.ndarray | None = None,
+                order: int = 1) -> list[np.ndarray]:
     """One detrended path per rep, each translated so its start is the origin.
 
     Alignment is by START POINT ONLY. Do not align whole paths — between-rep
@@ -259,7 +365,8 @@ def detrend_set(position: np.ndarray, bounds: list[tuple[int, int]],
     """
     reps = []
     for start, end in bounds:
-        rep = detrend_rep(position, start, end, t[start:end], axes=axes)
+        rep = detrend_rep(position, start, end, t[start:end], axes=axes,
+                          velocity=velocity, order=order)
         rep -= rep[0]
         reps.append(rep)
     return reps

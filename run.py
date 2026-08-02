@@ -53,6 +53,14 @@ and rejected. It removes the vertical momentum deficit completely and still
 loses on horizontal, which is the axis the spec is about. The splice lives here
 and in the test that pins the result, deliberately not in `correct.py` — it was
 rejected, and B7's precedent is to delete rather than leave a flag behind.
+
+--b3oracle writes analysis/38_b3_detrend_oracle.png: B3, and what bounds it. An
+ORACLE over the per-rep detrend basis — the best line and the best
+line-plus-quadratic fitted AGAINST the video, so it caps every estimator rather
+than being one. It found ~1.7 cm of real headroom in the linear family and that
+the headroom is bench's, not deadlift's, and it rejected the buildable quadratic
+on three rules fixed before it ran. Slow: it decodes every bench and deadlift
+clip and runs the splice on the three deadlifts.
 """
 
 from __future__ import annotations
@@ -389,9 +397,18 @@ def b3_oracle() -> int:
     time. It is a magnitude comparison between families.
     """
     import numpy as np
-    from src import metrics, truth
+    from src import correct, metrics, truth
 
     raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
+
+    # One decode per clip: vs_truth is called twice per capture below.
+    cache, original = {}, truth.bar_path
+
+    def cached(v, *a, **k):
+        cache.setdefault(str(v), original(v, *a, **k))
+        return cache[str(v)]
+
+    truth.bar_path = metrics.truth.bar_path = cached
 
     def oracle(err: np.ndarray, order: int) -> float:
         """rms of `err` after removing the best polynomial of `order` in rep time."""
@@ -400,16 +417,24 @@ def b3_oracle() -> int:
         resid = err - X @ np.linalg.lstsq(X, err, rcond=None)[0]
         return float(np.sqrt((resid ** 2).mean()) * 100)
 
-    rows = []
+    rows, traces = [], [None]
     for path in sorted(raw.glob("*.csv")):
+        stem = path.stem.split("_2026")[0]
         clip = pipeline.find_video(path, vid)
         if clip is None:
+            # Say so. A silent `continue` here scored this oracle on 7 captures
+            # instead of 10 the first time it ran, because a git WORKTREE gets
+            # only the tracked half of data/video — 10 clips of the 17 in the
+            # shared checkout, the 2026-07-30 session's among the missing. The
+            # numbers looked entirely reasonable. That is this project's
+            # recurring shape once more: a check that passes by not looking.
+            print(f"{stem:22s} no video paired — skipped")
             continue
         try:
             result = pipeline.run(path)
             out = metrics.vs_truth(result, clip)
         except Exception as exc:                      # squat, unsynced bench
-            print(f"{path.stem.split('_2026')[0]:22s} refused — {exc}")
+            print(f"{stem:22s} refused — {str(exc).splitlines()[0][:90]}")
             continue
 
         per = [r for r in out["per_rep"] if r["covered"]]
@@ -430,12 +455,31 @@ def b3_oracle() -> int:
                                   for r in per]))
         null = float(np.median([r["null_h_rms"] for r in per]))
 
-        rows.append({"capture": path.stem.split("_2026")[0], "null": null,
+        # The BUILDABLE thing, not an oracle: order=2 pinned by the rep's own
+        # velocity closure. Nothing here reads the video.
+        reps2 = correct.detrend_set(result["bar_position"], result["bounds"],
+                                    result["log"]["t"],
+                                    velocity=result["velocity"], order=2)
+        out2 = metrics.vs_truth({**result, "reps": reps2}, clip)
+        per2 = [r for r in out2["per_rep"] if r["covered"]]
+        h_est = float(np.median([r["pipeline_h_rms"] for r in per2]))
+        v_est = float(np.median([r["pipeline_v_rms"] for r in per2]))
+        rom = float(np.median([abs(p[:, 2].max() - p[:, 2].min()) for p in reps2]) * 100)
+        rom_ship = float(np.median([abs(p[:, 2].max() - p[:, 2].min())
+                                    for p in result["reps"]]) * 100)
+        if stem.startswith("deadlift") and traces[0] is None:
+            traces[0] = (stem, [p[:, 2] * 100 for p in result["reps"]],
+                         [p[:, 2] * 100 for p in reps2])
+
+        rows.append({"capture": stem, "null": null, "rom": rom,
+                     "rom_ship": rom_ship,
                      "h_ship": h_ship, "h_lin": h_lin, "h_quad": h_quad,
+                     "h_est": h_est, "v_est": v_est,
                      "v_ship": v_ship, "v_lin": v_lin, "v_quad": v_quad})
-        print(f"{rows[-1]['capture']:22s} h {h_ship:6.2f} -> lin {h_lin:6.2f} "
+        print(f"{stem:22s} h {h_ship:6.2f} -> lin {h_lin:6.2f} "
               f"-> quad {h_quad:6.2f}   (null {null:5.2f})   "
-              f"v {v_ship:6.2f} -> lin {v_lin:6.2f} -> quad {v_quad:6.2f}")
+              f"v {v_ship:6.2f} -> lin {v_lin:6.2f} -> quad {v_quad:6.2f}"
+              f"   || order=2 h {h_est:7.2f} v {v_est:6.2f} rom {rom:6.1f}")
 
     if not rows:
         print("no capture with video to bound the detrend on")
@@ -453,11 +497,81 @@ def b3_oracle() -> int:
           f"{'PASS' if gain_1 >= 1.0 else 'FAIL'} (needs >= 1.00)")
     print(f"  rule 2, quadratic pays: {gain_2:+.2f} cm  "
           f"{'PASS' if gain_2 >= 1.0 else 'FAIL'} (needs >= 1.00)")
+    print(f"\n  the BUILDABLE order=2 (velocity closure, no video): "
+          f"h {med('h_est'):.2f} cm  v {med('v_est'):.2f} cm")
     print(f"\nmedian vertical cm: shipping {med('v_ship'):.2f}   "
           f"oracle-linear {med('v_lin'):.2f}   oracle-quadratic {med('v_quad'):.2f}")
-    print(f"  (deadlift ROM ceiling {truth.VERTICAL_ROM_M['deadlift'][1] * 100:.0f} cm; "
-          "rule 3 is measured by --splice, not here)")
+
+    # Rule 3 — the B6 unlock, and the reason B3 was promoted at all.
+    ceil = truth.VERTICAL_ROM_M["deadlift"][1] * 100
+    print(f"\nrule 3, the B6 unlock (deadlift ROM ceiling {ceil:.0f} cm):")
+    rule3 = _b3_rule_three(ceil)
+    ok = all(r["rom"] <= ceil for r in rule3 if r["variant"] == "splice, order=2")
+    print(f"  rule 3, splice stays in ROM: {'PASS' if ok else 'FAIL'}")
+
+    if traces[0] is not None:
+        import matplotlib
+        matplotlib.use("Agg")
+        from src import plot
+        out = ROOT / "analysis" / "38_b3_detrend_oracle.png"
+        plot.plot_b3_oracle(rows, traces[0], ceil).savefig(out, dpi=105)
+        print(f"\nwrote {out.relative_to(ROOT)}")
     return 0
+
+
+def _b3_rule_three(ceil: float) -> list[dict]:
+    """B6's splice under an order=2 detrend. Rule 3 of `b3_oracle`.
+
+    The splice is re-implemented here rather than imported from `draw_splice`
+    for the reason that function gives: it was measured and rejected, so it
+    lives in `run.py` and in the test that pins it, not in `correct.py`.
+    """
+    import numpy as np
+    from scipy.integrate import cumulative_trapezoid
+    from src import correct, metrics, segment
+
+    def splice(velocity, t, rest, impacts):
+        v = velocity.copy()
+        for r in rest:
+            k = max([i for i in impacts if i < r], default=None)
+            if k is None:
+                continue
+            e = v[r]
+            w = np.zeros(len(v))
+            w[k:r + 1] = (t[k:r + 1] - t[k]) / (t[r] - t[k])
+            w[r + 1:] = 1.0
+            v = v - w[:, None] * e
+        return v
+
+    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
+    rows = []
+    for csv, video in DL_SPLICE:
+        path, clip = raw / f"{csv}.csv", vid / f"{video}.mov"
+        if not (path.exists() and clip.exists()):
+            print(f"  {csv} or {video} not present — skipping")
+            continue
+        result = pipeline.run(path)
+        log, t = result["log"], result["log"]["t"]
+        impacts = segment.impact_anchors(log)
+        lo, hi = result["bounds"][0][0], result["bounds"][-1][1] - 1
+        rest = [k for k in segment.rest_instants(log, impacts) if lo <= k <= hi]
+        stem = csv.split("_2026")[0]
+
+        for label, do, order in [("shipping", False, 1),
+                                 ("splice, order=1", True, 1),
+                                 ("splice, order=2", True, 2)]:
+            v = splice(result["velocity"], t, rest, impacts) if do else result["velocity"]
+            pos = cumulative_trapezoid(v, np.cumsum(log["dt"]), axis=0, initial=0)
+            reps = correct.detrend_set(pos, result["bounds"], t,
+                                       velocity=v, order=order)
+            h = metrics.vs_truth({**result, "reps": reps, "velocity": v},
+                                 clip)["pipeline_h_rms"]
+            rom = float(np.median([abs(p[:, 2].max() - p[:, 2].min())
+                                   for p in reps]) * 100)
+            rows.append({"capture": stem, "variant": label, "h": h, "rom": rom})
+            print(f"  {stem:22s} {label:18s} h {h:6.2f} cm   ROM {rom:6.1f} cm"
+                  + ("   <-- BREAKS ROM" if rom > ceil else ""))
+    return rows
 
 
 DL_SPLICE = [("deadlift_155x6_1_20260728_122828", "deadlift_155x6_1_20260728"),

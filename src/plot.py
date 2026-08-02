@@ -788,3 +788,86 @@ def plot_scorecard(results: dict, truths: dict, roms: dict):
         fontsize=12)
     fig.tight_layout(rect=(0.015, 0, 1, 0.955))
     return fig
+
+
+def plot_b3_oracle(rows: list[dict], rom_trace: tuple, rom_bound: float,
+                   spec_cm: float = 1.0):
+    """B3 — where a per-rep detrend can reach, and where it cannot. C19.
+
+    `rows` is one dict per scoreable capture with the keys `b3_oracle` emits:
+    capture, null, h_ship/h_lin/h_quad, h_est, rom_ship/rom.
+    `rom_trace` is (stem, shipping per-rep vertical cm, order=2 per-rep cm).
+    `rom_bound` is the deadlift ROM ceiling in cm.
+
+    Three panels, for the same reason the splice figure needs three: the
+    result is a ceiling, a rejection and a mechanism, and any one alone
+    misrepresents it. Panel 1 is the finding worth keeping — an ORACLE, so it
+    is what no estimator can beat, not what one achieved.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5.0))
+    stems = [r["capture"] for r in rows]
+    x = np.arange(len(rows))
+
+    # 1 --- the ceiling, per capture, and it splits by lift --------------------
+    ax = axes[0]
+    for off, key, colour, label in [(-0.26, "h_ship", "#7f8c8d", "shipping"),
+                                    (0.00, "h_lin", "#2980b9", "oracle: best line"),
+                                    (0.26, "h_quad", "#8e44ad", "oracle: + quadratic")]:
+        ax.bar(x + off, [r[key] for r in rows], width=0.25, color=colour,
+               label=label, edgecolor="none")
+    ax.scatter(x, [r["null"] for r in rows], s=44, marker="_", color="#c0392b",
+               linewidths=2.2, label="null model (a flat line)", zorder=5)
+    ax.axhline(spec_cm, color="#16a085", lw=1.4, ls="--", label=f"{spec_cm:g} cm spec")
+    ax.set_yscale("log")
+    ax.set_xticks(x)
+    ax.set_xticklabels([s.replace("_", "\n", 1) for s in stems], fontsize=6.5,
+                       rotation=30, ha="right")
+    ax.set_ylabel("per-rep horizontal rms, cm  (log)")
+    ax.set_title("What NO per-rep detrend can beat\n"
+                 "bench reaches spec; on deadlift no LINE beats the flat line",
+                 fontsize=9)
+    ax.legend(fontsize=6.5, frameon=False)
+
+    # 2 --- and the buildable version breaks a bound it was not aimed at -------
+    ax = axes[1]
+    ax.bar(x - 0.16, [r["rom_ship"] for r in rows], width=0.32, color="#7f8c8d",
+           label="shipping", edgecolor="none")
+    ax.bar(x + 0.16, [r["rom"] for r in rows], width=0.32, color="#c0392b",
+           label="order=2 (velocity closure)", edgecolor="none")
+    ax.axhline(rom_bound, color="#16a085", lw=1.4, ls="--",
+               label=f"deadlift ROM ceiling, {rom_bound:.0f} cm")
+    ax.set_xticks(x)
+    ax.set_xticklabels([s.replace("_", "\n", 1) for s in stems], fontsize=6.5,
+                       rotation=30, ha="right")
+    ax.set_ylabel("median per-rep vertical travel, cm")
+    ax.set_title("The buildable quadratic, measured and rejected\n"
+                 "deadlift goes past what a lifter can move a bar through",
+                 fontsize=9)
+    ax.legend(fontsize=6.5, frameon=False)
+
+    # 3 --- the mechanism -----------------------------------------------------
+    ax = axes[2]
+    stem, ship, quad = rom_trace
+    for i, p in enumerate(ship):
+        ax.plot(np.linspace(0, 1, len(p)), p, color="#7f8c8d", lw=1.1,
+                label="shipping" if i == 0 else None)
+    for i, p in enumerate(quad):
+        ax.plot(np.linspace(0, 1, len(p)), p, color="#c0392b", lw=1.1,
+                label="order=2" if i == 0 else None)
+    ax.axhline(rom_bound, color="#16a085", lw=1.4, ls="--")
+    ax.set_xlabel("normalised rep time")
+    ax.set_ylabel("vertical position, cm")
+    ax.set_title(f"{stem}: why\nthe landing's error is local; the quadratic "
+                 "is not", fontsize=9)
+    ax.legend(fontsize=6.5, frameon=False)
+
+    fig.suptitle(
+        "B3 — the per-rep detrend has real headroom, and it is not in the "
+        "polynomial order (C19)", fontsize=12)
+    fig.text(0.5, 0.005,
+             "Panel 1 is an ORACLE: the best line and the best line-plus-quadratic "
+             "fitted AGAINST the video, so it bounds every estimator rather than "
+             "being one. It is forbidden in the pipeline and is the point here.",
+             ha="center", fontsize=7.5, color="0.35")
+    fig.tight_layout(rect=(0.01, 0.03, 1, 0.93))
+    return fig

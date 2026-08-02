@@ -1300,3 +1300,67 @@ still referee error — halved, not removed.
 **What this does not show**, as with `35` and `36`: no sync, no `vs_truth`, no
 `beats_null`. There is no IMU capture beside this footage. The referee got
 better; nothing here says the pipeline did.
+
+---
+
+## `38_b3_detrend_oracle.png` — B3: the detrend has headroom, and it is not in the order (C19, 2026-08-02)
+
+`python run.py --b3oracle`. Three panels, because the result is a ceiling, a
+rejection and a mechanism, and any one alone misrepresents it.
+
+**Panel 1 is the finding worth keeping, and it is an ORACLE.** The best line and
+the best line-plus-quadratic, fitted per rep *against the video being scored
+on*. That is forbidden in the pipeline and is exactly the point: it bounds every
+possible estimator rather than being one, the way B6's oracle capped
+constant-bias correction at ~30% and saved building it. Step 7 subtracts one
+particular line, so `err` minus the *best* line is a floor no linear detrend can
+beat however cleverly it picks that line.
+
+Median over the ten scoreable captures, per-rep horizontal rms: shipping
+**2.72 cm**, best line **1.04**, best quadratic **0.33**, null **2.85**.
+
+Two things follow, and the split by lift matters more than the median.
+
+- **There is real headroom** — +1.67 cm, where this project has been describing
+  B3 as worth 2–4 cm. The linear family alone holds ~10 cm on the worst capture:
+  `deadlift_180x3` goes 15.44 → 4.89. Today's endpoint line is not the best line.
+- **But it is a bench result, not a P2 fix.** On bench the best quadratic reaches
+  0.25–0.55 cm, inside the 1 cm spec. On deadlift the best *line* is
+  3.64 / 3.78 / 4.89 against nulls of 3.55 / 3.23 / 1.96 — **no per-rep line,
+  however estimated, beats a flat vertical line on any deadlift** — and the best
+  quadratic only just does. Note panel 1 is log-scaled; the deadlift bars are
+  nowhere near the spec line and the gap is larger than it looks.
+
+**Panel 2 is the buildable version, rejected.** `detrend_rep(order=2)` adds one
+quadratic term pinned by a second closure the rep already supplies — a rep is
+periodic in velocity as well as position, so the reconstructed `dv` is drift
+exactly as `dp` is. No new anchor, no video, no threshold, and it degenerates to
+today's line when `dv` is zero. Deadlift per-rep vertical travel goes to
+78.2 / 68.4 / 116.4 cm against a 61 cm physical ceiling.
+
+*Read the rejection carefully*: **vertical and ROM reject it on 3 of 3, and
+horizontal does not.** `deadlift_180x3` improves fore-aft, 15.44 → 12.17. And
+the median over all ten captures *improves*, 2.72 → 2.23, because bench has no
+landing and barely moves — which is the aggregate-that-hides shape this project
+keeps repeating, and the reason the decision rule was fixed per-rule and
+committed before any number was read.
+
+**Panel 3 is why.** One deadlift's reps, shipping against order=2. C11 localised
+the velocity deficit to the landing and nowhere else, so a quadratic removes it
+correctly *in total* by smearing it across the whole rep — `dv·T/8` at mid-rep,
+~31 cm at `dv` = 1 m/s. The red traces dive to −100 cm on a lift whose bar
+travels 60 cm upward.
+
+**The durable conclusion.** B6 measured that a constant acceleration correction
+cannot represent an impulse. This measures that a quadratic cannot either, so
+the obstacle was never the detrend's *order* — any basis smooth across the whole
+rep spreads a landing-localised error across the whole rep. Rule 3, the reason
+B3 was promoted to first at all, fails directly: under an order=2 detrend the
+splice breaks the ROM ceiling *harder* and loses more horizontally. **B6 is not
+unblocked by B3**, and the two may be one problem.
+
+**What this does not show.** The deadlift numbers are measured through a referee
+C12 showed is lost at lockout, and restricting to well-tracked frames shrinks
+the null further — so "no line beats the null on deadlift" is, if anything,
+understated. Nothing here is evidence the reps line up in time: `vs_truth`'s
+horizontal rms is insensitive to gross time misalignment.

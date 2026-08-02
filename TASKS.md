@@ -1003,7 +1003,7 @@ hold, not the end of lifting.
 the right count, duration and amplitude, so none of the above could see phase.
 *C9 then measured it: bench is in phase, 15 of 15. Squat is still unverified.*
 
-### B6 — attack the acceleration error itself  ← splice rejected; blocked on B3
+### B6 — attack the acceleration error itself  ← splice rejected; NOT unblocked by B3
 A3 puts the error upstream of the detrend and gives it a shape: a smooth arch
 at rep frequency, 5–15 cm of horizontal per rep. The metric B6 was waiting on
 now exists, so this is unblocked.
@@ -1126,6 +1126,16 @@ in time hits this, including the time-varying models left in item 2. **B6 is
 blocked on B3**: the detrend has to be able to absorb a local correction before
 a local correction can be worth making.
 
+**Corrected 2026-08-02 (C19): B3 is not the unblocker.** The quadratic detrend
+this asked for was built — pinned by the rep's own velocity closure, needing no
+new anchor — and the splice got *worse* under it, not better: ROM
+78.1 / 70.4 / 116.4 cm against the linear detrend's 62.4 / 60.4 / 58.3, and
+horizontal 16.41 / 19.27 / 24.87 against 10.09 / 5.90 / 14.61. A quadratic
+spreads a landing-localised error across the whole rep exactly as a constant
+does; it just spreads more of it. **What item 2 needs is a correction local in
+time, and a detrend that is also local in time to sit under it** — not a
+higher-order global one. See B3 and `analysis/38`.
+
 Bench and squat need none of this — no impact, and both a per-rep residual and
 now a vertical closure at the sensor's noise floor. Their problem, if they have
 one, is a different problem, and nothing external measures it yet.
@@ -1195,6 +1205,102 @@ replace it". The floor-impact anchor was the obvious candidate and it lost.
 
 `axes` is now a parameter on `detrend_rep`/`detrend_set` so the next candidate
 can be measured against the same numbers rather than re-deriving them.
+
+**C19, 2026-08-02 — the quadratic is REJECTED, and the oracle above it is the
+finding worth keeping.** `python run.py --b3oracle`, `analysis/38`, pinned in
+`test_the_quadratic_detrend_is_worse_than_the_line`. The decision rule was
+fixed and committed (`acf8c4e`) before any number was read; both thresholds are
+the 1 cm spec rather than new constants, because nothing here is held out.
+
+*First, the oracle, which caps the whole family.* Step 7 subtracts one
+particular line per rep, so `err` minus the BEST line is a floor no linear
+detrend can beat however it is estimated, and `err` minus the best
+line-plus-quadratic is that floor one order up. Median over the ten scoreable
+captures, per-rep horizontal rms in cm:
+
+| | shipping | oracle: best line | oracle: + quadratic | null |
+|---|---|---|---|---|
+| median of 10 | 2.72 | 1.04 | 0.33 | 2.85 |
+
+**Rule 1 (headroom) PASSES at +1.67 cm, and that is more than this file has
+been claiming.** B3 has been described as worth 2-4 cm; the linear family alone
+has ~10 cm in it on the worst capture, `deadlift_180x3` going 15.44 -> 4.89.
+Today's endpoint line is simply not the best line.
+
+**Rule 2 (the quadratic pays) FAILS at +0.71 cm.** But the per-capture split
+matters far more than the median, and it is a clean split by lift:
+
+- **Bench**: oracle-quadratic reaches **0.25-0.55 cm**, inside the 1 cm spec.
+  A better per-rep detrend genuinely could bring bench to spec.
+- **Deadlift**: oracle-*linear* is 3.64 / 3.78 / 4.89 against nulls of
+  3.55 / 3.23 / 1.96 — **no per-rep line, however estimated, beats a flat
+  vertical line on any deadlift.** Oracle-quadratic (3.11 / 2.02 / 1.89) only
+  just does. The whole per-rep polynomial family is capped well short of spec
+  on deadlift, the way B6's oracle capped constant-bias at ~30%.
+
+*Then the buildable estimator, and it loses.* `detrend_rep(order=2)` adds one
+quadratic term pinned by a second closure the rep already supplies: a rep is
+periodic in VELOCITY as well as position, so the reconstructed `dv` across a
+rep is drift exactly as `dp` is. Three constraints, three coefficients, no new
+anchor, no video, no threshold, and it degenerates to today's line when `dv` is
+zero. It is the obvious way to get the quadratic B6 asks for.
+
+| capture | shipping h | order=2 h | order=2 v | order=2 ROM |
+|---|---|---|---|---|
+| deadlift_155x6_1 | 5.05 | 29.11 | 48.67 | 78.2 |
+| deadlift_155x6_2 | 9.19 | 25.20 | 41.75 | 68.4 |
+| deadlift_180x3 | 15.44 | 12.17 | 73.11 | 116.4 |
+
+against a 61 cm ROM ceiling and a shipped vertical of 5.24 / 6.60 / 5.24.
+**Vertical and ROM reject it on 3 of 3; horizontal does not** — `deadlift_180x3`
+improves, 15.44 -> 12.17, so "it loses on horizontal" is not a claim these
+captures support. **And do not read the median**, which improves 2.72 -> 2.23
+because bench has no landing: that is the aggregate-that-hides shape again, and
+it is why the rule was fixed per-rule and in advance.
+
+**Rule 3 (the B6 unlock) FAILS, and this is the one that matters**, because
+unblocking B6 is why B3 was promoted to first at all:
+
+| | shipping | splice, order=1 | splice, order=2 |
+|---|---|---|---|
+| deadlift_155x6_1 | 5.05 cm / 57.8 | 10.09 / 62.4 | 16.41 / **78.1** |
+| deadlift_155x6_2 | 9.19 / 58.5 | 5.90 / 60.4 | 19.27 / **70.4** |
+| deadlift_180x3 | 15.44 / 53.7 | 14.61 / 58.3 | 24.87 / **116.4** |
+
+A quadratic detrend does not let the splice keep vertical ROM in bounds. It
+breaks the ceiling *harder* and loses more horizontally. (A prediction made
+before the run — that the splice would zero `dv` and collapse order=2 back to
+order=1 — was wrong: rep boundaries sit ~10 ms after the impacts, not at the
+rest instants, so `dv` survives the splice. Measured rather than argued.)
+
+**Why, and it generalises past this attempt.** C11 established the deadlift's
+velocity deficit is injected AT THE LANDING and nowhere else. A quadratic
+removes it correctly *in total* by spreading it smoothly across the whole rep,
+injecting `dv·T/8` at mid-rep — ~31 cm at `dv` = 1 m/s and T = 2.5 s, an order
+above the 5-15 cm being corrected. B6 measured that **a constant acceleration
+correction cannot represent an impulse.** This measures that **a quadratic
+cannot either.** The obstacle was never the detrend's ORDER: any basis smooth
+across the whole rep spreads a landing-localised error across the whole rep,
+and raising the order raises what it spreads.
+
+**So the standing plan is wrong and P3 has been corrected.** "B3 first, because
+it unblocks every localised correction after it" assumed the blocker was that
+the detrend could not represent a quadratic. It can now, and nothing is
+unblocked. What B6 needs is a detrend that is *local in time*, not one that is
+higher-order — and B3 and B6 may be the same problem rather than two.
+
+*Kept rather than deleted*, against B7's precedent of deleting rejected code:
+`order` stays on `detrend_rep` defaulted to 1 and bit-identical, pinned by a
+test asserting order=1 equals the shipped call. The reason is that TASKS.md B6
+asks in so many words for a detrend that can absorb a quadratic, so the
+measurement needs to sit next to the idea or it gets re-proposed on the
+strength of the reasoning. Overrule if you would rather it went the way of the
+splice.
+
+*Still open, and the oracle says where to look:* bench is reachable and
+deadlift is not, so a detrend improvement is a BENCH result, not a P2 fix. The
+principled λ above still wants a source for per-rep non-closure other than the
+video.
 
 ### B4 — step 8 implemented; the SIGN is still open  (2026-07-30)
 `project_to_plane` and `confidence` no longer raise, and `principal_axis` uses
