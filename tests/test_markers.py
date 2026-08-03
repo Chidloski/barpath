@@ -371,3 +371,129 @@ def test_validate_raises_on_a_motionless_track():
                             "rotation_deg": 1.0}}
     with pytest.raises(ValueError, match="not on a barbell"):
         markers.validate(path, "deadlift_fake.mov")
+
+
+# ------------------------------------------------- C21: static suppression --
+def _blob_frame(points, shape=(200, 160), rng=None):
+    """A frame with a blurred Gaussian marker at each (y, x)."""
+    yy, xx = np.mgrid[0:shape[0], 0:shape[1]]
+    frame = np.full(shape, 0.15, np.float32)
+    for ty, tx in points:
+        frame = np.maximum(
+            frame, (0.15 + 0.75 * np.exp(
+                -(((yy - ty) ** 2 + (xx - tx) ** 2) / (2 * 1.1 ** 2)))
+            ).astype(np.float32))
+    if rng is not None:
+        frame = frame + rng.normal(0, 0.01, shape).astype(np.float32)
+    return frame
+
+
+def test_static_points_finds_the_fixtures_and_not_the_bar():
+    """C21's premise: on a tripod, furniture is at a fixed pixel and the bar is not.
+
+    Three fixed markers stand for rack holes and ceiling lights; one sweeps
+    down the frame as a barbell does. `static_points` must return the three and
+    none of the sweep, because everything downstream — the whole seeding fix —
+    rests on that separation holding.
+    """
+    rng = np.random.default_rng(0)
+    fixtures = [(40.0, 30.0), (150.0, 120.0), (60.0, 140.0)]
+    stack = np.stack([_blob_frame(fixtures + [(30.0 + 4.0 * k, 80.0)], rng=rng)
+                      for k in range(30)])
+
+    static = markers.static_points(stack, n_sample=30)
+
+    assert len(static) == 3, f"expected the three fixtures, got {len(static)}"
+    for f in fixtures:
+        assert np.hypot(*(static - np.array(f)).T).min() < 2.0, f"missed {f}"
+    # no returned point lies on the sweep
+    sweep = np.array([(30.0 + 4.0 * k, 80.0) for k in range(30)])
+    d = np.hypot(static[:, 0, None] - sweep[None, :, 0],
+                 static[:, 1, None] - sweep[None, :, 1])
+    assert d.min() > 3.0, "a moving marker was judged static"
+
+
+def test_static_points_suppresses_a_bar_that_barely_moves():
+    """The limit C21 carries, pinned rather than left in prose.
+
+    `static_points` cannot distinguish a fixture from a bar that sits racked
+    for most of the clip — both recur at one pixel. This is the failure mode to
+    know about, so it is a test that asserts the WRONG-looking behaviour on
+    purpose: with the marker still for 26 of 30 frames it is suppressed.
+
+    What it costs in practice is bounded by the real measurement behind the 0.7
+    default: on `bench_95x2` the worst real sticker recurs at 0.48, because the
+    bar is racked for about half the clip and not much more. A capture that
+    breaks this surfaces as `bar_path` raising "no sticker constellation found"
+    on footage with plainly visible markers, and the response is to RAISE
+    `recur_max`, not lower it.
+    """
+    rng = np.random.default_rng(1)
+    frames = [_blob_frame([(100.0, 80.0)], rng=rng) for _ in range(26)]
+    frames += [_blob_frame([(100.0 + 20.0 * k, 80.0)], rng=rng) for k in range(1, 5)]
+    static = markers.static_points(np.stack(frames), n_sample=30)
+
+    assert len(static) == 1
+    assert np.hypot(*(static[0] - np.array([100.0, 80.0]))) < 2.0
+
+    # and it is recovered by raising the threshold, which is the documented fix
+    assert len(markers.static_points(np.stack(frames), n_sample=30,
+                                     recur_max=0.9)) == 0
+
+
+def test_suppress_drops_static_detections_and_keeps_the_rest():
+    dets = np.array([[10.0, 10.0, 0.9], [50.0, 50.0, 0.8], [90.0, 20.0, 0.7]])
+    static = np.array([[10.2, 9.9], [90.0, 20.0]])
+
+    kept = markers._suppress(dets, static)
+
+    assert len(kept) == 1
+    assert kept[0, 0] == 50.0
+    # no static points is a no-op, not an error
+    assert len(markers._suppress(dets, np.empty((0, 2)))) == 3
+
+
+PAIRED_DIR = Path(__file__).resolve().parents[1] / "data_v2" / "video"
+
+
+def test_tracking_is_not_what_fails_on_the_2026_08_03_captures():
+    """C21's central diagnosis, pinned so nobody re-derives it.
+
+    `bar_path` does not produce a usable path on any of the six paired captures
+    of 2026-08-03 — see TASKS.md C21. The instinct is to blame the tracker,
+    because those are brighter plates, a closer camera and a rack-heavy
+    background. **That is wrong and this test is the proof.** Handed the correct
+    constellation, `track` follows `bench_95x2` through the entire clip: 100%
+    coverage, three markers matched in 1229 of 1235 frames, median residual
+    **0.11 px** and worst 1.21 — better than it manages on any capture it was
+    originally tuned against.
+
+    The rim coordinates below are read off frame 450 by hand. That is not a
+    calibration anybody should depend on and it is not used anywhere but here;
+    the point is only to remove seeding from the experiment.
+
+    So the whole failure is `seed_frame` choosing the wrong constellation, and
+    anything spent on `track`, on detection thresholds or on the footage itself
+    is spent in the wrong place.
+    """
+    v = PAIRED_DIR / "bench_95x2_20260803.mov"
+    if not v.exists():
+        pytest.skip("data_v2/video is gitignored and not present")
+
+    stack, _ = markers._frames_u8(v, 1.0)
+    rim = np.array([[156.3, 54.1], [226.9, 183.3], [327.0, 44.7]])
+    centre = rim.mean(axis=0)
+    model = {"rim": rim, "hub": np.array([217.0, 45.8]), "centre": centre,
+             "circumradius": float(np.hypot(*(rim - centre).T).mean()),
+             "score": 0.5}
+
+    trk = markers.track(stack, 450, model)
+
+    n_markers = np.asarray(trk["n_markers"])
+    resid = np.asarray(trk["residual_px"])
+    covered = np.isfinite(np.asarray(trk["centre"])[:, 0])
+
+    assert covered.mean() == 1.0, f"coverage {covered.mean():.3f}"
+    assert np.mean(n_markers >= 3) > 0.99, f"3-marker {np.mean(n_markers >= 3):.4f}"
+    assert np.nanmedian(resid) < 0.3, f"median residual {np.nanmedian(resid):.3f} px"
+    assert np.nanmax(resid) < 2.0, f"worst residual {np.nanmax(resid):.3f} px"

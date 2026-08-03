@@ -440,3 +440,31 @@ decodes to uint8 and `_grey` converts one frame at a time: 610 MB peak for a
 float32 stack. Do not go back to `truth.frames` here, and do not run several
 tracks concurrently on a small machine — running six at once is what crashed an
 8 GB laptop on 2026-08-01, and it is why this is written down.
+
+
+### The seeder does not work on the 2026-08-03 paired captures (C21)
+
+Everything above is measured on `data_v2/video_only/`, the five marker clips of
+2026-08-01. Six captures with IMU logs beside them arrived on 2026-08-03 in
+`data_v2/video/`, and **`bar_path` fails to seed on all six.** Do not quote a
+marker-refereed number on a `data_v2/raw` capture.
+
+The tracker is not the problem, and that is worth stating first because the
+footage invites the opposite conclusion — brighter plates, a closer camera, a
+rack-heavy background. Handed the correct constellation by hand, `track`
+follows `bench_95x2` through the whole clip at 100% coverage and a 0.11 px
+median residual, better than on any clip it was tuned against. Pinned by
+`test_tracking_is_not_what_fails_on_the_2026_08_03_captures`.
+
+C21 fixed three admission gates in `candidates`, all of which had been passing
+by a hair on the old footage: `max_dets` 30 (the third sticker ranks 48th),
+`require_hub` at 0.45 of the circumradius (the true hub is at 0.55, and the
+gate was a model error — the end cap's offset is parallax, not a fraction of
+apparent size, so it is now 0.80), and `top` 5 (the true triple ranks 9th in
+its own frame). `static_points` now removes tripod-static detections before
+triples are enumerated, and is applied to re-acquisition in `track` as well —
+but to re-acquisition only, since suppressing during ordinary association costs
+`deadlift_190x1` 72% of its frames when the bar rests on the floor.
+
+Those three were necessary and not sufficient. What remains open is
+`seed_frame`'s hypothesis selection; see TASKS.md C21 and `analysis/39`.

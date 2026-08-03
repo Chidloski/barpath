@@ -953,6 +953,132 @@ five-row table and it is in three documents already; a plot would have meant
 claiming `run.py` and `plot.py` and adding a CLI flag to regenerate it, which is
 more surface area than the picture is worth. **38 is free again.**
 
+### C21 — the marker seeder on the first paired captures (2026-08-03)
+
+Six captures arrived on 2026-08-03 with an IMU log and a marker clip side by
+side — 2 squat, 4 bench, 24 reps, in `data_v2/raw` and `data_v2/video`. They are
+the captures C17 was built for. **`markers.bar_path` does not seed on any of
+them**, and C17's "there is nothing to build" is therefore falsified.
+
+**PARTIAL. Three of four blockers are fixed and measured; the fourth is open.**
+Do not read this entry as a fix.
+
+*What the failure looked like.* `bench_95x2` reported 0.4 cm of travel against a
+29.5 cm rep, the seeder having locked a triple of rack holes. Every quality
+number the module reports was healthy — 100% coverage, three markers "matched",
+sub-pixel residual — because a rigid triple of gym fixtures fits a rigid model
+perfectly. This is the project's recurring shape: an aggregate that passes while
+the thing fails.
+
+*Three gates rejected the true constellation, and every one was already at zero
+margin on the footage it was tuned against.* Measured on `bench_95x2` frame 450,
+where all three stickers are detected cleanly at strengths 0.62/0.54/0.47:
+
+| gate | needs | old footage | 2026-08-03 |
+|---|---|---|---|
+| `max_dets = 30` | all three stickers in the top 30 detections | ranks 20/23/24 | ranks 0/22/**48** |
+| `require_hub`, `0.45·circ` | end cap near the rim centroid | 0.41·circ | **0.55·circ** |
+| `top = 5` | the triple to outscore the ceiling grid | rank 3 | rank **9** |
+
+The hub gate was a *model* error rather than a tight constant: the end cap
+protrudes toward the camera, so where it projects is parallax — this module's
+own header measures that offset swinging −111 to +57 px, r = 0.949 with height —
+and a fraction of the plate's apparent size does not track it. What is
+physically true is that the cap projects inside the plate disc. Now 0.80.
+`top` is now 20 and `static_points` removes the fixtures before triples are
+enumerated at all, which is the principle `seed_frame`'s docstring always
+stated — "the bar is the thing in a gym that moves" — applied before the
+appearance filters rather than after them.
+
+*A second, separate bug that suppression fixed.* With the seed CORRECT on
+`bench_95x2`, the backward pass still lost the plate and re-acquired on the
+bench-and-floor structure, holding it for frames 0–950 at 1.3 px. Suppression
+is applied to re-acquisition **only**: applying it to ordinary association as
+well cost `deadlift_190x1` 72% of its frames, because a heavy single leaves the
+bar on the floor long enough for its own stickers to read as static. That
+asymmetry is measured, and it is in the `track` docstring.
+
+*The finding that matters most, and it redirects the next attempt.* **`track` is
+not implicated.** Hand it the correct constellation and it follows `bench_95x2`
+through the entire clip: 100% coverage, three markers in 1229 of 1235 frames,
+median residual **0.11 px**, worst 1.21 — better than on any capture it was
+originally tuned against. Gated by
+`test_tracking_is_not_what_fails_on_the_2026_08_03_captures`. So nothing should
+be spent on the tracker, on detection thresholds, or on reshooting the footage.
+
+*What is still open, stated precisely.* `seed_frame` picks the wrong hypothesis.
+The specific defect found: groups are pooled by circumradius within 15%, so the
+true constellation is absorbed into a size bucket alongside spurious ones —
+`bench_95x2`'s true 94.2 px sits inside the winning group's 100.9 px — and the
+group's representative is then reselected by per-frame appearance score, which
+is the discriminator already known not to work. Three candidate replacements
+were measured and **rejected**: triangle shape rigidity across a group (SD
+0.017–0.027, no separation), centre-trajectory smoothness (no separation), and
+a 120-frame trial track (near its own seed even a wrong constellation holds
+together). A full-clip trial track is the obvious next thing and was not
+finished; note that its merit function must not reward a low residual, since a
+two-marker fit is exact and scores 0.00 px.
+
+*No regression.* All five original `data_v2` captures seed identically and track
+identically — coverage 1.000, residual p95 1.13–1.85 px. Full marker suite 47
+passed. `analysis/39_marker_seeding.png`; 39 is taken, next free is 40.
+
+### C22 — squat_150x5 counts 4 of 5, and two fix families are rejected (2026-08-03)
+
+**NOT FIXED. Cause identified, two candidate fixes measured and rejected,
+nothing shipped.** Counting stands at **22 of 23** captures, 95 of 96 reps.
+
+`squat_150x5` (2026-08-03) segments **4 reps of 5**. There is a real fifth: a
+concentric lobe at t = 50.2 s carrying 0.566 m against the other four's
+0.604–0.633, at a peak velocity of 0.507 m/s against 0.564–0.647.
+
+*The obvious suspect is innocent, and it was worth checking first.* CLAUDE.md
+has predicted since C5 that a set with a genuine long mid-set pause would break
+`_longest_cadence`'s 1.45 tolerance, and the inter-rep gaps here do lengthen
+with fatigue — 4.58, 4.91, 5.32 s. But `_longest_cadence` never sees the fifth
+rep: it is handed **four** candidates whose gaps ratio to 1.16, comfortably
+inside tolerance. **The rest-pause failure mode remains hypothetical and this
+is not an instance of it.** Neither is `peak_ratio`: every rep lobe sits inside
+the 2.5x band.
+
+*The actual cause is `_similar_cluster`, and it is a real assumption failing.*
+Cluster membership requires mutual shape similarity above 0.7, and across a
+heavy set the velocity profile drifts monotonically with fatigue:
+
+    rep1   rep2   rep3   rep4   rep5      (shape correlation with rep 5)
+    0.518  0.679  0.638  0.859  1.000
+
+The fifth rep is similar to its neighbour and unlike the first. **The reps of a
+fatiguing set form a CHAIN, not a CLUSTER**, and `_similar_cluster` tests for a
+cluster. `squat_140x5`, the same lifter's lighter set from the same session,
+holds 0.925 minimum and is unaffected — so this is fatigue, not the capture.
+Against the median template of the accepted four the fifth scores 0.667 against
+the 0.7 threshold; the best non-rep lobe scores 0.617. Lowering the threshold
+would work on a **0.05** margin, which is the zero-margin trap C21 was about.
+
+*Family 1, single-linkage chaining over the similarity graph: REJECTED.* It
+fixes this capture at every threshold tried (0.70/0.75/0.80) and over-counts
+badly elsewhere — `bench_spoto_90x5_1` reaches **11–12** windows against 5,
+`bench_95x2` 4 against 2. Chaining is what lets a set walk into its own
+re-rack.
+
+*Family 2, extend the cadence run by a lobe that continues the rhythm AND
+carries a rep's displacement: REJECTED, and this is the more interesting
+rejection.* The fifth rep qualifies easily — gap ratio 1.30 against the
+preceding 5.32 s, area ratio 0.94. But swept over a 4x5 grid of gap tolerance
+(1.15–1.45) and area tolerance (0.70–0.95), **no setting reaches 23/23 and the
+best reaches 21**, below shipping's 22. There is no plateau. The reason is
+specific: bench's post-set movement continues the cadence and matches the area,
+so the rule keys on exactly the thing that does not separate them.
+`bench_90x4_1` and `_2` gain a spurious rep at every setting that admits the
+squat's fifth.
+
+*What a fix would have to do.* Distinguish "the next thing in the rhythm, at the
+right size" on squat from the same description on bench. Neither cadence, area,
+peak velocity nor shape does it alone. The `phase` column does not help — C5
+already established the lifter re-racks before pressing Finish Set. An external
+anchor would, and squat has none; see P1.
+
 ---
 
 ## To do

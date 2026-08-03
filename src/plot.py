@@ -871,3 +871,90 @@ def plot_b3_oracle(rows: list[dict], rom_trace: tuple, rom_bound: float,
              ha="center", fontsize=7.5, color="0.35")
     fig.tight_layout(rect=(0.01, 0.03, 1, 0.93))
     return fig
+
+
+def plot_marker_seeding(shipped: dict, handseeded: dict, gates: list[dict],
+                        frames: dict):
+    """C21 — why the marker tracker fails on the 2026-08-03 paired captures.
+
+    `shipped` and `handseeded` are `markers.track` outputs on `bench_95x2`.
+    `gates` is one dict per gate with `name`, `old`, `new`, `limit` and `unit`.
+    `frames` describes one illustrative frame: `image`, `shipped` and `true`
+    centres as (y, x), their radii `shipped_r` and `true_r` in pixels, and
+    `true_rim` (3, 2) for the sticker positions.
+
+    **Both constellations are drawn as circles at their own measured radius.**
+    The first version of this panel drew them as fixed-size markers, which made
+    the plate look far smaller than it is and invited the reading that the
+    hand-seeded constellation was not the plate. It is: the three crosses fall
+    on the three rim stickers and the circle through them is the sticker
+    circle. A figure that misrepresents the scale of the thing being tracked is
+    worse than no figure, because the whole claim here is about which object
+    the tracker locked onto.
+
+    Three panels because the finding has three parts and any one alone
+    misleads. The first is the failure as it actually looks — not "noisy", but
+    a confident lock on a piece of furniture. The second is the control that
+    localises it: the same tracker, same clip, correct seed. The third is why
+    it was always going to happen, which is that all three admission gates were
+    sitting at zero margin on the captures they were tuned against.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5.0))
+
+    # 1 --- the failure: a confident lock on the bench -------------------------
+    ax = axes[0]
+    ax.imshow(frames["image"], cmap="gray")
+    ax.add_patch(plt.Circle(frames["true"][::-1], frames["true_r"], fill=False,
+                            color="#f1c40f", lw=2.0))
+    ax.plot(frames["true_rim"][:, 1], frames["true_rim"][:, 0], "+",
+            color="#f1c40f", ms=13, mew=2.0, label="the plate, by its 3 stickers")
+    ax.add_patch(plt.Circle(frames["shipped"][::-1], frames["shipped_r"],
+                            fill=False, color="#c0392b", lw=2.0, ls="--"))
+    ax.plot(*frames["shipped"][::-1], "x", color="#c0392b", ms=12, mew=2.2,
+            label="what the shipped seeder locked onto")
+    if "zoom" in frames:                      # (y0, y1, x0, x1)
+        y0, y1, x0, x1 = frames["zoom"]
+        ax.set_xlim(x0, x1)
+        ax.set_ylim(y1, y0)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.02),
+              frameon=False)
+    ax.set_title("bench_95x2, frame 450: the seeder's constellation\n"
+                 "is not the plate — and reports 3 markers and 0.0 px",
+                 fontsize=9)
+
+    # 2 --- the control: same tracker, correct seed ----------------------------
+    ax = axes[1]
+    for trk, colour, label in ((shipped, "#c0392b", "shipped seeder"),
+                               (handseeded, "#2980b9", "hand-seeded on the plate")):
+        y = np.asarray(trk["centre"])[:, 0]
+        ax.plot(y, lw=1.0, color=colour, label=label)
+    ax.invert_yaxis()
+    ax.set_xlabel("frame")
+    ax.set_ylabel("tracked centre, y (px)   [down is up]")
+    ax.legend(fontsize=7, frameon=False)
+    ax.set_title("`track` is not what is broken\n"
+                 "hand-seeded: 100% coverage, 0.11 px median residual;\n"
+                 "the shipped seed follows the bar 60 px displaced, then breaks up",
+                 fontsize=8.5)
+
+    # 3 --- the gates, and the margin they never had ---------------------------
+    ax = axes[2]
+    x = np.arange(len(gates))
+    ax.bar(x - 0.19, [g["old"] / g["limit"] for g in gates], width=0.36,
+           color="#7f8c8d", label="old footage (worked)", edgecolor="none")
+    ax.bar(x + 0.19, [g["new"] / g["limit"] for g in gates], width=0.36,
+           color="#c0392b", label="2026-08-03 (failed)", edgecolor="none")
+    ax.axhline(1.0, color="#16a085", lw=1.6, ls="--", label="the gate")
+    ax.set_xticks(x)
+    ax.set_xticklabels([textwrap.fill(g["name"], 16) for g in gates], fontsize=7)
+    ax.set_ylabel("value / gate   (>1 is rejected)")
+    ax.legend(fontsize=7, frameon=False)
+    ax.set_title("Every gate was already at zero margin\n"
+                 "the new captures crossed all three at once", fontsize=9)
+
+    fig.suptitle("C21 — the marker seeder, and where it actually fails",
+                 fontsize=11)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    return fig

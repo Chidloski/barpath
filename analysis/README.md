@@ -1364,3 +1364,43 @@ C12 showed is lost at lockout, and restricting to well-tracked frames shrinks
 the null further — so "no line beats the null on deadlift" is, if anything,
 understated. Nothing here is evidence the reps line up in time: `vs_truth`'s
 horizontal rms is insensitive to gross time misalignment.
+
+
+## 39 — the marker seeder, and where it actually fails (C21, 2026-08-03)
+
+`analysis/39_marker_seeding.png`. Six captures arrived with an IMU log beside a
+marker clip — the pairing this project has been waiting for — and
+`markers.bar_path` seeds on none of them. `bench_95x2` reports 0.4 cm of travel
+against a 29.5 cm rep.
+
+**Panel 1 — the failure is confident, not noisy.** The seeder's constellation at
+frame 450 is not the plate, and it reports three markers matched at a sub-pixel
+residual while being wrong. Both constellations are drawn as circles at their
+own measured radius; the first version of this panel used fixed-size markers,
+which drew the plate far smaller than it is and read as though the hand-seeded
+constellation were not the plate either. It is — the three crosses fall on the
+three rim stickers. Caught by the owner, 2026-08-03. A rigid triple of gym fixtures fits a rigid model
+exactly, so no quality number the module computes can see this. Only the fact
+that furniture does not MOVE distinguishes it, which is what `static_points`
+now measures.
+
+**Panel 2 — `track` is not what is broken, and this is the panel to read.** The
+same tracker, the same clip, seeded by hand on the plate: 100% coverage, three
+markers in 1229 of 1235 frames, median residual **0.11 px**. That is better than
+it manages on any capture it was originally tuned against. The whole failure is
+`seed_frame`'s choice of hypothesis. Note the red trace follows the bar's shape
+about 60 px displaced before breaking up — the seeder is not tracking nothing,
+it is tracking a constellation that is not the plate.
+
+**Panel 3 — every gate was already at zero margin.** Three admission gates in
+`candidates` each rejected the true constellation, and on the footage they were
+tuned against each passed by a hair: the third sticker at rank 24 of a 30 cap,
+the hub at 0.41 of a 0.45 gate, the triple 3rd against a top-5 cut. The new
+captures crossed all three at once. This is the same shape as C12 and C17 — a
+threshold that has never been stressed is not a threshold that is known to work.
+
+**What this does not show.** The three gates are fixed and the six captures
+still do not track; C21 is partial. The open defect is that `seed_frame` groups
+hypotheses by circumradius alone and then reselects the group's representative
+by appearance score. Shape rigidity, trajectory smoothness and a 120-frame trial
+track were each measured as replacements and none separated. See TASKS.md C21.

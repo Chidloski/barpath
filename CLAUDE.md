@@ -191,7 +191,8 @@ the referee for everything in `data/video/`. `markers.py` (C15, 2026-08-01)
 tracks retroreflective stickers and is the referee for `data_v2/`, which is
 filmed from a tripod with markers on the plate. Every number the pipeline is
 currently scored on comes from `truth.py`, because `data/video/` has no markers
-and no marker capture has an IMU log beside it yet — `data_v2/` is video-only.
+and **the marker tracker does not yet lock onto the six paired captures that
+arrived on 2026-08-03** — see the C21 note below.
 `markers.py` is what a future capture should be judged by: on the same five
 clips it tracks 100% of frames where the plate template loses the bar at every
 lockout and reports 0.2 cm of travel on one bench set. See `src/README.md` and
@@ -200,13 +201,37 @@ behaved: its fit residual also degrades with height, 0.16 to 0.81 px, but stays
 inside tolerance instead of crossing it — worst case 0.33 cm against the 1 cm
 spec, measured by `markers.top_of_travel_residual` and gated per capture (C17).
 
-**The scoring path takes either referee as of C17 (2026-08-02), so the day a
-marker capture arrives with an IMU log beside it there is nothing to build.**
+**The scoring path takes either referee as of C17 (2026-08-02).**
 `metrics.resolve_path` picks the tracker from where the clip lives — anything
 under `data_v2/` is marker footage — or takes an explicit `tracker=`, or takes
 an already-tracked path dict. `vs_truth` and `momentum_closure` both accept it.
 `pipeline.find_video` pairs a capture within its own dataset, so a `data_v2/raw`
 CSV never reaches across to `data/video`.
+
+**C17 said "the day a marker capture arrives with an IMU log beside it there is
+nothing to build." Six arrived on 2026-08-03 and that was wrong (C21).** The
+plumbing was indeed ready; the tracker was not. `markers.bar_path` fails to seed
+on all six — `bench_95x2` reports 0.4 cm of travel against a 29.5 cm rep — and
+the plumbing cannot be exercised until it does. **Do not quote a marker-refereed
+number on a `data_v2/raw` capture; there is not one yet.**
+
+What C21 established, and the second point is the one that saves the next
+agent's time. Three admission gates in `candidates` each rejected the true
+constellation, and **all three were already at zero margin on the footage they
+were tuned against** — the third sticker ranks 48th against a `max_dets` of 30
+(old footage: 24th), the end-cap sticker sits at 0.55 of the circumradius
+against a 0.45 gate (old: 0.41), and the triple ranks 9th in its own frame
+against a `top` of 5 (old: 3rd). C21 fixed those three and they were necessary
+but **not sufficient**.
+
+**And `track` is not implicated at all.** Handed the correct constellation by
+hand, it follows `bench_95x2` through the whole clip at 100% coverage and a
+0.11 px median residual — better than on any capture it was originally tuned
+against. The entire remaining failure is `seed_frame` picking the wrong
+hypothesis, and the specific open defect is that groups are pooled by
+circumradius alone, so the true constellation is absorbed into a size bucket
+with spurious ones and the representative is then reselected by appearance
+score. Gated by `tests/test_markers.py`; see `analysis/39` and TASKS.md C21.
 
 Two things that made this small, and one that is still unmeasured. The path
 dicts were already compatible — `markers.bar_path` returns a superset of
@@ -214,8 +239,9 @@ dicts were already compatible — `markers.bar_path` returns a superset of
 and `bench_sync` read only `t` and `height`, so the whole sync apparatus was
 tracker-agnostic before anyone tried. What is **not** checked: whether a landing
 found on marker footage falls at the same instant as one on template footage.
-Nothing in `data_v2/` has an IMU log, so the deadlift sync's 13.5 ms is the
-tolerance the first paired capture should test.
+The six paired captures of 2026-08-03 are the first that could test it — the
+deadlift sync's 13.5 ms is the tolerance to hold them to — but that is blocked
+behind the seeding defect above.
 
 `synth.py` generates logs from a known bar path with injected bias. It was
 the keystone and is no longer. Its model of lifting is wrong in ways real
@@ -321,6 +347,17 @@ removed in `7004c32` because no video exists for them; measurements made
 before that commit say 13 captures, and measurements between it and 2026-07-30
 say 10 and 44 reps. Both are correct as of when they were taken.
 
+**A second dataset opened on 2026-08-03**: `data_v2/raw/` holds six captures —
+2 squat, 4 bench, 24 labelled reps — each with a marker clip beside it in
+`data_v2/video/`, the first IMU logs ever paired with marker footage. All six
+carry the `phase` column with a ~3.0 s closing hold. **Their video is not
+usable yet** (C21, above), so every video-refereed number in this file is still
+a `data/raw` number. What they do supply without video: rep counting 23 of 24,
+per-rep vertical ROM inside `truth.VERTICAL_ROM_M` on all of them (bench
+28.4–30.7 cm, squat 61.2–66.2), and an independent replication of C6's attitude
+bound — 0.010–0.058° opening and 0.062–0.146° closing against 0.39–1.05° of
+gyro-only drift, which now includes squat.
+
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
 
@@ -337,12 +374,24 @@ counted as a rep — hidden because `REP_LABEL` did not match the `spoto` varian
 token, so `expected_reps` was `None` and every count gate silently skipped all
 three new benches.
 
-C5 fixed it on 2026-07-31 and counting is **72/72** — `_longest_cadence`'s
-tolerance was 1.6, admitting a post-set gap and growing a run of six that beat
-the true five on length alone. It is 1.45 now, mid-plateau of a 1.35–1.55 band
-bounded by real data on both sides. **The live limitation: a rest-pause or
-cluster set has a real mid-set gap above 1.45 and would be split.** No such
-capture exists, so 72/72 holds for touch-and-go and straight sets only.
+C5 fixed it on 2026-07-31 and counting was **72/72** on `data/raw` —
+`_longest_cadence`'s tolerance was 1.6, admitting a post-set gap and growing a
+run of six that beat the true five on length alone. It is 1.45 now, mid-plateau
+of a 1.35–1.55 band bounded by real data on both sides. **The live limitation: a
+rest-pause or cluster set has a real mid-set gap above 1.45 and would be split.**
+No such capture exists.
+
+**Counting is now 22 of 23 captures, 95 of 96 reps (C22, 2026-08-03.)**
+`squat_150x5` from the new paired session segments 4 of 5, and the cause is
+**not** the cadence tolerance this paragraph has been warning about — that was
+checked first and `_longest_cadence` never sees the fifth rep. It is
+`_similar_cluster`: across a heavy set the velocity profile drifts with fatigue,
+so the fifth rep correlates **0.518** with the first and 0.859 with the fourth.
+**The reps of a fatiguing set form a chain, not a cluster**, and the clustering
+tests for a cluster. Two fix families were measured and rejected — single-
+linkage chaining (over-counts `bench_spoto_90x5_1` to 11) and extending the
+cadence run by size (no setting on a 4×5 tolerance grid beats shipping). See
+TASKS.md C22 for what a fix would have to do.
 
 Two things that fix taught us, both about how a right-ish count hides errors.
 The old segmenter was *also missing rep 1* there — 4 real plus 2 spurious, not

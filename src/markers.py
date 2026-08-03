@@ -361,9 +361,9 @@ def _triangle_ok(p: np.ndarray, tol: float = 0.25) -> float:
 
 
 def candidates(frame: np.ndarray, dets: np.ndarray | None = None,
-               top: int = 5, max_dets: int = 30, dark_max: float = 0.45,
+               top: int = 20, max_dets: int = 30, dark_max: float = 0.45,
                radius_band: tuple[float, float] = (28.0, 150.0),
-               require_hub: bool = True) -> list[dict]:
+               require_hub: bool = True, hub_frac: float = 0.80) -> list[dict]:
     """The best few sticker-triangle hypotheses in one frame, unaided.
 
     Unaided is the point. The first version of this anchored the search to the
@@ -380,10 +380,31 @@ def candidates(frame: np.ndarray, dets: np.ndarray | None = None,
     *also* has a fourth bright speck sitting at its centroid is not. That is the
     end-cap marker, and requiring it is what separates the plate from the bench.
 
+    **`hub_frac` is 0.80 of the circumradius, not the 0.45 this shipped with
+    until C21 (2026-08-03), and the old value was a model error rather than a
+    tight constant.** The end cap protrudes toward the camera by most of a
+    sleeve, so where it projects is set by PARALLAX — this module's own header
+    measures that offset swinging -111 to +57 px and correlating with bar height
+    at r = 0.949. A gate expressed as a fraction of the plate's apparent size
+    does not track that at all. What is physically true is only that the cap
+    projects somewhere inside the plate disc, i.e. within one circumradius.
+    On the 2026-08-03 bench captures the true hub sits at 0.55 of the
+    circumradius and 0.45 rejected the real constellation in every frame; 0.80
+    keeps a margin on both sides. The old value survived because it was never
+    stressed: on `deadlift_150x5` the hub sits at 30.8 px against a 37.6 px
+    gate, inside it by 18%.
+
     Returns up to `top` hypotheses, best first, as
     `{"rim", "hub", "centre", "circumradius", "score"}`. Several rather than one
     because the winner in any single frame may be wrong — `seed_frame` decides
     between them using evidence one frame does not have.
+
+    **`top` is 20, raised from 5 by C21**, for the same reason `seed_frame` now
+    suppresses static detections: per-frame appearance is a weak discriminator
+    and it was being asked to make the final cut. The real constellation on
+    `bench_95x2` ranks 8th to 10th in its own frame — it is genuinely less
+    equilateral (0.42) than the ceiling grid — so a pool of 5 threw it away
+    before the motion test that identifies it correctly ever ran.
 
     A second thing the unanchored version had to drop: any preference for a
     LARGE triangle. Scoring triples on regularity, brightness and size, the
@@ -413,7 +434,7 @@ def candidates(frame: np.ndarray, dets: np.ndarray | None = None,
                 if _interior_mean(frame, tri) > dark_max:
                     continue
                 d = np.hypot(*(pts - cen).T)
-                near = np.nonzero(d < 0.45 * circ)[0]
+                near = np.nonzero(d < hub_frac * circ)[0]
                 hub = pts[near[np.argmin(d[near])]] if len(near) else None
                 if require_hub and hub is None:
                     continue
@@ -486,6 +507,78 @@ def _interior_mean(frame: np.ndarray, tri: np.ndarray) -> float:
     return m / 255.0 if frame.dtype == np.uint8 else m
 
 
+def static_points(stack: np.ndarray, n_sample: int = 30, radius: float = 3.0,
+                  recur_max: float = 0.7) -> np.ndarray:
+    """Pixel locations where a detection keeps reappearing: the furniture.
+
+    Added by C21 (2026-08-03). **The camera is on a tripod, so a gym fixture
+    projects to the same pixel in every frame and the bar does not.** That is
+    the sharpest discriminator available here and it costs one pass of
+    `detect`; `seed_frame` has always said so in prose — "the bar is the thing
+    in a gym that moves" — but only applied it after `candidates` had already
+    pruned each frame to its best few hypotheses on appearance alone. By then
+    the real constellation was frequently gone.
+
+    Detections from `n_sample` frames are binned onto a `radius`-pixel grid and
+    a bin is called static if it holds a detection in more than `recur_max` of
+    those frames. Returns the bin centres, for `_suppress` to subtract.
+
+    Measured on `bench_95x2`, which is why the default is 0.7 and not 0.5: the
+    three real stickers recur at **0.19, 0.23 and 0.48** — the 0.48 because the
+    bar sits racked for much of the clip, which is the failure mode to respect
+    here — while 57% of all detections recur above 0.7. Suppression takes that
+    frame from 200 detections to 96 and moves the stickers from ranks 0/22/48
+    to 0/4/13, i.e. inside `candidates`' `max_dets` for the first time.
+
+    **The limit this has, and it is the one to watch:** a capture where the bar
+    is racked or motionless for more than `recur_max` of its length would have
+    its own stickers judged static and suppressed. Nothing here detects that
+    happening. `bar_path` raising "no sticker constellation found" on a clip
+    with obviously visible markers is what it would look like; the response is
+    to raise `recur_max`, not to lower it. A hand-held camera breaks the
+    premise outright and this whole function with it.
+    """
+    stride = max(1, len(stack) // n_sample)
+    idx = list(range(0, len(stack), stride))
+    return _static_from([detect(stack[i]) for i in idx], radius, recur_max)
+
+
+def _static_from(per: list[np.ndarray], radius: float = 3.0,
+                 recur_max: float = 0.7) -> np.ndarray:
+    """`static_points` given the per-frame detections already computed.
+
+    Split out so `seed_frame` runs `detect` over the sampled frames once rather
+    than twice; the sampling is the expensive half of seeding.
+    """
+    per = [d for d in per if len(d)]
+    if not per:
+        return np.empty((0, 2))
+    allp = np.vstack([d[:, :2] for d in per])
+    key = np.round(allp / radius).astype(int)
+    uniq, inv = np.unique(key, axis=0, return_inverse=True)
+    cen = np.zeros((len(uniq), 2))
+    cnt = np.zeros(len(uniq))
+    np.add.at(cen, inv, allp)
+    np.add.at(cnt, inv, 1)
+    cen /= cnt[:, None]
+    seen = np.zeros(len(uniq))
+    off = 0
+    for d in per:
+        seen[np.unique(inv[off:off + len(d)])] += 1
+        off += len(d)
+    return cen[seen / len(per) > recur_max]
+
+
+def _suppress(dets: np.ndarray, static: np.ndarray,
+              radius: float = 3.0) -> np.ndarray:
+    """Drop detections sitting on a known static point."""
+    if not len(dets) or not len(static):
+        return dets
+    d = np.hypot(dets[:, 0, None] - static[None, :, 0],
+                 dets[:, 1, None] - static[None, :, 1]).min(axis=1)
+    return dets[d >= radius]
+
+
 def seed_frame(stack: np.ndarray, n_sample: int = 30) -> tuple[int, dict, tuple]:
     """Find the constellation to track, and the frame to take its shape from.
 
@@ -511,15 +604,27 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30) -> tuple[int, dict, tuple]
         visible throughout and a coincidence is not;
       - its mean per-frame quality.
 
+    **C21 (2026-08-03) moved the motion test to the front, and that is the
+    substantive change to this function.** The three bullets above ran only on
+    what `candidates` had already selected per frame — and `candidates` selects
+    on appearance, which is the thing this docstring says does not work. On the
+    2026-08-03 paired captures the real constellation was being discarded before
+    the group scoring ever saw it, and every one of the six seeded on rack
+    holes. `static_points` now removes fixtures first, so the pool the motion
+    test scores actually contains the bar. See that function for the measured
+    separation and for the racked-bar limit it carries.
+
     The plate radius is then measured locally, by `plate_radius_near`, around
     the winning constellation — not by a global `truth.find_plate`, which is
     the step that failed on bench in the first place.
     """
     stride = max(1, len(stack) // n_sample)
     idx = list(range(0, len(stack), stride))
+    per = [detect(stack[i]) for i in idx]
+    static = _static_from(per)
     pool = []
-    for i in idx:
-        for c in candidates(stack[i]):
+    for i, dets in zip(idx, per):
+        for c in candidates(stack[i], dets=_suppress(dets, static)):
             pool.append((i, c))
     if not pool:
         raise ValueError(
@@ -554,7 +659,10 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30) -> tuple[int, dict, tuple]
     _, g, spread, frames_seen = best
     i, c = max(g, key=lambda p: p[1]["score"])
     plate = plate_radius_near(stack[i], c["centre"], c["circumradius"])
-    c = dict(c, group_spread_px=spread, group_frames=frames_seen)
+    # `static` rides along in the constellation so `track` gets it without a
+    # second pass of `detect` over the sampled frames. It is not part of the
+    # constellation's geometry; it is the furniture map that found it.
+    c = dict(c, group_spread_px=spread, group_frames=frames_seen, static=static)
     return i, c, plate
 
 
@@ -642,11 +750,33 @@ def _best_correspondence(local: np.ndarray, tri: np.ndarray,
 
 def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
           max_scale_step: float = 0.06, max_angle_step_deg: float = 12.0,
-          max_jump_px: float = 30.0, max_scale_dev: float = 0.25) -> dict:
+          max_jump_px: float = 30.0, max_scale_dev: float = 0.25,
+          static: np.ndarray | None = None) -> dict:
     """Follow the constellation through the clip, forwards and backwards.
 
     Returns per-frame arrays: `centre` (N, 2) as (y, x), `scale`, `angle`,
     `n_markers`, `score`, `hub` (N, 2), `residual_px`.
+
+    `static` is `static_points`' output, and passing it is what stops a lost
+    tracker settling on the furniture. **C21 (2026-08-03) added it after fixing
+    the seeding alone turned out to fix nothing.** With the seed correct on
+    `bench_95x2` — frame 1066, squarely on the plate — the backward pass still
+    lost the plate and re-acquired on the bench-and-floor structure, then held
+    it for frames 0-950 at a residual of 1.3 px with all three markers
+    "matched". That is the same failure `_reacquire`'s docstring describes on
+    `bench_110x1`, and it is invisible to every quality number this module
+    reports: a rigid triple of gym fixtures fits a rigid model perfectly. Only
+    the fact that it does not MOVE gives it away, which is precisely what
+    `static_points` measures.
+
+    **It is applied to re-acquisition only, and that boundary was measured
+    rather than chosen.** Suppressing static detections everywhere in the loop
+    also blindfolds ordinary association, and on `deadlift_190x1` — a single,
+    so the bar rests on the floor for most of the clip — the plate's own
+    stickers recur past `recur_max` and coverage collapsed from 99.6% to 28.4%.
+    Association does not need the help: it matches inside a 14 px gate anchored
+    on the previous pose, which no fixture can enter. Re-acquisition is the one
+    step with no such anchor.
 
     The method is predict-associate-fit-**check**, and every one of those four
     words was paid for.
@@ -756,7 +886,17 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
                                          - np.array(dst_l)).T).mean())
 
             if ns is None:
-                tri = _reacquire(stack[i], dets, prev_centre, s * model_r,
+                # Suppression applies HERE and nowhere else in the loop. See
+                # the `static` note in this function's docstring: association
+                # is anchored by a 14 px gate and furniture cannot reach it,
+                # so the only step that needs protecting is the one that can
+                # teleport. Suppressing everywhere instead cost
+                # `deadlift_190x1` 72% of its frames — a heavy single leaves
+                # the bar on the floor for most of the clip, so its own
+                # stickers recur past `recur_max` and the tracker was
+                # blindfolded to the plate it was already holding.
+                rdets = dets if static is None else _suppress(dets, static)
+                tri = _reacquire(stack[i], rdets, prev_centre, s * model_r,
                                  search=min(45.0 + 30.0 * gap, 260.0))
                 if tri is not None:
                     cs, ca, coff, cr = _best_correspondence(local, tri, a)
@@ -911,7 +1051,7 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
     """
     stack, fps = _frames_u8(video, scale)
     seed, model, plate = seed_frame(stack)
-    trk = track(stack, seed, model)
+    trk = track(stack, seed, model, static=model.get("static"))
 
     diam = diameter_m if diameter_m is not None else truth.plate_diameter(video)
     # The absolute scale, and note what it does NOT depend on: any per-capture
