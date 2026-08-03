@@ -1118,7 +1118,9 @@ about fatigue rather than about that one set, and it will recur on the next
 heavy top set anyone films.
 
 **NOT FIXED. Cause identified, two candidate fixes measured and rejected,
-nothing shipped.** Counting stands at **22 of 23** captures, 95 of 96 reps.
+nothing shipped.** Counting stood at **22 of 23** captures and 95 of 96 reps
+when this was written; after C23 deleted both squats it is 21/21 and 86/86,
+which is a smaller claim rather than a better one.
 
 `squat_150x5` (2026-08-03) segments **4 reps of 5**. There is a real fifth: a
 concentric lobe at t = 50.2 s carrying 0.566 m against the other four's
