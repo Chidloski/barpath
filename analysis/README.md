@@ -1375,11 +1375,18 @@ against a 29.5 cm rep.
 
 **Panel 1 — the failure is confident, not noisy.** The seeder's constellation at
 frame 450 is not the plate, and it reports three markers matched at a sub-pixel
-residual while being wrong. Both constellations are drawn as circles at their
-own measured radius; the first version of this panel used fixed-size markers,
-which drew the plate far smaller than it is and read as though the hand-seeded
-constellation were not the plate either. It is — the three crosses fall on the
-three rim stickers. Caught by the owner, 2026-08-03. A rigid triple of gym fixtures fits a rigid model
+residual while being wrong. **The seeder's triple is one REAL sticker plus two
+things that are not**, one of them outside the frame — which is why it can look
+plausible to every check the module runs.
+
+Each constellation is drawn as the circle through its own three markers. Two
+earlier versions of this panel were wrong and the owner caught both: the first
+used fixed-size markers, drawing the plate far smaller than it is; the second
+used the tracker's `circumradius`, which is the MEAN distance from the
+centroid, so the circle visibly missed the markers. On frame 450 the three
+stickers sit at 89.8, 89.8 and 102.9 px from the centroid — that 13 px spread
+is the error term in the module's equal-spacing assumption, made visible, and
+it is what `calibration_report` reports as `spacing_bias`. A rigid triple of gym fixtures fits a rigid model
 exactly, so no quality number the module computes can see this. Only the fact
 that furniture does not MOVE distinguishes it, which is what `static_points`
 now measures.

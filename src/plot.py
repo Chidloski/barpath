@@ -873,24 +873,53 @@ def plot_b3_oracle(rows: list[dict], rom_trace: tuple, rom_bound: float,
     return fig
 
 
+def _circumcircle(p: np.ndarray) -> tuple[np.ndarray, float]:
+    """Centre and radius of the circle through three (y, x) points.
+
+    The tracker's `circumradius` is the MEAN distance from the centroid, which
+    is not a circumradius unless the triangle is equilateral — so a circle
+    drawn with it does not pass through the markers. For a figure whose whole
+    job is to show which object is being tracked, that difference is the
+    difference between a legible panel and a misleading one.
+    """
+    (y1, x1), (y2, x2), (y3, x3) = p
+    d = 2.0 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
+    if abs(d) < 1e-9:                      # collinear: fall back on the centroid
+        c = p.mean(axis=0)
+        return c, float(np.hypot(*(p - c).T).mean())
+    s1, s2, s3 = x1 * x1 + y1 * y1, x2 * x2 + y2 * y2, x3 * x3 + y3 * y3
+    ux = (s1 * (y2 - y3) + s2 * (y3 - y1) + s3 * (y1 - y2)) / d
+    uy = (s1 * (x3 - x2) + s2 * (x1 - x3) + s3 * (x2 - x1)) / d
+    c = np.array([uy, ux])
+    return c, float(np.hypot(uy - y1, ux - x1))
+
+
 def plot_marker_seeding(shipped: dict, handseeded: dict, gates: list[dict],
                         frames: dict):
     """C21 — why the marker tracker fails on the 2026-08-03 paired captures.
 
     `shipped` and `handseeded` are `markers.track` outputs on `bench_95x2`.
     `gates` is one dict per gate with `name`, `old`, `new`, `limit` and `unit`.
-    `frames` describes one illustrative frame: `image`, `shipped` and `true`
-    centres as (y, x), their radii `shipped_r` and `true_r` in pixels, and
-    `true_rim` (3, 2) for the sticker positions.
+    `frames` describes one illustrative frame: `image`, and `true_rim` /
+    `shipped_rim`, each (3, 2) marker positions in (y, x).
 
-    **Both constellations are drawn as circles at their own measured radius.**
-    The first version of this panel drew them as fixed-size markers, which made
-    the plate look far smaller than it is and invited the reading that the
-    hand-seeded constellation was not the plate. It is: the three crosses fall
-    on the three rim stickers and the circle through them is the sticker
-    circle. A figure that misrepresents the scale of the thing being tracked is
-    worse than no figure, because the whole claim here is about which object
-    the tracker locked onto.
+    **Each constellation is drawn as the circle through its own three markers**
+    — `_circumcircle`, not the centroid and mean radius the tracker carries as
+    `circumradius`. Two earlier versions of this panel got this wrong and both
+    were caught by the owner. The first drew fixed-size markers, so the plate
+    appeared far smaller than it is. The second drew a circle of the mean
+    radius about the centroid, which visibly misses the markers: on
+    `bench_95x2` frame 450 the three stickers sit at 89.8, 89.8 and 102.9 px
+    from the centroid, so no circle centred there passes through all three.
+
+    That spread is not a drawing artefact and it is worth reading off the
+    figure. The module's load-bearing assumption is that three equally spaced
+    points on a circle project, under weak perspective, to a triangle whose
+    centroid is the projected centre. A 13 px spread in vertex radius is that
+    assumption's error term made visible — `calibration_report` measures it as
+    `spacing_bias`. The circumcircle passes through the markers by
+    construction, so it shows where the plate is without asserting anything
+    about that bias.
 
     Three panels because the finding has three parts and any one alone
     misleads. The first is the failure as it actually looks — not "noisy", but
@@ -904,14 +933,21 @@ def plot_marker_seeding(shipped: dict, handseeded: dict, gates: list[dict],
     # 1 --- the failure: a confident lock on the bench -------------------------
     ax = axes[0]
     ax.imshow(frames["image"], cmap="gray")
-    ax.add_patch(plt.Circle(frames["true"][::-1], frames["true_r"], fill=False,
-                            color="#f1c40f", lw=2.0))
-    ax.plot(frames["true_rim"][:, 1], frames["true_rim"][:, 0], "+",
-            color="#f1c40f", ms=13, mew=2.0, label="the plate, by its 3 stickers")
-    ax.add_patch(plt.Circle(frames["shipped"][::-1], frames["shipped_r"],
-                            fill=False, color="#c0392b", lw=2.0, ls="--"))
-    ax.plot(*frames["shipped"][::-1], "x", color="#c0392b", ms=12, mew=2.2,
-            label="what the shipped seeder locked onto")
+    # Shipped first so the plate's markers draw on top: the two constellations
+    # SHARE a vertex — the seeder's triple is one real sticker plus two things
+    # that are not stickers, one of them outside the frame — and the shared
+    # cross would otherwise be hidden under the wrong one.
+    for key, colour, style, marker, size, label in (
+            ("shipped_rim", "#c0392b", "--", "x", 11,
+             "what the shipped seeder locked onto"),
+            ("true_rim", "#f1c40f", "-", "+", 15,
+             "the plate, by its 3 stickers")):
+        rim = np.asarray(frames[key], float)
+        centre, radius = _circumcircle(rim)
+        ax.add_patch(plt.Circle(centre[::-1], radius, fill=False,
+                                color=colour, lw=2.0, ls=style))
+        ax.plot(rim[:, 1], rim[:, 0], marker, color=colour, ms=size, mew=2.2,
+                label=label)
     if "zoom" in frames:                      # (y0, y1, x0, x1)
         y0, y1, x0, x1 = frames["zoom"]
         ax.set_xlim(x0, x1)
@@ -920,8 +956,8 @@ def plot_marker_seeding(shipped: dict, handseeded: dict, gates: list[dict],
     ax.set_yticks([])
     ax.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.02),
               frameon=False)
-    ax.set_title("bench_95x2, frame 450: the seeder's constellation\n"
-                 "is not the plate — and reports 3 markers and 0.0 px",
+    ax.set_title("bench_95x2, frame 450: the seeder's triple is ONE real\n"
+                 "sticker plus two things that are not — and reports 3 markers",
                  fontsize=9)
 
     # 2 --- the control: same tracker, correct seed ----------------------------
