@@ -116,6 +116,20 @@ from scipy.signal import fftconvolve
 #            the outline.
 PLATE_DIAMETER_M = {"bench": 0.425, "squat": 0.450, "deadlift": 0.445}
 
+# The 2026-08-03 session was filmed on BLUE CALIBRATED discs — 450 mm, the same
+# as the squat entry above and 25 mm wider than the black notched plates the
+# bench entry was measured on. Keying the table by lift alone was right while
+# every capture came from one plate set and became wrong the moment a session
+# used another, which is the shape of error this file exists to catch.
+#
+# It is worth 5.9% of every bench distance in that session, and the sign is the
+# one the data showed: marker travel read 9-13% LOW against the IMU's per-rep
+# ROM before this, and the clip contains the un-rack, so it should if anything
+# read high. Measured with a tape by the owner: blue calibrated 450 mm, black
+# bumper 445, black notched 425.
+CALIBRATED_SESSIONS = ("20260803",)
+CALIBRATED_DIAMETER_M = 0.450
+
 # Per-rep vertical range of motion, (floor, ceiling) in metres.
 #
 # The ceilings are measured for this lifter: bench 0.35 (0.32 typical), squat
@@ -203,7 +217,16 @@ def lift_of(name: str | Path) -> str:
 
 
 def plate_diameter(name: str | Path) -> float:
-    """Diameter in metres of the largest plate in shot, for this lift."""
+    """Diameter in metres of the largest plate in shot.
+
+    By lift, because that is what decides which plate is the outline — except
+    where a session used a different plate set, which the 2026-08-03 one did.
+    See `CALIBRATED_SESSIONS`. The session tag is read from the filename rather
+    than the directory so that moving a clip cannot silently change its scale.
+    """
+    stem = Path(name).stem
+    if any(tag in stem for tag in CALIBRATED_SESSIONS):
+        return CALIBRATED_DIAMETER_M
     return PLATE_DIAMETER_M[lift_of(name)]
 
 

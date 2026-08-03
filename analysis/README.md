@@ -1406,8 +1406,56 @@ the hub at 0.41 of a 0.45 gate, the triple 3rd against a top-5 cut. The new
 captures crossed all three at once. This is the same shape as C12 and C17 — a
 threshold that has never been stressed is not a threshold that is known to work.
 
-**What this does not show.** The three gates are fixed and the six captures
-still do not track; C21 is partial. The open defect is that `seed_frame` groups
-hypotheses by circumradius alone and then reselects the group's representative
-by appearance score. Shape rigidity, trajectory smoothness and a 120-frame trial
-track were each measured as replacements and none separated. See TASKS.md C21.
+**What this does not show, and what happened next.** The three gates were
+necessary and not sufficient — after C21 the six captures still did not track.
+The open defect was that `seed_frame` grouped hypotheses by circumradius alone
+and then reselected the group's representative by appearance score. Shape
+rigidity, trajectory smoothness and a 120-frame trial track were each measured
+as replacements and none separated.
+
+**C23 settled it by trial-tracking the shortlist over the WHOLE clip**, which
+does separate: on `bench_95x2` the plate scores 0.87 against the best impostor's
+0.24. All four benches now track. Both squats did not, and that turned out not
+to be a seeding problem at all — the squat plate's stickers are at
+94.9/111.4/153.7 degrees, so the centroid the whole method rests on sits 18.4%
+of the radius off the plate centre. Those two captures were deleted on
+2026-08-03. See TASKS.md C23.
+
+**This figure depicts pre-C23 behaviour and cannot be regenerated from current
+code** — the seeder it calls "shipped" now finds the plate, so re-running the
+script would draw two identical constellations. It is kept as the record of the
+diagnosis, which is what made the fix findable.
+
+
+## 40 — the pipeline, the bar path, and the referee, in one figure (2026-08-03)
+
+`analysis/40_overview.png`, `python run.py --overview`. Three captures, one per
+column: a deadlift and a bench refereed by `truth.py`'s plate template, and a
+`data_v2` bench refereed by `markers.py` — **the first capture in this project
+scored by markers rather than a template.**
+
+Six rows, and the split between them is the point. Rows 1-4 are the
+reconstruction talking about itself: world-frame vertical acceleration, the
+velocity where reps are obvious, the position that runs away to 57.7 m on a
+deadlift and 10.2 m on a bench, and what step 7's detrend claws back. Row 5 is
+the product, drawn under step 9's rules. **Row 6 is the only one where anything
+outside the IMU gets a vote**, and reading it directly beneath the drift that
+produced it is the reason to have one figure instead of three.
+
+    column                       tracker    h rms     null    beats_null   sign
+    deadlift 155x6  data/raw     plate      5.05 cm   3.55      0.70x       4/6
+    bench 90x4      data/raw     plate      0.64 cm   3.08      4.80x       0/4
+    bench 95x2      data_v2      markers    1.46 cm   4.33      2.96x       0/2
+
+**What the three columns are for.** The deadlift is what P2 looks like: the
+pipeline loses to a flat vertical line, and four of its six reps disagree with
+each other about which way forward is. The two benches are the same lift under
+the two referees — and the marker column is the better-founded one, since
+`markers.py` tracks 100% of frames where the template loses the plate at the
+top of travel.
+
+**What it does not show.** `bench 90x4`'s 0.64 cm is the best number in the
+project and it is one capture; the seven benches run 0.64 to 3.67 cm. Nothing
+here is evidence the reps line up in time — `vs_truth`'s horizontal rms is
+insensitive to gross time misalignment. And the marker column's scale rests on
+`STICKER_RATIO`, transferred from the deadlift bumpers.

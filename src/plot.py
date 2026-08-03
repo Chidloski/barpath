@@ -994,3 +994,120 @@ def plot_marker_seeding(shipped: dict, handseeded: dict, gates: list[dict],
                  fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     return fig
+
+
+def plot_overview(results: dict, spec_cm: float = 1.0):
+    """Stages, the bar path, and the bar path against the video — one figure.
+
+    `results` maps a label to a `pipeline.run` dict that was given a video, so
+    each carries `vs_truth`. One column per capture, six rows.
+
+    This is `analysis/21` and `analysis/27` and a truth overlay in one place,
+    and the reason to have it as one figure rather than three is the bottom two
+    rows. Everything above them is the reconstruction talking about itself;
+    those two are the only rows where something outside the IMU gets a vote,
+    and reading them next to the drift that produced them is the point.
+
+    **Put a `data_v2` bench in the columns.** The two referees then sit side by
+    side on the same lift: `truth.py` matching a dark plate template, and
+    `markers.py` tracking stickers. They are not the same quality of evidence
+    and the figure should not let anyone forget it — the marker column is the
+    one where the referee tracks 100% of frames rather than losing the bar at
+    the top of travel.
+    """
+    labels = list(results)
+    rows = [
+        ("1-3  orient.to_world", "world vertical\naccel (m/s²)"),
+        ("4  integrate", "vertical\nvelocity (m/s)"),
+        ("4  integrate", "vertical\nposition (m)"),
+        ("7  correct.detrend", "per-rep\nvertical (cm)"),
+        ("8-9  project + plot", "bar path\nheight (cm)"),
+        ("judge  metrics.vs_truth", "vs video\nheight (cm)"),
+    ]
+    fig, axes = plt.subplots(len(rows), len(labels),
+                             figsize=(5.0 * len(labels), 2.7 * len(rows)),
+                             gridspec_kw={"height_ratios": [1, 1, 1, 1, 1.7, 1.7]},
+                             squeeze=False)
+
+    for col, label in enumerate(labels):
+        r = results[label]
+        log, bounds, reps = r["log"], r["bounds"], r["reps"]
+        t = log["t"]
+        vt = r.get("vs_truth")
+
+        ax = axes[0, col]
+        ax.plot(t, r["world_accel"][:, 2], lw=0.6, color="0.3")
+        ax.axhline(0, color="0.7", lw=0.8)
+        ax.set_title(f"{label}\n", fontsize=11, fontweight="bold")
+
+        ax = axes[1, col]
+        ax.plot(t, r["velocity"][:, 2], lw=0.8, color="0.2")
+        ax.axhline(0, color="0.7", lw=0.8)
+        for a, b in bounds:
+            ax.axvspan(t[a], t[min(b, len(t) - 1)], color="seagreen", alpha=0.16)
+        ax.text(0.02, 0.88, f"{len(bounds)} reps (green)", fontsize=8,
+                transform=ax.transAxes, color="seagreen")
+
+        ax = axes[2, col]
+        ax.plot(t, r["position"][:, 2], lw=1.0, color="crimson")
+        span = float(np.ptp(r["position"][:, 2]))
+        ax.text(0.02, 0.96, f"spans {span:.1f} m\nthe lift is ~0.3-0.6 m",
+                fontsize=8, transform=ax.transAxes, color="crimson", va="top",
+                bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.5))
+        ax.set_xlabel("time (s)")
+
+        ax = axes[3, col]
+        for i, rep in enumerate(reps):
+            ax.plot(np.linspace(0, 1, len(rep)), rep[:, 2] * 100,
+                    lw=1.6 if i == 0 else 1.0, alpha=1.0 if i == 0 else 0.7)
+        ax.axhline(0, color="0.7", lw=0.8)
+        ax.set_xlabel("fraction of rep")
+
+        # --- the product, drawn under step 9's rules ----------------------
+        ax = axes[4, col]
+        _draw_planar(ax, r)
+
+        # --- the only row where something outside the IMU votes -----------
+        ax = axes[5, col]
+        if vt is None:
+            ax.text(0.5, 0.5, "no video", ha="center", va="center",
+                    transform=ax.transAxes, fontsize=10, color="0.5")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            continue
+        good = [p for p in vt["per_rep"] if p.get("covered")]
+        for i, p in enumerate(good):
+            vid, pipe = p["curve_video"] * 100, p["curve_pipeline"] * 100
+            ax.plot(vid[:, 0], vid[:, 1], color="0.55", lw=2.0, zorder=2,
+                    label="video (the referee)" if i == 0 else None)
+            ax.plot(pipe[:, 0], pipe[:, 1], lw=1.3, alpha=0.9, zorder=3,
+                    label="pipeline" if i == 0 else None)
+        ax.set_aspect(1.0 / STRETCH)
+        ax.set_xlabel("fore-aft (cm)")
+        ax.legend(fontsize=7, frameon=False, loc="lower right")
+
+        beats = vt["beats_null"]
+        verdict = "beats" if beats > 1 else "LOSES TO"
+        ax.text(0.02, 0.98,
+                f"tracker: {vt['video_tracker']}\n"
+                f"horizontal {vt['pipeline_h_rms']:.2f} cm rms  "
+                f"(spec {spec_cm:g})\n"
+                f"{verdict} the flat-line null by {beats:.2f}x\n"
+                f"reps disagreeing on sign: "
+                f"{vt['reps_disagreeing_on_sign']}/{vt['n_compared']}",
+                fontsize=8, transform=ax.transAxes, va="top",
+                color="crimson" if beats <= 1 else "#1e6b3a",
+                bbox=dict(fc="white", ec="none", alpha=0.8, pad=2.0))
+
+    for row, (stage, ylab) in enumerate(rows):
+        axes[row, 0].set_ylabel(f"step {stage}\n{ylab}", fontsize=9)
+
+    fig.suptitle(
+        "One capture per column: the pipeline, the bar path it produces,\n"
+        "and what the video says about it\n"
+        "Rows 1-4 are the reconstruction talking about itself. Only the last row "
+        "has an outside vote,\nand the right-hand column is the first capture "
+        "refereed by markers rather than a plate template.",
+        fontsize=11)
+    fig.tight_layout(rect=(0.02, 0, 1, 0.94))
+    return fig

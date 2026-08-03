@@ -1023,7 +1023,99 @@ two-marker fit is exact and scores 0.00 px.
 identically — coverage 1.000, residual p95 1.13–1.85 px. Full marker suite 47
 passed. `analysis/39_marker_seeding.png`; 39 is taken, next free is 40.
 
+### C23 — the paired bench captures track; squat is blocked on the plate (2026-08-03)
+
+C21 removed three admission gates and the six 2026-08-03 captures still did not
+track. **All four benches now do. Both squats do not, and the reason is on the
+plate rather than in the code.**
+
+*What C21 left.* `seed_frame` chose its hypothesis on per-frame appearance —
+the one signal its own docstring says does not work. C23 demotes that to a
+FILTER and decides by **verification**: trial-track a shortlist and keep the
+hypothesis that actually follows the bar.
+
+*What made that affordable.* `detect` is essentially the whole cost of a track
+— 15.4 s of a 15.4 s pass over `bench_95x2`. `track` now takes a per-frame
+detection cache, so trials cost the association and fit arithmetic alone.
+`bar_path` went 15.4 s to 24.5 s while doing twelve extra full-clip tracks.
+
+*The merit has two terms and both were forced by a failure, not chosen.*
+
+  - It leads on the **three-marker fraction**, and measures residual only on
+    three-marker frames. A two-marker fit is exact, so a wrong hypothesis
+    riding on pairs reports 0.00 px — which is exactly what the old seeder did
+    on `bench_95x2` while tracking the bench.
+  - It multiplies by **apparent-size rigidity**. Without it the merit picked,
+    on `deadlift_190x1`, a hypothesis whose circumradius swung 88-128 px over
+    the real plate at a spread of 0.013, and broke five tests. Measured
+    spreads: real 0.013-0.04, impostors 0.20-0.43.
+
+*Result on the four benches* — was 0.4-19.5 cm of travel against ~30 cm reps:
+
+    capture           3 markers   residual med   travel   IMU rep ROM    err
+    bench_92.5x4_1      1.00         0.38 px     27.8 cm     29.6      -6.1%
+    bench_92.5x4_2      0.98         0.30 px     28.9 cm     29.4      -1.6%
+    bench_92.5x4_3      0.99         0.37 px     29.5 cm     30.1      -1.8%
+    bench_95x2          1.00         0.13 px     29.0 cm     29.5      -1.6%
+
+**Three of the four agree with the IMU to under two percent, and that is the
+first independent confirmation of anything in this project** — two instruments
+sharing no component, on the same set. `bench_92.5x4_1`'s -6.1% is unexplained
+and is why the gate stays at +/-15%.
+
+*No regression, and two improvements.* The five 2026-08-01 captures keep their
+travel to the decimal and two get better residuals — `bench_110x1` 1.07 to
+0.09 px, `bench_85x6` 1.10 to 0.11.
+
+*The scale was wrong, and the wrong SIGN is what found it.* Travel read 9-13%
+low on all four, and the clip contains the un-rack, so it should if anything
+read high. `truth.plate_diameter` keys on the lift alone and returned the black
+notched plates' **425 mm** for a session shot on **450 mm blue calibrated
+discs** — worth 5.9%, and it took three of the four from 9-13% out to under 2%.
+Owner measured with a tape: blue calibrated 450, black bumper 445, black
+notched 425. `truth.CALIBRATED_SESSIONS` now carries the exception, keyed on
+the date in the filename so that moving a clip cannot silently change its
+scale. Keying the table by lift alone was right while every capture came from
+one plate set and became wrong the moment a session used another.
+
+*Squat: the constellation was found by hand and the blocker is the sticker
+placement.* On `squat_150x5` frame 900 the three stickers were read off the
+colour frame and verified by drawing the circle through them — it lies on the
+plate rim. Their angular spacing is **94.9 / 111.4 / 153.7 degrees**, not
+120/120/120. Two things follow, and the second is the one that matters.
+
+  1. `_triangle_ok` scores it **0.000** and rejects it outright; admitting it
+     needs `tol` >= 0.28 against today's 0.25. Loosening it is not sufficient:
+     hand-seeded, with the tolerance swept to 0.45, the track still holds only
+     0.38-0.44 of frames at three markers with a 4.5-4.7 px residual, so a
+     second cause remains unisolated.
+  2. **Even a perfect track would not be a 1 cm referee on this plate.** The
+     module assumes three equally spaced points project to a triangle whose
+     centroid is the projected centre. At 94.9/111.4/153.7 the centroid sits
+     **18.4% of the radius** from the true centre — 14.6 px, about 2.8 cm here.
+     The bench plate is 129/102/129, i.e. 8.6% and 8.2 px, which is why bench
+     works and squat does not.
+
+**The cheapest fix is a tape measure, not code: re-sticker the squat plate at
+120 degrees.** That removes the `_triangle_ok` rejection and the bias together.
+Nothing in the reconstruction changes; this is the referee only.
+
+**Both squat captures were DELETED on the owner's instruction, 2026-08-03** —
+`squat_140x5` and `squat_150x5`, video and IMU log, four files. They were
+gitignored and untracked, so they are gone rather than recoverable. The
+corpus is now 21 captures and 86 reps, all counted correctly. Note what went
+with them: C22 below is measured entirely on `squat_150x5` and **cannot be
+re-run**. Its numbers are kept there as the record; treat them as history, not
+as something to reproduce.
+
+*Evidence:* `tests/test_markers.py` (47 + 10 new), `analysis/39`.
+
 ### C22 — squat_150x5 counts 4 of 5, and two fix families are rejected (2026-08-03)
+
+**The capture this is measured on was deleted later the same day (see C23), so
+nothing here can be re-run.** The finding is kept because the mechanism is
+about fatigue rather than about that one set, and it will recur on the next
+heavy top set anyone films.
 
 **NOT FIXED. Cause identified, two candidate fixes measured and rejected,
 nothing shipped.** Counting stands at **22 of 23** captures, 95 of 96 reps.

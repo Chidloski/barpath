@@ -17,6 +17,8 @@ from __future__ import annotations
 import warnings
 from pathlib import Path
 
+from unittest import mock
+
 import numpy as np
 import pytest
 
@@ -497,3 +499,140 @@ def test_tracking_is_not_what_fails_on_the_2026_08_03_captures():
     assert np.mean(n_markers >= 3) > 0.99, f"3-marker {np.mean(n_markers >= 3):.4f}"
     assert np.nanmedian(resid) < 0.3, f"median residual {np.nanmedian(resid):.3f} px"
     assert np.nanmax(resid) < 2.0, f"worst residual {np.nanmax(resid):.3f} px"
+
+
+# --------------------------------------------- C23: selection by verification --
+def test_spread_members_covers_the_group_not_one_moment():
+    """A shortlist of near-duplicates from one frame would be no shortlist.
+
+    Hypotheses within a group are dominated by near-identical triples from the
+    same frame, differing only in sub-pixel detection picks. Taking the top `k`
+    by score returns `k` copies of one moment, which is what C23 had to stop
+    doing — the group is right and the moment is what needs choosing.
+    """
+    group = []
+    for frame in (0, 100, 200, 300, 400):
+        for dup in range(4):
+            group.append((frame, {"score": 0.5 + 0.01 * dup,
+                                  "centre": np.array([10.0 + frame, 20.0]),
+                                  "circumradius": 90.0}))
+
+    picked = markers._spread_members(group, 3)
+
+    assert len(picked) == 3
+    assert len({i for i, _ in picked}) == 3, "three distinct frames"
+    # and it keeps the best-scoring member of each frame it picks
+    for _, c in picked:
+        assert c["score"] == pytest.approx(0.53)
+
+
+def test_trial_merit_refuses_a_two_marker_fit_and_a_floppy_one():
+    """The two failure modes the merit is shaped around, both measured on real
+    captures and both pinned here on synthetic tracks.
+
+    A two-marker fit is EXACT — four degrees of freedom, four equations — so it
+    reports 0.00 px however wrong it is. That is what the pre-C23 seeder did on
+    `bench_95x2`: 0.00 px, while tracking the bench. And a triple that
+    re-acquires onto whatever is nearby can hold three markers while its
+    apparent size swings; on `deadlift_190x1` one did, 88 to 128 px, and it
+    outscored the real plate until the rigidity term was added.
+    """
+    n = 400
+    rng = np.random.default_rng(0)
+
+    def fake(n_markers, resid, scale):
+        return {"n_markers": np.full(n, n_markers),
+                "residual_px": np.full(n, resid, float),
+                "scale": np.asarray(scale, float),
+                "centre": np.zeros((n, 2))}
+
+    good = fake(3, 0.15, np.full(n, 1.0) + rng.normal(0, 0.004, n))
+    pairs = fake(2, 0.00, np.full(n, 1.0))               # exact, and worthless
+    floppy = fake(3, 0.60, np.linspace(0.85, 1.15, n))   # 3 markers, not rigid
+
+    scores = []
+    for trk in (good, pairs, floppy):
+        with mock.patch.object(markers, "track", return_value=trk):
+            scores.append(markers._trial_merit(np.zeros((n, 8, 8)), 0, {}, None, None))
+
+    assert scores[1] == 0.0, "a pure two-marker track must score nothing"
+    assert scores[0] > 3 * scores[2], (
+        f"a rigid track must beat a floppy one: {scores[0]:.3f} vs {scores[2]:.3f}")
+
+
+PAIRED_BENCH = ["bench_92.5x4_1_20260803", "bench_92.5x4_2_20260803",
+                "bench_92.5x4_3_20260803", "bench_95x2_20260803"]
+PAIRED_IMU_ROM_CM = {"bench_92.5x4_1_20260803": 29.6, "bench_92.5x4_2_20260803": 29.4,
+                     "bench_92.5x4_3_20260803": 30.1, "bench_95x2_20260803": 29.5}
+
+
+@pytest.fixture(scope="module")
+def paired() -> dict:
+    """The 2026-08-03 captures that have an IMU log beside them."""
+    out = {}
+    for stem in PAIRED_BENCH:
+        v = PAIRED_DIR / f"{stem}.mov"
+        if not v.exists():
+            continue
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            out[stem] = markers.bar_path(v, check=False)
+    if not out:
+        pytest.skip("data_v2/video is gitignored and not present")
+    return out
+
+
+@pytest.mark.parametrize("stem", PAIRED_BENCH)
+def test_paired_bench_captures_track(paired, stem):
+    """C23 — the seeder finds the plate on the first captures paired with an IMU.
+
+    Before C23 all four of these seeded on gym furniture: `bench_95x2` reported
+    0.4 cm of travel against a 29.5 cm rep while claiming three markers matched
+    at a sub-pixel residual. The gates are on the three-marker fraction and the
+    residual rather than on the path, because a wrong constellation fails those
+    two and can pass anything computed downstream of them.
+
+    Measured: three markers in 98-100% of frames, median residual 0.13-0.38 px.
+    """
+    if stem not in paired:
+        pytest.skip(f"{stem} not present")
+    p = paired[stem]
+    n_markers = np.asarray(p["n_markers"])
+    resid = np.asarray(p["residual_px"])
+    covered = np.isfinite(np.asarray(p["height"]))
+
+    assert covered.mean() > 0.98, f"{stem}: {covered.mean():.3f} tracked"
+    assert np.mean(n_markers >= 3) > 0.95, f"{stem}: 3-marker {np.mean(n_markers >= 3):.3f}"
+    assert np.nanmedian(resid) < 1.0, f"{stem}: residual {np.nanmedian(resid):.2f} px"
+
+
+@pytest.mark.parametrize("stem", PAIRED_BENCH)
+def test_paired_bench_travel_agrees_with_the_imu(paired, stem):
+    """The first cross-modal check in this project: video against IMU, same set.
+
+    Whole-clip vertical travel from the markers against the IMU's median per-rep
+    ROM — two instruments that share nothing, on the same set.
+
+    **Measured: -1.6%, -1.8%, -1.6% and -6.1%.** Three of the four agree to
+    under two percent, which is the closest this project has come to an
+    independent confirmation of anything.
+
+    It read 9-13% LOW on all four until 2026-08-03, and the wrong sign was the
+    clue: the clip contains the un-rack, so video travel should if anything
+    EXCEED one rep. The cause was `truth.plate_diameter` returning the black
+    notched plates' 425 mm for a session shot on 450 mm blue calibrated discs.
+
+    The gate stays loose at +/-15% despite the agreement being far better. It
+    is a cross-modal sanity check, not a spec: the two quantities are not
+    identical, and `bench_92.5x4_1` sits at -6.1% for a reason nobody has run
+    down. Tightening it to today's numbers would gate on an unexplained
+    residual.
+    """
+    if stem not in paired:
+        pytest.skip(f"{stem} not present")
+    h = np.asarray(paired[stem]["height"])
+    travel_cm = 100.0 * (np.nanmax(h) - np.nanmin(h))
+    imu = PAIRED_IMU_ROM_CM[stem]
+
+    assert 0.85 * imu < travel_cm < 1.15 * imu, (
+        f"{stem}: video travel {travel_cm:.1f} cm against IMU rep ROM {imu} cm")

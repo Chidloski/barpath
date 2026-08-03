@@ -189,10 +189,10 @@ There are **two video referees**, and which one applies is decided by the
 footage, not by preference. `truth.py` tracks the plate as a dark disc and is
 the referee for everything in `data/video/`. `markers.py` (C15, 2026-08-01)
 tracks retroreflective stickers and is the referee for `data_v2/`, which is
-filmed from a tripod with markers on the plate. Every number the pipeline is
-currently scored on comes from `truth.py`, because `data/video/` has no markers
-and **the marker tracker does not yet lock onto the six paired captures that
-arrived on 2026-08-03** — see the C21 note below.
+filmed from a tripod with markers on the plate. **The four bench captures of
+2026-08-03 are refereed by `markers.py` as of C23** and are the only ones that
+are; everything else is scored by `truth.py`, because `data/video/` has no
+markers. See the C21/C23 note below.
 `markers.py` is what a future capture should be judged by: on the same five
 clips it tracks 100% of frames where the plate template loses the bar at every
 lockout and reports 0.2 cm of travel on one bench set. See `src/README.md` and
@@ -210,10 +210,31 @@ CSV never reaches across to `data/video`.
 
 **C17 said "the day a marker capture arrives with an IMU log beside it there is
 nothing to build." Six arrived on 2026-08-03 and that was wrong (C21).** The
-plumbing was indeed ready; the tracker was not. `markers.bar_path` fails to seed
-on all six — `bench_95x2` reports 0.4 cm of travel against a 29.5 cm rep — and
-the plumbing cannot be exercised until it does. **Do not quote a marker-refereed
-number on a `data_v2/raw` capture; there is not one yet.**
+plumbing was indeed ready; the tracker was not. It failed to seed on all six —
+`bench_95x2` reported 0.4 cm of travel against a 29.5 cm rep.
+
+**C23 fixed the four benches (2026-08-03), and they are the first captures this
+project has ever had refereed by markers.** They track at 98-100% three-marker
+coverage and 0.13-0.38 px median residual. `seed_frame` now decides by
+VERIFICATION — trial-track a shortlist, keep what actually follows the bar —
+with per-frame appearance demoted to a filter.
+
+**And video and IMU now agree.** Whole-clip marker travel against the IMU's
+per-rep ROM: **-1.6%, -1.8%, -1.6% and -6.1%.** Two instruments sharing no
+component, on the same set; three of the four inside two percent. That is the
+first independent confirmation of anything here, and it arrived only after a
+scale bug that the WRONG SIGN exposed — travel read 9-13% low when the clip
+contains an un-rack and should read high. `truth.plate_diameter` keys on the
+lift and returned the notched plates' 425 mm for a session shot on 450 mm blue
+calibrated discs. `truth.CALIBRATED_SESSIONS` now carries the exception.
+`bench_92.5x4_1`'s -6.1% is unexplained.
+
+**The squats could not be fixed and were deleted, and the blocker was the plate
+rather than the code:** its three stickers sit at 94.9/111.4/153.7 degrees,
+which `_triangle_ok` rejects outright, and whose centroid falls 18.4% of the
+radius (~2.8 cm) from the true plate centre against a 1 cm spec. Bench's plate
+is 129/102/129, i.e. 8.6%, which is the whole difference between the two lifts.
+**Sticker the next squat plate at 120 degrees** — a tape measure, not code.
 
 What C21 established, and the second point is the one that saves the next
 agent's time. Three admission gates in `candidates` each rejected the true
@@ -347,16 +368,20 @@ removed in `7004c32` because no video exists for them; measurements made
 before that commit say 13 captures, and measurements between it and 2026-07-30
 say 10 and 44 reps. Both are correct as of when they were taken.
 
-**A second dataset opened on 2026-08-03**: `data_v2/raw/` holds six captures —
-2 squat, 4 bench, 24 labelled reps — each with a marker clip beside it in
-`data_v2/video/`, the first IMU logs ever paired with marker footage. All six
-carry the `phase` column with a ~3.0 s closing hold. **Their video is not
-usable yet** (C21, above), so every video-refereed number in this file is still
-a `data/raw` number. What they do supply without video: rep counting 23 of 24,
-per-rep vertical ROM inside `truth.VERTICAL_ROM_M` on all of them (bench
-28.4–30.7 cm, squat 61.2–66.2), and an independent replication of C6's attitude
-bound — 0.010–0.058° opening and 0.062–0.146° closing against 0.39–1.05° of
-gyro-only drift, which now includes squat.
+**A second dataset opened on 2026-08-03**: `data_v2/raw/` holds **four bench
+captures, 14 reps**, each with a marker clip beside it in `data_v2/video/` —
+the first IMU logs ever paired with marker footage, and the first captures in
+this project refereed by `markers.py`. All four carry the `phase` column with a
+~3.0 s closing hold, count 14 of 14, sit inside `truth.VERTICAL_ROM_M`
+(28.4–30.7 cm), and replicate C6's attitude bound independently (0.010–0.058°
+opening, 0.062–0.146° closing, against 0.39–1.05° of gyro-only drift).
+
+The session also produced two squats. **They were deleted on 2026-08-03** —
+video and log, four gitignored files, unrecoverable — because that plate's
+stickers are placed too unevenly to referee (C23). They had supplied a rep
+count of 9 of 10 and squat's first replication of the attitude bound; both are
+gone with them, and C22's fatigue finding is measured on data that no longer
+exists. **The corpus is 21 captures and 86 reps.**
 
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
@@ -381,10 +406,14 @@ of a 1.35–1.55 band bounded by real data on both sides. **The live limitation:
 rest-pause or cluster set has a real mid-set gap above 1.45 and would be split.**
 No such capture exists.
 
-**Counting is now 22 of 23 captures, 95 of 96 reps (C22, 2026-08-03.)**
-`squat_150x5` from the new paired session segments 4 of 5, and the cause is
-**not** the cadence tolerance this paragraph has been warning about — that was
-checked first and `_longest_cadence` never sees the fifth rep. It is
+**Counting is 21 of 21 captures, 86 of 86 reps** — the two captures that broke
+it were deleted (see above), so this is a smaller claim than 22/23 rather than
+a better one.
+
+**What the deleted squat taught, kept because the mechanism will recur (C22).**
+`squat_150x5` segmented 4 of 5, and the cause was **not** the cadence tolerance
+this paragraph had been warning about — that was checked first and
+`_longest_cadence` never sees the fifth rep. It is
 `_similar_cluster`: across a heavy set the velocity profile drifts with fatigue,
 so the fifth rep correlates **0.518** with the first and 0.859 with the fourth.
 **The reps of a fatiguing set form a chain, not a cluster**, and the clustering

@@ -15,10 +15,17 @@
     python run.py --vstruth            # the reconstruction drawn on top of the video
     python run.py --scorecard          # how well the pipeline performs, per lift
     python run.py --paths              # step 9: the bar path itself
+    python run.py --overview           # stages, bar path and video, in one
 
 --truth is slow: it decodes each clip. It produces numbers on deadlift, and
 since C8 on the bench captures whose sync is identified (3 of 7). Squat and the
 remaining benches report why instead.
+
+--overview writes analysis/40_overview.png: one capture per column, the
+pipeline stages down to the bar path, and underneath it the bar path drawn on
+the video's. Three captures — a deadlift and a bench refereed by truth.py's
+plate template, and a data_v2 bench refereed by markers.py — so the two
+referees sit side by side on the same lift. Slow: it decodes three clips.
 
 --stages writes analysis/21_pipeline_stages.png: one column per lift, one row
 per stage, from raw acceleration to the bar path. It ignores any paths given
@@ -113,6 +120,44 @@ def draw_stages() -> int:
 
     out = ROOT / "analysis" / "21_pipeline_stages.png"
     plot.plot_stages(results, truths).savefig(out, dpi=105)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+OVERVIEW_CAPTURES = [
+    ("deadlift 155x6\ndata/raw · truth.py", "data/raw", "deadlift_155x6_1"),
+    ("bench 90x4\ndata/raw · truth.py", "data/raw", "bench_90x4_2"),
+    ("bench 95x2\ndata_v2 · markers.py", "data_v2/raw", "bench_95x2"),
+]
+
+
+def draw_overview() -> int:
+    """Stages, bar path and video truth for three captures, in one figure."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import warnings
+    from src import plot
+
+    results = {}
+    for label, folder, stem in OVERVIEW_CAPTURES:
+        path = next((ROOT / folder).glob(f"{stem}*.csv"), None)
+        if path is None:
+            print(f"{stem} not in {folder}/ — skipping")
+            continue
+        video = pipeline.find_video(path)
+        if video is None:
+            print(f"{stem} has no video — skipping")
+            continue
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            results[label] = pipeline.run(path, video=video)
+
+    if not results:
+        print("no captures found for the overview")
+        return 1
+
+    out = ROOT / "analysis" / "40_overview.png"
+    plot.plot_overview(results).savefig(out, dpi=105)
     print(f"wrote {out.relative_to(ROOT)}")
     return 0
 
@@ -898,6 +943,8 @@ def main(argv: list[str]) -> int:
 
     if "--stages" in argv:
         return draw_stages()
+    if "--overview" in argv:
+        return draw_overview()
     if "--paths" in argv:
         return draw_paths()
     if "--rom" in argv:

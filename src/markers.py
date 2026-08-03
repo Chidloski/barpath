@@ -579,7 +579,9 @@ def _suppress(dets: np.ndarray, static: np.ndarray,
     return dets[d >= radius]
 
 
-def seed_frame(stack: np.ndarray, n_sample: int = 30) -> tuple[int, dict, tuple]:
+def seed_frame(stack: np.ndarray, n_sample: int = 30,
+               max_trials: int = 12, per_group: int = 4,
+               dets_all: list[np.ndarray] | None = None) -> tuple[int, dict, tuple]:
     """Find the constellation to track, and the frame to take its shape from.
 
     Returns `(index, constellation, plate)`, where `plate` is
@@ -620,7 +622,8 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30) -> tuple[int, dict, tuple]
     """
     stride = max(1, len(stack) // n_sample)
     idx = list(range(0, len(stack), stride))
-    per = [detect(stack[i]) for i in idx]
+    per = ([detect(stack[i]) for i in idx] if dets_all is None
+           else [dets_all[i] for i in idx])
     static = _static_from(per)
     pool = []
     for i, dets in zip(idx, per):
@@ -644,7 +647,7 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30) -> tuple[int, dict, tuple]
         else:
             groups.append([(i, c)])
 
-    best = None
+    scored = []
     for g in groups:
         cen = np.array([c["centre"] for _, c in g])
         frames_seen = len({i for i, _ in g})
@@ -652,18 +655,113 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30) -> tuple[int, dict, tuple]
         quality = float(np.mean([c["score"] for _, c in g]))
         # Movement is in pixels and dominates deliberately; a static hypothesis
         # scores near zero however pretty it is.
-        sc = quality * frames_seen * (1.0 + spread)
-        if best is None or sc > best[0]:
-            best = (sc, g, spread, frames_seen)
+        scored.append((quality * frames_seen * (1.0 + spread), g))
+    scored.sort(key=lambda r: -r[0])
 
-    _, g, spread, frames_seen = best
-    i, c = max(g, key=lambda p: p[1]["score"])
+    # --- decide by VERIFICATION, not by appearance (C23) --------------------
+    # The group score above is kept as a FILTER and demoted from being the
+    # DECIDER. On the 2026-08-03 captures the true constellation sits inside
+    # the winning group and then loses `max(..., score)`, which ranks on
+    # per-frame appearance — the one signal this docstring already says does
+    # not work. So a shortlist is trial-tracked and whichever hypothesis
+    # actually follows the bar wins. On `bench_95x2` that separates the plate
+    # from the best impostor by 0.87 against 0.24.
+    shortlist = []
+    for _, g in scored:
+        shortlist += _spread_members(g, per_group)
+        if len(shortlist) >= max_trials:
+            break
+    shortlist = shortlist[:max_trials]
+
+    graded = sorted(((_trial_merit(stack, i, c, static, dets_all), i, c)
+                     for i, c in shortlist), key=lambda r: -r[0])
+
+    g = scored[0][1]
+    if graded and graded[0][0] > 0.0:
+        merit, i, c = graded[0]
+    else:
+        merit = 0.0
+        i, c = max(g, key=lambda p: p[1]["score"])
+
+    cen = np.array([cc["centre"] for _, cc in g])
+    spread = float(np.hypot(*(cen.max(axis=0) - cen.min(axis=0))))
+    frames_seen = len({fi for fi, _ in g})
+
     plate = plate_radius_near(stack[i], c["centre"], c["circumradius"])
     # `static` rides along in the constellation so `track` gets it without a
     # second pass of `detect` over the sampled frames. It is not part of the
     # constellation's geometry; it is the furniture map that found it.
-    c = dict(c, group_spread_px=spread, group_frames=frames_seen, static=static)
+    c = dict(c, group_spread_px=spread, group_frames=frames_seen, static=static,
+             trial_merit=merit)
     return i, c, plate
+
+
+def _spread_members(group: list, k: int) -> list:
+    """Up to `k` hypotheses from one group, spread over the frames it spans.
+
+    Taking the best-scoring member is what C23 replaced; taking `k` adjacent
+    ones would reproduce it, since near-duplicate triples from a single frame
+    differ only in sub-pixel detection picks. So members are bucketed by frame
+    and the best of each bucket is taken, which is what makes the shortlist
+    cover the group rather than one moment in it.
+    """
+    by_frame: dict[int, tuple] = {}
+    for i, c in group:
+        if i not in by_frame or c["score"] > by_frame[i][1]["score"]:
+            by_frame[i] = (i, c)
+    members = sorted(by_frame.values(), key=lambda p: p[0])
+    if len(members) <= k:
+        return members
+    step = len(members) / k
+    return [members[int(j * step)] for j in range(k)]
+
+
+def _trial_merit(stack: np.ndarray, seed: int, model: dict,
+                 static: np.ndarray | None,
+                 dets_all: list[np.ndarray] | None) -> float:
+    """How well this hypothesis tracks the whole clip. Higher is better.
+
+    **The merit deliberately leads on the three-marker fraction, and measures
+    the residual only where three markers were matched.** A two-marker fit is
+    exact — a similarity has four degrees of freedom and two points supply four
+    equations — so a wrong hypothesis riding on pairs reports a residual of
+    0.00 px, and a merit that rewarded low residual would rank it top. That is
+    not hypothetical: it is what the shipped seeder does on `bench_95x2`,
+    reporting 0.00 px while tracking the bench.
+
+    Measured on `bench_95x2`: the plate scores 0.87 (three markers in 100% of
+    frames, 0.15 px), the shipped winner 0.07 (38%, 4.09 px), and the best
+    other impostor 0.24. The margin is wide, which is the point — this is a
+    decision between hypotheses, not a threshold to tune.
+
+    **The apparent-size term is the second half and it is not optional.** A
+    constellation of three points on a rigid plate holds its size; a triple
+    assembled from a sticker and two passing objects does not. Without this
+    term the merit chose, on `deadlift_190x1`, a hypothesis whose circumradius
+    swung 88 to 128 px — it scored a high three-marker fraction by
+    re-acquiring onto whatever was nearby — over the real plate sitting at a
+    scale spread of **0.013**. That is a 23x difference in the one property the
+    object is guaranteed to have, and the five tests it broke were all on that
+    capture. Measured spreads: real constellations 0.013-0.04, impostors
+    0.20-0.43, so the 0.05 normaliser sits between the two populations rather
+    than being fitted to either.
+    """
+    trk = track(stack, seed, model, static=static, dets_all=dets_all)
+    n_markers = np.asarray(trk["n_markers"])
+    resid = np.asarray(trk["residual_px"])
+    covered = float(np.isfinite(np.asarray(trk["centre"])[:, 0]).mean())
+    three = n_markers >= 3
+    if not three.any():
+        return 0.0
+    r3 = float(np.nanmedian(resid[three]))
+    if not np.isfinite(r3):
+        return 0.0
+    scale = np.asarray(trk["scale"], float)
+    spread = float(np.nanpercentile(scale, 95) - np.nanpercentile(scale, 5))
+    if not np.isfinite(spread):
+        return 0.0
+    rigid = 1.0 / (1.0 + spread / 0.05)
+    return float(three.mean()) * covered * rigid / (1.0 + r3)
 
 
 # ---------------------------------------------------------------- tracking --
@@ -751,11 +849,18 @@ def _best_correspondence(local: np.ndarray, tri: np.ndarray,
 def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
           max_scale_step: float = 0.06, max_angle_step_deg: float = 12.0,
           max_jump_px: float = 30.0, max_scale_dev: float = 0.25,
-          static: np.ndarray | None = None) -> dict:
+          static: np.ndarray | None = None,
+          dets_all: list[np.ndarray] | None = None) -> dict:
     """Follow the constellation through the clip, forwards and backwards.
 
     Returns per-frame arrays: `centre` (N, 2) as (y, x), `scale`, `angle`,
     `n_markers`, `score`, `hub` (N, 2), `residual_px`.
+
+    `dets_all` is a per-frame detection cache. Passing it is what makes
+    `seed_frame`'s trial tracking affordable: `detect` is essentially the whole
+    cost of a track — 15.4 s of a 15.4 s pass over `bench_95x2` — and every
+    trial would otherwise re-detect the same 1235 frames. Computed once, a
+    trial costs the association and fit arithmetic alone.
 
     `static` is `static_points`' output, and passing it is what stops a lost
     tracker settling on the furniture. **C21 (2026-08-03) added it after fixing
@@ -849,7 +954,7 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
             # frame entirely — see `_reacquire`.
             pred_centre = prev_centre + vel * min(gap, 2)
             pred = _apply_yx(s, a, local, pred_centre)
-            dets = detect(stack[i])
+            dets = detect(stack[i]) if dets_all is None else dets_all[i]
             if len(dets) == 0:
                 gap += 1
                 i += step
@@ -1050,8 +1155,14 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
     is why the clip is held as uint8 and converted per frame — see `_frames_u8`.
     """
     stack, fps = _frames_u8(video, scale)
-    seed, model, plate = seed_frame(stack)
-    trk = track(stack, seed, model, static=model.get("static"))
+    # Detect once for the whole clip and hand the cache to both the seeder and
+    # the final track. `detect` is essentially the entire cost of a pass, so
+    # this is what lets `seed_frame` trial-track a shortlist (C23) for about
+    # the price of the single track it used to do.
+    dets_all = [detect(f) for f in stack]
+    seed, model, plate = seed_frame(stack, dets_all=dets_all)
+    trk = track(stack, seed, model, static=model.get("static"),
+                dets_all=dets_all)
 
     diam = diameter_m if diameter_m is not None else truth.plate_diameter(video)
     # The absolute scale, and note what it does NOT depend on: any per-capture

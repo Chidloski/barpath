@@ -466,5 +466,51 @@ triples are enumerated, and is applied to re-acquisition in `track` as well —
 but to re-acquisition only, since suppressing during ordinary association costs
 `deadlift_190x1` 72% of its frames when the bar rests on the floor.
 
-Those three were necessary and not sufficient. What remains open is
-`seed_frame`'s hypothesis selection; see TASKS.md C21 and `analysis/39`.
+Those three were necessary and not sufficient. **C23 closed the gap for bench
+by changing how `seed_frame` DECIDES.** Per-frame appearance is now a filter
+only; the decision is made by verification — trial-track a shortlist and keep
+the hypothesis that actually follows the bar. `track` takes a per-frame
+detection cache (`dets_all`), which is what makes twelve trial tracks cost
+roughly what one used to, since `detect` is essentially the whole cost of a
+pass.
+
+The merit is `_trial_merit` and it has two terms, both forced by a measured
+failure. It leads on the three-marker fraction and measures residual only where
+three markers matched, because a two-marker fit is exact and reports 0.00 px —
+the old seeder's exact behaviour while tracking a bench. And it multiplies by
+apparent-size rigidity, without which it preferred a hypothesis whose
+circumradius swung 88-128 px over the real plate at a spread of 0.013.
+
+All four 2026-08-03 benches now track at 98-100% three-marker coverage and
+0.13-0.38 px median residual. The five 2026-08-01 captures are unchanged to the
+decimal in travel, and two improved in residual.
+
+**The scale for that session was wrong until 2026-08-03, and the wrong SIGN is
+what found it.** Marker travel read 9-13% low against the IMU's per-rep ROM,
+and since the clip contains the un-rack it should if anything read high.
+`truth.plate_diameter` keys on the lift and returned the black notched plates'
+425 mm for a session filmed on 450 mm blue calibrated discs.
+`truth.CALIBRATED_SESSIONS` now carries the exception. Afterwards the two
+instruments agree to **-1.6%, -1.8%, -1.6% and -6.1%** — three of four inside
+two percent, which is the first independent confirmation of anything in this
+project. `bench_92.5x4_1`'s -6.1% is not explained.
+
+### The squat plate was stickered too unevenly to referee, and was deleted
+
+`squat_140x5` and `squat_150x5` still fail, and the cause is the plate. Its
+three stickers sit at **94.9 / 111.4 / 153.7 degrees** — read off the colour
+frame and confirmed by drawing the circle through them, which lands on the rim.
+`_triangle_ok` scores that 0.000 and rejects it; admitting it needs `tol` >=
+0.28. But loosening is not enough, and it is not the real objection.
+
+This module's load-bearing assumption is that three equally spaced points
+project to a triangle whose centroid is the projected plate centre. At this
+spacing the centroid sits **18.4% of the radius** off the true centre — 14.6 px,
+about 2.8 cm here — against a 1 cm spec. Bench's plate is 129/102/129, i.e. 8.6%
+and 8.2 px, which is the difference between the two lifts.
+
+**Sticker the next squat plate at 120 degrees.** It fixes the rejection and the
+bias at once, and it is the cheapest thing on this list by a wide margin.
+
+Both squat captures were deleted on the owner's instruction, 2026-08-03 — video
+and IMU log, gitignored and unrecoverable. `data_v2` is four bench captures now.
