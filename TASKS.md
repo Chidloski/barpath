@@ -1189,6 +1189,103 @@ peak velocity nor shape does it alone. The `phase` column does not help — C5
 already established the lifter re-racks before pressing Finish Set. An external
 anchor would, and squat has none; see P1.
 
+### C25 — the one-rep sync error was a search window too narrow to hold its own peak (2026-08-03)
+
+Raised by the owner off `analysis/41`, as a segmentation fault dropping the
+last rep. It is not the segmenter, and it is not the ambiguity C24 assigned it
+to either.
+
+*The segmenter was cleared before anything was changed.* Its candidate list
+holds exactly **four rep-sized concentric lobes** on each capture — 0.26-0.31 m
+at the rep cadence — and `_similar_cluster` chose all four. There is no fifth
+candidate it could have dropped, so no change to `segment.py` could have
+produced a different answer. Counting was and is 14 of 14.
+
+*The cause.* `metrics.bench_sync`'s `max_lag_s` shipped at **5.0 s**, a default
+never checked against a capture. The true correlation peaks on
+`bench_92.5x4_2` and `_3` sit at **-6.37 s and -7.08 s**, outside it. The sweep
+cannot report what it did not search, so it returned the best in-range point —
+a sidelobe **exactly one rep period late** (0.44 and 0.38 against the true
+peaks' 0.66 and 0.67). The other two captures peak at -0.08 and -0.44 and were
+never affected, which is why the failure was total on two clips and invisible
+in aggregate.
+
+*Why C24 got the stage right and the cause wrong.* It read the rigid ~3 s shift
+as `bench_sync`'s documented whole-rep ambiguity — peak and sidelobe of
+comparable height on a periodic set. Given the whole curve the true peaks beat
+those sidelobes by **50% and 76%**, so the peak was never ambiguous; it was
+merely outside the window. The distinction matters because the documented
+ambiguity is unfixable by construction and this was fixable in one constant.
+
+*The window is load-bearing in BOTH directions, which is what makes the value
+a measurement rather than a bigger guess.* Swept over all eleven bench captures
+and the three deadlift controls:
+
+| `max_lag_s` | what happens |
+|---|---|
+| < 7.00 | `_2` and `_3` return the sidelobe, silently |
+| 7.00-9.75 | right answer, but the boundary guard fires on `_3` |
+| **10.00-13.50** | identical answer on all fourteen |
+| > 13.50 | `bench_92.5x2` prefers a spurious peak at **+13.59 s** (0.44) over its true peak (0.37) |
+| >= 20 | `bench_90x4_2` and `bench_92.5x2` acquire fractional rivals and refuse |
+
+`SYNC_MAX_LAG_S = 11.75`, the middle of that plateau. The deadlift control is
+unmoved across the whole sweep — 3, 14 and 18 ms against the landings/impacts
+fit — so the licence for trusting a bench number is intact.
+
+*And a guard, because widening does not stop the next capture landing outside.*
+The peak must have a full rep period of curve beyond it on both sides or
+`bench_sync` raises. The reason is the acceptance rule rather than the peak:
+this method accepts because every rival above `RIVAL_FRAC` sits a whole rep
+away, and a peak within one period of the boundary is one whose ±1 P rival is
+off the end of the sweep and cannot be examined — accepting there is accepting
+on a test that did not run, the same shape as C12 and C17. It fires on all
+three affected captures at the old 5.0 s, including `bench_95x2`, whose 5.0 s
+answer was *right* but whose 4.75 s cadence left no room. Tightest margin at
+11.75 s is 1.74 rep periods.
+
+*Checked against something that is not the correlation curve*, since the fix
+was found in it. All **14 windows now hold exactly one video chest touch, at
+0.53-0.69 through the window** — independently reproducing C9's 0.567-0.648 on
+a different dataset and a different tracker. Before, two captures had a window
+holding none and a real rep outside every window.
+
+*What moved, and what did not.* Horizontal rms on the two captures goes
+1.86 → **1.12** and 1.66 → **1.39** cm, and `beats_null` 1.55 → **2.44** and
+1.46 → **1.65**; `bench_92.5x4_2` also loses its one sign-disagreeing rep.
+The other two captures are bit-identical. The ~20% per-rep ROM disagreement
+C24 found is **untouched** — `own` and `IMU` never used the sync — so C24's
+central retraction stands entirely. `bench_92.5x4_1` is still the lone
+dissenter, now the only one of four losing to the null.
+
+*The durable lesson, which outlives the constant.* `bench_sync` records that a
+whole-rep ambiguity is harmless, and that was established for horizontal rms
+and for window phase, both invariant to it. **Anything that PAIRS a video rep
+with an IMU window is not** — `analysis/41`'s window bars read 2.4 and 1.4 cm
+of a ~25 cm rep, having landed on the un-rack. A new rep-indexed quantity must
+be checked against a whole-rep shift, not assumed into that box. And a
+whole-rep sync error and a whole-rep segmentation error produce an identical
+touch-minus-window table, so neither the figure nor that table can assign the
+stage — only an anchor outside the periodicity can.
+
+*Gated by* `tests/test_video_truth.py`:
+`test_the_sweep_must_be_wide_enough_to_contain_its_own_peak` (both halves — the
+peak is where it is recorded, AND 5.0 s refuses on the three captures that had
+no room there while still syncing `_1`, which did) and
+`test_every_paired_bench_window_holds_one_chest_touch`.
+
+The first draft of that test asserted all four refuse at 5.0 s and `_1` failed
+it, correctly: `_1` peaks at -0.08 s with a 2.83 s cadence and was never near
+the boundary. Kept as written because a guard that fired on every capture would
+be no evidence that it fires on the right ones.
+
+*Recorded, not fixed, per the stay-on-task rule:*
+`tests/test_markers.py::test_paired_bench_travel_agrees_with_the_imu` still
+calls the whole-clip agreement "the closest this project has come to an
+independent confirmation of anything", which C24 retracted in CLAUDE.md and
+`analysis/README.md` but not in that docstring. C25 did not touch it — it is
+C24's leftover, not something this change falsified.
+
 ---
 
 ## To do

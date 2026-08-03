@@ -1489,27 +1489,47 @@ which is bigger than the ~5 cm in dispute. The marker path is not clean enough
 to convict the reconstruction, and this figure does not try to. What it settles
 is that the agreement was an artefact of the comparison.
 
-**And it caught a one-rep sync error on two of four.** A red window is one
-holding no video chest touch. On `bench_92.5x4_2` and `_3` window 0 holds none
-while the video's last rep falls outside every window. Touch minus window-centre
-per rep:
+**And it caught a one-rep sync error on two of four, which C25 then fixed
+(2026-08-03).** A red window is one holding no video chest touch. As first
+drawn, `bench_92.5x4_2` and `_3` had window 0 holding none while the video's
+last rep fell outside every window. The figure now has no red window: all 14
+hold exactly one touch, at 0.53-0.69 through. Touch minus window-centre per
+rep, corrected:
 
-    bench_95x2       +0.47 +0.57                 mean +0.52 s   (period 4.90)
-    bench_92.5x4_1   +0.25 +0.09 +0.41 +0.19     mean +0.24 s   (period 2.73)
-    bench_92.5x4_2   +3.18 +2.83 +2.82 +3.03     mean +2.97 s   (period 2.70)
-    bench_92.5x4_3   +3.27 +3.36 +3.21 +3.57     mean +3.35 s   (period 2.93)
+    bench_95x2       +0.47 +0.57                 mean +0.52 s   (period 4.75)
+    bench_92.5x4_1   +0.25 +0.09 +0.41 +0.19     mean +0.24 s   (period 2.83)
+    bench_92.5x4_2   +0.47 +0.12 +0.11 +0.32     mean +0.26 s   (period 2.63)
+    bench_92.5x4_3   +0.23 +0.32 +0.17 +0.53     mean +0.31 s   (period 2.68)
 
-The bad two are off by **1.10 and 1.14 rep periods** with ~0.3 s of spread
-inside each capture — a rigid shift, which a segmentation fault would not give.
-So the segmenter is right and counting stays 14 of 14; `metrics.bench_sync` has
-placed the video's clock a rep late. This is the failure its own docstring says
-it cannot resolve, caught for the first time rather than merely noted, and the
-thing that catches it is the video's rep count and phase, not its amplitude.
-The good two sit at +0.24 and +0.52 s, which is correct rather than small: C9
-put the chest touch at 0.567-0.648 through a window, not 0.5.
+The bad two read +2.97 and +3.35 — 1.10 and 1.14 rep periods out, with ~0.3 s
+of spread inside each capture. That rigid shift correctly told C24 the
+segmenter was not at fault, and counting was and is 14 of 14. **Where C24 went
+wrong was the next step:** it called this the whole-rep ambiguity
+`metrics.bench_sync`'s docstring says it cannot resolve. The real cause was
+`max_lag_s`, then 5.0 s, excluding both captures' true correlation peaks at
+-6.37 and -7.08 s; given the whole curve those peaks beat the sidelobes the
+sweep had settled for by 50% and 76%. Not an ambiguity — a truncated search.
+See `metrics.bench_sync`'s search-window section for the 10.00-13.50 s plateau
+and the boundary guard that now refuses rather than guesses. All four captures
+now sit at +0.24 to +0.52 s, which is correct rather than small: C9 put the
+chest touch at 0.567-0.648 through a window, not 0.5.
+
+*One more check falls out of the redraw, and it is not the correlation curve
+again.* `window` inherits the sync and `own` does not, so on a correct
+alignment they should measure the same rep and agree. Per capture they now sit
+at 24.8/24.1, 24.7/24.5, 25.4/25.0 and 26.2/25.7 cm — **0.2-0.7 cm apart**.
+Before, window 0 on the two bad captures read 2.4 and 1.4 cm against ~24.
+
+**The figure could not have assigned that itself, and no redraw of it can.** A
+whole-rep sync error and a whole-rep segmentation error produce the identical
+offsets table — C24 read this panel as the sync's inherent ambiguity, the owner
+read it as the segmenter dropping the last rep, and the picture is the same
+either way. What separates them is an anchor outside the periodicity: here the
+correlation curve, once swept wide enough to contain its own peak.
 
 **What it does not show.** Nothing about the horizontal, which is the axis the
-spec is about — this is a vertical-extent figure. It cannot say which instrument
-is right about the 20%. And `own` is the video's k-th rep, which on the two
-mis-synced captures is *not* the IMU's k-th window, so purple against blue is a
-per-capture comparison there and not a per-rep one.
+spec is about — this is a vertical-extent figure. It cannot say which
+instrument is right about the 20%; `own` and `IMU` never depended on the sync,
+so the fix leaves the 20% exactly as it was. The `window` bars did depend on
+it, and on the two mis-synced captures window 0 had been reporting 2.4 and
+1.4 cm of a ~25 cm rep, having landed on the un-rack.

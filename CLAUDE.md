@@ -251,40 +251,70 @@ been (C24).** Horizontal rms, against the marker referee:
     capture           h rms   null   beats_null   sign
     bench_95x2        1.46    4.33      2.96      0/2
     bench_92.5x4_1    3.08    2.20      0.71      0/4
-    bench_92.5x4_2    1.86    2.89      1.55      1/4
-    bench_92.5x4_3    1.66    2.42      1.46      0/4
+    bench_92.5x4_2    1.12    2.74      2.44      0/4
+    bench_92.5x4_3    1.39    2.29      1.65      0/4
+
+*The bottom two rows are C25's, 2026-08-03. C24 measured them through a broken
+sync and said so; at 1.86/2.89/1.55 and 1.66/2.42/1.46 they were scored against
+the wrong reps. Nothing else in the table moved, which is the check that the
+correction touched only what was broken.*
 
 `bench_92.5x4_1` is the one that **loses to the flat-line null**, and it is also
 the capture whose travel dissents at -6.1% where the other three agree to under
 two percent. Two independent metrics now finger the same capture; neither is
-explained.
+explained. C25 sharpens this rather than settling it — the other three now beat
+the null by 1.65-2.96, so `_1` is alone on both counts instead of one of two.
 
-**And two of the four are synced a full rep out.** On `bench_92.5x4_2` and `_3`
-the IMU's window 0 contains no video chest touch at all, while the video's last
-rep falls outside every window; windows 1-3 hold video reps 1-3. That is exactly
-the ambiguity `metrics.bench_sync`'s docstring says it cannot resolve — a
-periodic set looks the same shifted by one rep — and this is the first time it
-has been caught rather than noted.
+**Two of the four WERE synced a full rep out, and C25 fixed it (2026-08-03).**
+On `bench_92.5x4_2` and `_3` the IMU's window 0 held no video chest touch at
+all, while the video's last rep fell outside every window. All 14 windows now
+hold exactly one touch.
 
-**It is the sync, not the segmenter, and the offsets say so.** Touch minus
-window-centre, per rep:
+**C24 correctly localised this to the sync and then misattributed it, and the
+misattribution is the part to learn from.** It read as the whole-rep ambiguity
+`metrics.bench_sync`'s docstring says it cannot resolve — peak and sidelobe of
+comparable height, a periodic set looking the same shifted by one rep. It was
+not. The true correlation peaks sit at **-6.37 s and -7.08 s, outside the
++/-5.0 s `max_lag_s` the sweep searched**, so the sweep returned the best point
+it could see and that point happened to be one rep period late. Given the whole
+curve the true peaks win by **50% and 76%** (0.66 vs 0.44, 0.67 vs 0.38), so
+this was never the inherent ambiguity — it was a truncated search, and it was
+fixable. `SYNC_MAX_LAG_S` is 11.75 s now, the middle of a 10.00-13.50 s plateau
+measured over all eleven bench captures and the three deadlift controls, and a
+peak within one rep period of the boundary is **refused** rather than returned.
+*Evidence:* `metrics.bench_sync`, `tests/test_video_truth.py`.
 
-    bench_95x2       +0.47 +0.57                 mean +0.52 s   (period 4.90)
-    bench_92.5x4_1   +0.25 +0.09 +0.41 +0.19     mean +0.24 s   (period 2.73)
-    bench_92.5x4_2   +3.18 +2.83 +2.82 +3.03     mean +2.97 s   (period 2.70)
-    bench_92.5x4_3   +3.27 +3.36 +3.21 +3.57     mean +3.35 s   (period 2.93)
+Touch minus window-centre, per rep, corrected:
 
-The bad two are off by **1.10 and 1.14 rep periods**, and the spread *within*
-each capture is ~0.3 s — a rigid time shift, which a segmentation fault would
-not produce. So counting stays 14 of 14 and the windows are where they should
-be; the video's clock is placed a rep late against them. The good two sit at
-+0.24 and +0.52 s, which is not an error either: C9 measured the chest touch at
-0.567-0.648 through a window rather than 0.5, so a small positive offset is what
-a correctly synced bench should give.
+    bench_95x2       +0.47 +0.57                 mean +0.52 s   (period 4.75)
+    bench_92.5x4_1   +0.25 +0.09 +0.41 +0.19     mean +0.24 s   (period 2.83)
+    bench_92.5x4_2   +0.47 +0.12 +0.11 +0.32     mean +0.26 s   (period 2.63)
+    bench_92.5x4_3   +0.23 +0.32 +0.17 +0.53     mean +0.31 s   (period 2.68)
 
-**Their `h rms` above is measured against the wrong reps and must not be
-quoted**, which leaves the marker-refereed horizontal evidence at two captures,
-one of which loses to the null.
+The bad two read +2.97 and +3.35 before — 1.10 and 1.14 rep periods out — and
+now sit with the other two at +0.24 to +0.52 s. That is not an error either:
+C9 measured the chest touch at 0.567-0.648 through a window rather than 0.5, so
+a small positive offset is what a correctly synced bench gives, and all four
+captures now agree with C9 and with each other. Per-rep, the 14 touches fall at
+**0.53-0.69 through their windows**, on a different dataset and a different
+tracker from C9's.
+
+**Counting was never in question here and still is not.** 14 of 14, and the
+segmenter's own candidate list holds exactly four rep-sized concentric lobes on
+each capture — it chose all four and there was no fifth to drop.
+
+**What this cost, and why the figure could not settle it.** A whole-rep sync
+error and a whole-rep segmentation error produce an *identical* table of
+touch-minus-window offsets, so `analysis/41` showed a real defect in the right
+place while being unable to say which stage owned it; C24 read it as the sync's
+inherent ambiguity and the owner read the same panel as the segmenter dropping
+the last rep. Only an anchor outside the periodicity separates them. **The
+lesson generalises past this bug:** `bench_sync`'s "a whole-rep ambiguity is
+harmless" was established for horizontal rms and for window phase, both
+invariant to it. Anything that PAIRS a video rep with an IMU window is not —
+`analysis/41`'s window bars read 2.4 and 1.4 cm of a ~25 cm rep, having landed
+on the un-rack. Check a new rep-indexed quantity against a whole-rep shift
+before assuming it inherits that invariance.
 
 **The squats could not be fixed and were deleted, and the blocker was the plate
 rather than the code:** its three stickers sit at 94.9/111.4/153.7 degrees,

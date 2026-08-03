@@ -1143,21 +1143,31 @@ def plot_v2_video_rom(data: dict):
     per-rep gap. A whole-clip range and a per-rep range are not the same
     quantity and should not have been compared.
 
-    And two of the four are synced a full rep out. On `bench_92.5x4_2` and
-    `_3` the IMU's window 0 contains no video touch at all while the video's
-    last rep falls outside every window — windows 1-3 hold video reps 1-3. That
-    is exactly the failure `metrics.bench_sync`'s docstring says it cannot
-    resolve, since a periodic set looks the same shifted by one rep, and it is
-    the first time the ambiguity has been caught rather than noted. The `window`
-    bars for those two captures are measured against the wrong reps and so is
-    their horizontal rms.
+    **Two of the four were drawn synced a full rep out, and C25 fixed it.**
+    As first drawn, `bench_92.5x4_2` and `_3` had an IMU window 0 holding no
+    video touch while the video's last rep fell outside every window, and this
+    docstring read it as `bench_sync`'s known whole-rep ambiguity finally being
+    caught. It was not that. It was `max_lag_s`, then 5.0 s, excluding those
+    two captures' true correlation peaks at -6.37 and -7.08 s, so the sweep
+    returned a sidelobe one rep late. Widened, all **14 windows hold exactly
+    one touch at 0.53-0.69 through**, which reproduces C9's 0.567-0.648 on a
+    different dataset and tracker. See `metrics.bench_sync`.
 
-    A red window is one containing no touch. The dashed line is the video's
+    Keep the shape of that mistake. The figure showed a real defect in the
+    right place and this docstring assigned it to the wrong stage, because a
+    whole-rep sync error and a whole-rep segmentation error produce the
+    identical picture — the owner read the same panel as the segmenter dropping
+    a rep, which is the other way to be wrong about it. Nothing drawn here can
+    separate them; only an anchor outside the periodicity can.
+
+    A red window is one containing no touch, and there should now be none —
+    if one appears, the sync is out again. The dashed line is the video's
     whole-clip travel, drawn to show how much of it the un-rack contributes.
 
-    One reading trap in the bars: `own` is the video's k-th rep, which on the
-    two mis-synced captures is NOT the same rep as the IMU's k-th window. Purple
-    against blue is a per-capture comparison there, not a per-rep one.
+    The `own` and `imu` bars never depended on the sync, so the ~20%
+    disagreement above is exactly as it was; the `window` bars for the two
+    captures did, and were 2.4 and 1.4 cm of a ~25 cm rep — window 0 was
+    measuring the un-rack.
     """
     names = list(data)
     fig, axes = plt.subplots(2, len(names), figsize=(4.6 * len(names), 8.6),
@@ -1210,8 +1220,8 @@ def plot_v2_video_rom(data: dict):
         "The purple bar uses no IMU and no sync. It disagrees with the "
         "reconstruction by ~20% on all 14 reps — unassigned, since the tracker "
         "declares a 7.3-11.2 cm spacing bound on these same clips.\n"
-        "Red window = the IMU found a rep where the video shows no chest touch. "
-        "bench_92.5x4_2 and _3 are synced a full rep out.",
+        "Red window = the IMU found a rep where the video shows no chest touch; "
+        "there are none. All 14 windows hold one touch, at 0.53-0.69 through.",
         fontsize=11)
     fig.tight_layout(rect=(0.01, 0, 1, 0.92))
     return fig

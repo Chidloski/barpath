@@ -43,6 +43,7 @@ GRID = 100          # samples per rep on the normalised-time grid
 
 # --- bench sync constants, measured 2026-07-31 on the seven bench captures and
 # --- calibrated on the three deadlifts, where the true offset is known.
+# --- SYNC_MAX_LAG_S was added 2026-08-03 (C25) and is measured on eleven.
 SYNC_FS = 200.0         # Hz, the grid both signals are resampled onto
 SYNC_BAND = (0.15, 5.0)  # Hz. Below removes the integrator's drift, above the
 #                          tremor; a bench rep is 0.3-0.7 Hz and its reversals
@@ -54,10 +55,20 @@ SYNC_BAND = (0.15, 5.0)  # Hz. Below removes the integrator's drift, above the
 RIVAL_FRAC = 0.70       # a local maximum this close to the peak is a real rival
 RIVAL_GUARD_S = 0.4     # ...if it is at least this far from the peak
 PERIOD_TOL = 0.15       # rivals must sit within this of a WHOLE rep period.
-#                         Measured: all 11 rivals across the 7 bench captures
+#                         Measured: all 12 rivals across the 7 bench captures
 #                         land at 0.96-1.05 periods, so 0.15 is loose against
 #                         the data and still rejects a half-period rival, which
 #                         is the case that would actually matter.
+SYNC_MAX_LAG_S = 11.75  # s, the half-width of the lag sweep. NOT arbitrary and
+#                         NOT free to grow: see bench_sync's search-window
+#                         section. Too narrow and the true peak falls outside,
+#                         and the sweep returns a sidelobe one rep period away
+#                         without any sign that it did — which is what shipped
+#                         at 5.0 and mis-synced two captures. Too wide and a
+#                         distant coincidence outscores the truth. Every value
+#                         in 10.00-13.50 gives the same answer on all eleven
+#                         bench captures and the three deadlift controls;
+#                         11.75 is the middle of that plateau.
 
 
 # ------------------------------------------------------------- dispersion --
@@ -160,7 +171,7 @@ def _band(y: np.ndarray) -> np.ndarray:
 
 
 def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
-               cadence_s: float, max_lag_s: float = 5.0) -> dict:
+               cadence_s: float, max_lag_s: float = SYNC_MAX_LAG_S) -> dict:
     """Align a bench video to the IMU clock. Returns offset and correlation.
 
     THE PROBLEM, STATED PLAINLY
@@ -194,6 +205,68 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
     what licenses using it where no landmark exists. Note the correlation VALUE
     is modest even when the lag is exactly right — 0.595 on a sync that is
     correct to 18 ms — which is why the threshold is where it is.
+
+    THE SEARCH WINDOW IS LOAD-BEARING (C25, 2026-08-03)
+    ---------------------------------------------------
+    `max_lag_s` bounds the sweep, and it shipped at **5.0 s** — a number nobody
+    had checked against a capture. On two of the four `data_v2` benches the
+    true peak sits **outside** it, at −6.37 s and −7.08 s, so the sweep
+    returned the best point it could see: a sidelobe exactly one rep period
+    late, at 0.44 and 0.38 of correlation against the true peaks' 0.66 and
+    0.67. Both good captures were unaffected — their peaks are at −0.08 and
+    −0.44 — so the failure was invisible in aggregate and total on two clips.
+
+    **It presented as a segmentation fault, and that is the part worth
+    keeping.** In `analysis/41` the IMU's first rep window held no video chest
+    touch and the video's last rep fell outside every window, which reads
+    exactly like a segmenter counting the un-rack and dropping the last rep.
+    It is not: the segmenter had four rep-sized concentric lobes on each
+    capture and chose all four, and there is no fifth candidate it could have
+    missed. **A whole-period sync error and a whole-period segmentation error
+    produce an identical table of touch-minus-window offsets**, so that table
+    cannot tell them apart and neither can the figure drawn from it. What
+    separates them is any anchor outside the periodicity — here, the
+    correlation curve itself, once the sweep was wide enough to contain its
+    own peak. Corrected, all 14 touches land one per window at 0.53-0.69
+    through it, which independently reproduces C9's 0.567-0.648 chest-touch
+    phase on a different dataset and a different tracker.
+
+    **The window cannot just be removed, and that is the other half.** Sweep
+    wider than 13.50 s and `bench_92.5x2` prefers a spurious peak at +13.59 s
+    scoring **0.44 against its true peak's 0.37** — a distant coincidence that
+    genuinely correlates better than the truth. At 20 s two more captures
+    acquire fractional-period rivals and refuse outright. So the window is
+    doing real work in both directions: wide enough to contain the true
+    offset, narrow enough to exclude coincidences. Measured over all eleven
+    bench captures and the three deadlift controls, **every value in
+    10.00-13.50 s gives the same answer on all fourteen**; below 10.00 the
+    boundary guard below starts firing and below 7.00 the two captures above
+    go silently wrong. `SYNC_MAX_LAG_S` is 11.75, the middle of that plateau.
+
+    Note the plateau's upper edge rests on one capture whose true peak is
+    LOWER than a coincidence 13.6 s away. That is a thin margin, and it is a
+    fact about `bench_92.5x2` rather than about the method — it is a two-rep
+    set, so it has the least periodic structure to correlate.
+
+    AND THE PEAK MUST NOT SIT AGAINST THE BOUNDARY
+    ----------------------------------------------
+    Widening fixes the captures in hand and does nothing about the next one
+    landing outside the new window, so the peak is now required to have a full
+    rep period of curve beyond it on both sides and this raises when it does
+    not.
+
+    The reason is the acceptance rule rather than the peak. This method accepts
+    because every rival above `RIVAL_FRAC` sits a whole rep period away — and a
+    peak within one period of the boundary is one whose ±1 P rival is off the
+    end of the sweep and cannot be looked at. Accepting there is accepting on a
+    test that did not run, which is this project's recurring failure shape:
+    C12's whole-clip NCC median that passed while lockout failed, C17's
+    whole-clip marker residual. The guard would have caught the shipped defect
+    on both captures without knowing what the right answer was.
+
+    Measured at 11.75 s, the tightest capture (`bench_92.5x4_3`, peak −7.08 s,
+    cadence 2.68 s) clears the boundary by **1.74 rep periods**, and the rest
+    by 2.05-5.45.
 
     WHAT IT ACCEPTS ON, AND WHY NOT PEAK HEIGHT
     -------------------------------------------
@@ -229,25 +302,52 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
         bench_90x4_3        2.31 s   0.75@-1.04P
         bench_92.5x2        4.55 s   0.80@+0.97P
         bench_spoto_90x5_1  2.96 s   0.81@-0.96P   0.76@+0.96P
-        bench_spoto_90x5_2  3.23 s   0.81@+0.98P
+        bench_spoto_90x5_2  3.23 s   0.82@-0.99P   0.81@+0.98P
         bench_spoto_90x5_3  2.76 s   0.80@-1.04P   0.78@+1.04P
 
-    **Eleven rivals, seven captures, every one within 5% of exactly one rep
+    **Twelve rivals, seven captures, every one within 5% of exactly one rep
     period.** Bench's lag is identified modulo one rep, always, and never worse
     than that. All seven sync.
 
-    WHY A WHOLE-REP AMBIGUITY IS HARMLESS
-    -------------------------------------
-    Because both things measured through this sync are invariant to it.
-    Horizontal rms scored at the rival lag rather than the peak: 3.11, 3.23 and
-    2.44 cm against 3.67, 2.69 and 2.63 — no worse, and lower on two of three.
-    And rep-window PHASE is invariant by construction, a periodic set looking
-    identical shifted by one rep; C9's three captures agree to 0.03 despite
-    offsets of +0.040, -2.320 and -0.585 s.
+    *Re-measured at the 11.75 s window (C25); it was eleven rivals at 5.0 s,
+    `bench_spoto_90x5_2`'s −0.99 P having been just off the end of the old
+    sweep. The span is unchanged and the claim is one capture stronger.* The
+    four `data_v2` benches add no rivals at all — none of them has a local
+    maximum above `RIVAL_FRAC` of its peak, which is a cleaner curve than any
+    capture this rule was written on, and their peaks run 0.45-0.88.
+
+    WHY A WHOLE-REP AMBIGUITY IS HARMLESS FOR THE TWO THINGS IT WAS WEIGHED
+    AGAINST, AND NOT IN GENERAL
+    -----------------------------------------------------------------------
+    Because both things measured through this sync WHEN THIS WAS WRITTEN are
+    invariant to it. Horizontal rms scored at the rival lag rather than the
+    peak: 3.11, 3.23 and 2.44 cm against 3.67, 2.69 and 2.63 — no worse, and
+    lower on two of three. And rep-window PHASE is invariant by construction, a
+    periodic set looking identical shifted by one rep; C9's three captures
+    agree to 0.03 despite offsets of +0.040, -2.320 and -0.585 s.
+
+    **Do not read that as a general licence — C24 added a quantity that is not
+    invariant, and C25 found it broken.** Anything that PAIRS a video rep with
+    an IMU window rather than overlaying two whole curves is destroyed by a
+    whole-rep shift, because the pairing is exactly what shifts. `analysis/41`
+    measures per-rep video ROM inside each IMU window, and under the one-rep
+    error the first window reported **2.4 and 1.4 cm of a ~25 cm rep** — it
+    covered the un-rack — while a real rep fell outside every window and was
+    scored not at all. `vs_truth`'s `covered` flag and its per-rep table are in
+    the same class.
+
+    So the ambiguity is harmless where it was measured to be harmless, and the
+    two invariance results above are the boundary of the claim rather than the
+    claim itself. Anything new that indexes reps must be checked against a
+    whole-rep shift before it is trusted, not assumed into the same box.
 
     A FRACTIONAL-period rival would not be harmless, and that is what this
-    refuses on. None exists in `data/raw/`, so **that branch is unexercised on
-    real data — it is a guard, not a measurement.**
+    refuses on. None exists at the shipping window on any of the eleven bench
+    captures, so **that branch is unexercised by what we sync — it is a guard,
+    not a measurement.** It is not untestable, though: sweeping to 20 s gives
+    `bench_90x4_2` and `bench_92.5x2` fractional rivals above `RIVAL_FRAC` and
+    both refuse, so the branch is known to fire on real footage rather than
+    only in principle.
 
     **A bench single cannot be synced by this route at all**, since a cadence
     needs two reps. That is a real limit and it raises rather than guessing.
@@ -381,6 +481,20 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
 
     pk = int(np.nanargmax(curve))
     corr, lag = float(curve[pk]), float(lags[pk])
+
+    # The peak must have a full rep period of curve beyond it on BOTH sides, or
+    # the rival test below is being run on a truncated curve and cannot mean
+    # what it says. See the search-window section of the docstring: this is the
+    # exact defect that shipped, and it presented as a segmentation fault.
+    if abs(lag) + cadence_s > max_lag_s:
+        raise ValueError(
+            f"bench sync: the peak is at {lag:+.2f} s, within one rep period "
+            f"({cadence_s:.2f} s) of the +/-{max_lag_s:.2f} s search boundary. "
+            f"Its whole-period rival lies outside the sweep, so the rule this "
+            f"method accepts on — every rival is a whole rep away — cannot be "
+            f"evaluated, and a peak against the boundary may itself be the "
+            f"rival of a true peak the sweep never saw. Widen max_lag_s and "
+            f"re-measure; do not simply take this lag.")
 
     # Every rival worth taking seriously must be a WHOLE-REP restatement of the
     # same alignment. See the docstring: that is the ambiguity this method

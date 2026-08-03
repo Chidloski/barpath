@@ -30,6 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
 VIDEO = ROOT / "data" / "video"
+V2_RAW = ROOT / "data_v2" / "raw"
+V2_VIDEO = ROOT / "data_v2" / "video"
 
 DEADLIFTS = [
     ("deadlift_155x6_1_20260728", "deadlift_155x6_1_20260728_122828"),
@@ -182,6 +184,172 @@ def test_every_bench_rival_is_a_whole_rep_period_away(video, reps):
     for lag, frac, periods in got["rivals"]:
         assert abs(periods - round(periods)) <= metrics.PERIOD_TOL
         assert abs(round(periods)) >= 1
+
+
+# The four 2026-08-03 captures with an IMU log beside them: the offset each
+# one's correlation peaks at, and whether the OLD 5.0 s window was too narrow
+# to hold that peak a full rep period clear of its boundary.
+#
+# Three of the four were, and only two of those got the wrong answer — the
+# distinction is the point of the guard. `bench_95x2` peaked in the right place
+# at 5.0 s and still had no room, because its cadence is 4.75 s; `_1` peaks at
+# -0.08 s and was never in any danger, so the old window was adequate for
+# exactly one of the four.
+PAIRED_BENCH_OFFSET_S = {
+    "bench_92.5x4_1_20260803": -0.08,
+    "bench_92.5x4_2_20260803": -6.37,
+    "bench_92.5x4_3_20260803": -7.08,
+    "bench_95x2_20260803": -0.44,
+}
+CRAMPED_AT_THE_OLD_5S_WINDOW = {
+    "bench_92.5x4_1_20260803": False,
+    "bench_92.5x4_2_20260803": True,
+    "bench_92.5x4_3_20260803": True,
+    "bench_95x2_20260803": True,
+}
+
+
+_PAIRED_CACHE: dict = {}
+
+
+def _paired(stem: str):
+    """(result, marker path, cadence) for a data_v2 capture, or skip.
+
+    Memoised because marker tracking decodes the whole clip and both tests
+    below want the same four, which is what `test_markers.py` uses a
+    module-scoped fixture for.
+    """
+    import warnings
+
+    from src import markers, pipeline
+
+    if stem in _PAIRED_CACHE:
+        return _PAIRED_CACHE[stem]
+
+    clip = V2_VIDEO / f"{stem}.mov"
+    csv = next(V2_RAW.glob(f"{stem.rsplit('_', 1)[0]}_*.csv"), None) \
+        if V2_RAW.is_dir() else None
+    if not clip.exists() or csv is None:
+        pytest.skip(f"{stem} not present — data_v2 is gitignored")
+    result = pipeline.run(csv)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        path = markers.bar_path(clip, check=False)
+    _PAIRED_CACHE[stem] = (result, path, _cadence(result))
+    return _PAIRED_CACHE[stem]
+
+
+@pytest.mark.parametrize("stem", sorted(PAIRED_BENCH_OFFSET_S))
+def test_the_sweep_must_be_wide_enough_to_contain_its_own_peak(stem):
+    """C25 — the defect that read as a segmentation fault, pinned from both ends.
+
+    `max_lag_s` shipped at 5.0 s and the true peak on two of these four sits
+    OUTSIDE it, at -6.37 and -7.08 s. The sweep does not know that; it returns
+    the best point it can see, which was a sidelobe **exactly one rep period
+    late** at 0.44 and 0.38 of correlation against the true peaks' 0.66 and
+    0.67. Nothing downstream could tell, and in `analysis/41` it presented as
+    the segmenter counting the un-rack and dropping the last rep — a whole-rep
+    sync error and a whole-rep segmentation error give the identical table of
+    touch-minus-window offsets.
+
+    Two assertions, because the fix has two halves and either alone rots:
+
+    *The window is wide enough.* Each capture peaks where it is recorded to,
+    and the two good ones are unmoved by the widening — this is not a change
+    that bought two captures at the price of the others.
+
+    *A narrow window REFUSES rather than guessing.* Re-run at the old 5.0 s and
+    the guard fires on the three captures whose peak has no rep period of room
+    there — which is not the same set as the two that got the wrong ANSWER.
+    `bench_95x2` peaked correctly at 5.0 s (-0.44 s) and still had no margin,
+    its cadence being 4.75 s; the guard asks whether the acceptance rule could
+    be evaluated, not whether the answer happened to be right. `_1` peaks at
+    -0.08 s and was never at risk, so it must NOT refuse — a guard that fired
+    on everything would be no evidence at all.
+    """
+    from src import metrics
+
+    result, path, cadence = _paired(stem)
+    got = metrics.bench_sync(path, result["log"], result["velocity"][:, 2],
+                             cadence)
+
+    assert abs(got["offset"] - PAIRED_BENCH_OFFSET_S[stem]) < 0.25, (
+        f"{stem}: peak at {got['offset']:+.2f} s against the recorded "
+        f"{PAIRED_BENCH_OFFSET_S[stem]:+.2f} s")
+    assert abs(got["offset"]) + cadence <= metrics.SYNC_MAX_LAG_S, (
+        f"{stem}: peak {got['offset']:+.2f} s is within one rep period "
+        f"({cadence:.2f} s) of the shipping boundary — the margin this "
+        f"capture had is gone")
+
+    narrow = lambda: metrics.bench_sync(  # noqa: E731
+        path, result["log"], result["velocity"][:, 2], cadence, max_lag_s=5.0)
+
+    if CRAMPED_AT_THE_OLD_5S_WINDOW[stem]:
+        with pytest.raises(ValueError, match="search boundary"):
+            narrow()
+    else:
+        assert abs(narrow()["offset"] - PAIRED_BENCH_OFFSET_S[stem]) < 0.25, (
+            f"{stem} had a full rep period of room inside the old 5.0 s "
+            f"window and should still sync there")
+
+
+@pytest.mark.parametrize("stem", sorted(PAIRED_BENCH_OFFSET_S))
+def test_every_paired_bench_window_holds_one_chest_touch(stem):
+    """The sync checked against something that is not the correlation curve.
+
+    C25's fix was found in the correlation curve, so pinning it there alone
+    would be circular. This asks a separate question of the corrected offset:
+    does each IMU rep window contain exactly one chest touch that the VIDEO
+    found on its own, by peak detection with no IMU input?
+
+    **14 of 14, at 0.53-0.69 through the window.** That independently
+    reproduces C9's 0.567-0.648 on `data/raw` — a different dataset, a
+    different tracker, and a bench descent that really is slower than the
+    press. Under the one-rep error two of these captures had a first window
+    holding NO touch at all (it covered the un-rack) and a real rep falling
+    outside every window.
+
+    This is not invariant to a whole-rep shift the way C9's phase test is, and
+    that is the point of it: C9's could not have caught this and this one can.
+    A set of N reps has N windows and N touches, so losing one at the start
+    means losing one at the end.
+    """
+    import numpy as np
+    from scipy.signal import find_peaks
+
+    from src import metrics
+
+    result, path, cadence = _paired(stem)
+    offset = metrics.bench_sync(path, result["log"], result["velocity"][:, 2],
+                                cadence)["offset"]
+
+    t_v = np.asarray(path["t"], float)
+    h_cm = 100.0 * np.asarray(path["height"], float)
+    ok = np.isfinite(h_cm)
+    fs_v = 1.0 / float(np.median(np.diff(t_v)))
+    # Same detection as run.py --v2rom: prominence in cm rejects the wobble at
+    # the rack, distance is well under a bench cadence. Neither is tuned
+    # against the IMU, which is what makes this an independent check.
+    touches, _ = find_peaks(-np.where(ok, h_cm, np.nanmax(h_cm[ok])),
+                            prominence=15.0, distance=int(fs_v))
+    t_touch = t_v[touches] + offset
+
+    t = result["log"]["t"]
+    phases = []
+    for n, (a, b) in enumerate(result["bounds"], 1):
+        t0, t1 = float(t[a]), float(t[b - 1])
+        inside = [(x - t0) / (t1 - t0) for x in t_touch if t0 <= x <= t1]
+        assert len(inside) == 1, (
+            f"{stem} rep {n} [{t0:.1f},{t1:.1f}] holds {len(inside)} chest "
+            f"touches, expected 1 — the alignment is a rep out")
+        phases.append(inside[0])
+
+    assert len(phases) == len(t_touch), (
+        f"{stem}: {len(t_touch) - len(phases)} video rep(s) fell outside every "
+        f"IMU window")
+    assert 0.45 < min(phases) and max(phases) < 0.80, (
+        f"{stem}: touches at {min(phases):.2f}-{max(phases):.2f} through the "
+        f"window, against C9's 0.567-0.648 on data/raw")
 
 
 def test_a_bench_single_cannot_be_synced_by_this_route():

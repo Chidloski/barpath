@@ -49,8 +49,11 @@ spec; see P2.
 the four data_v2 benches, measured three ways — the reconstruction, the video
 inside the IMU's rep window, and the video's OWN trough-to-shoulder range found
 with no IMU and no sync. The third referees the other two, and it says the
-reconstruction reads 15-20% high on every rep and that two of the four captures
-are synced a full rep out. Slow: it decodes and marker-tracks four clips.
+reconstruction reads 15-20% high on every rep. It also showed two of the four
+synced a full rep out, which C25 traced to `bench_sync`'s search window being
+too narrow to contain its own peak and fixed; every window now holds one chest
+touch, so a red window here means the sync has gone out again. Slow: it decodes
+and marker-tracks four clips.
 
 --anchors writes analysis/24_c6_two_anchors.png: Core Motion's attitude error at
 the still holds bracketing each set, the per-rep residual that the anchors
