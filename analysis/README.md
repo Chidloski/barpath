@@ -1459,3 +1459,57 @@ project and it is one capture; the seven benches run 0.64 to 3.67 cm. Nothing
 here is evidence the reps line up in time — `vs_truth`'s horizontal rms is
 insensitive to gross time misalignment. And the marker column's scale rests on
 `STICKER_RATIO`, transferred from the deadlift bumpers.
+
+
+## 41 — per-rep video ROM on the four paired benches (2026-08-03)
+
+`analysis/41_paired_bench_video_rom.png`, `python run.py --v2rom`. The same
+quantity measured three ways on all four `data_v2` captures, and the gaps
+between them are the finding.
+
+  * **IMU** — the reconstruction after step 7.
+  * **window** — the video's vertical range inside the IMU's rep window. This is
+    what `metrics.vs_truth` reports, so it inherits the sync.
+  * **own** — the video's own trough-to-shoulder range, from peak detection on
+    the height trace with **no IMU input and no sync at all**. That is what lets
+    it referee the other two, and it is the bar to read.
+
+**It retracts C23's headline.** C23 compared whole-clip marker travel against
+per-rep IMU ROM, got -1.6 / -1.8 / -1.6 / -6.1%, and called it the first
+independent confirmation in the project. Those are not the same quantity: the
+whole-clip range spans the un-rack, where the bar is held ~3 cm above lockout,
+and that ~3 cm is about the size of the disagreement it was covering. Per rep
+the video says **23.3-26.7 cm** where the reconstruction says **28.4-30.7** —
+**~20% apart on all 14 reps**, not 1.6%.
+
+**Unassigned, deliberately.** `markers.calibration_report` declares a spacing
+bias of **7.3-11.2 cm** on these same four clips — the rim centroid sits 63-94
+px off the detected plate centre and the plate turns 32-33° across the clip —
+which is bigger than the ~5 cm in dispute. The marker path is not clean enough
+to convict the reconstruction, and this figure does not try to. What it settles
+is that the agreement was an artefact of the comparison.
+
+**And it caught a one-rep sync error on two of four.** A red window is one
+holding no video chest touch. On `bench_92.5x4_2` and `_3` window 0 holds none
+while the video's last rep falls outside every window. Touch minus window-centre
+per rep:
+
+    bench_95x2       +0.47 +0.57                 mean +0.52 s   (period 4.90)
+    bench_92.5x4_1   +0.25 +0.09 +0.41 +0.19     mean +0.24 s   (period 2.73)
+    bench_92.5x4_2   +3.18 +2.83 +2.82 +3.03     mean +2.97 s   (period 2.70)
+    bench_92.5x4_3   +3.27 +3.36 +3.21 +3.57     mean +3.35 s   (period 2.93)
+
+The bad two are off by **1.10 and 1.14 rep periods** with ~0.3 s of spread
+inside each capture — a rigid shift, which a segmentation fault would not give.
+So the segmenter is right and counting stays 14 of 14; `metrics.bench_sync` has
+placed the video's clock a rep late. This is the failure its own docstring says
+it cannot resolve, caught for the first time rather than merely noted, and the
+thing that catches it is the video's rep count and phase, not its amplitude.
+The good two sit at +0.24 and +0.52 s, which is correct rather than small: C9
+put the chest touch at 0.567-0.648 through a window, not 0.5.
+
+**What it does not show.** Nothing about the horizontal, which is the axis the
+spec is about — this is a vertical-extent figure. It cannot say which instrument
+is right about the 20%. And `own` is the video's k-th rep, which on the two
+mis-synced captures is *not* the IMU's k-th window, so purple against blue is a
+per-capture comparison there and not a per-rep one.

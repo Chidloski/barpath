@@ -7,6 +7,7 @@
     python run.py --truth              # also measure against the video (A3)
     python run.py --stages             # draw the pipeline stage by stage
     python run.py --rom                # per-rep vertical ROM against the bounds
+    python run.py --v2rom              # C24: per-rep ROM on the paired benches
     python run.py --anchors            # C6: attitude before and after a set
     python run.py --bias               # B6: constant-bias corrections vs the video
     python run.py --closure            # C11: vertical momentum, bench vs deadlift
@@ -43,6 +44,13 @@ subtitles before reading the shapes — a panel drawn without the 4x stretch has
 an axis project.confidence would not vouch for, and a panel drawn WITH it has
 an identifiable axis and no accuracy claim whatever. Nothing here is inside
 spec; see P2.
+
+--v2rom writes analysis/41_paired_bench_video_rom.png: per-rep vertical ROM on
+the four data_v2 benches, measured three ways — the reconstruction, the video
+inside the IMU's rep window, and the video's OWN trough-to-shoulder range found
+with no IMU and no sync. The third referees the other two, and it says the
+reconstruction reads 15-20% high on every rep and that two of the four captures
+are synced a full rep out. Slow: it decodes and marker-tracks four clips.
 
 --anchors writes analysis/24_c6_two_anchors.png: Core Motion's attitude error at
 the still holds bracketing each set, the per-rep residual that the anchors
@@ -275,6 +283,80 @@ def draw_rom() -> int:
 
     out = ROOT / "analysis" / "23_rom_bounds.png"
     plot.plot_rom_bounds(recon, video).savefig(out, dpi=105)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_v2_video_rom() -> int:
+    """C24 — per-rep vertical ROM on the four paired benches, three ways.
+
+    The third way is the one that matters: the video's own trough-to-shoulder
+    range, found by peak detection on the height trace with no IMU input and no
+    sync, so it can referee both of the others.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from scipy.signal import find_peaks
+    from src import metrics, plot
+
+    raw = ROOT / "data_v2" / "raw"
+    data: dict = {}
+    for path in sorted(raw.glob("*.csv")):
+        stem = path.stem.split("_20260")[0]
+        result = pipeline.run(path)
+        clip = pipeline.find_video(path)
+        if clip is None:
+            print(f"{stem}: no marker clip paired — skipped")
+            continue
+        t_vid, _, height, _ = metrics._video_on_imu_clock(result, clip, None)
+        try:
+            m = metrics.vs_truth(result, clip)
+        except ValueError as exc:
+            print(f"{stem}: vs_truth refused — {exc}")
+            continue
+
+        h = np.asarray(height) * 100
+        fs = 1.0 / float(np.median(np.diff(t_vid)))
+        # The video's own reps. `prominence` in cm rejects the wobble at the
+        # rack; `distance` is a second, well under a bench cadence. Neither is
+        # tuned against the IMU — that is the whole point of this measurement.
+        touches, _ = find_peaks(-h, prominence=15.0, distance=int(1.0 * fs))
+        own = []
+        for i, k in enumerate(touches):
+            lo = touches[i - 1] if i else 0
+            hi = touches[i + 1] if i + 1 < len(touches) else len(h) - 1
+            own.append(float(min(h[lo:k + 1].max(), h[k:hi + 1].max()) - h[k]))
+
+        imu = [100.0 * v for v in result["rep_rom_m"]]
+        win = [r["video_rom_cm"] for r in m["per_rep"] if r["covered"]]
+        data[stem] = {"t_vid": t_vid, "height": height, "t": result["log"]["t"],
+                      "bounds": result["bounds"], "imu_rom_cm": imu,
+                      "window_rom_cm": win, "own_rom_cm": own,
+                      "touches": list(touches),
+                      "whole_clip_cm": float(h.max() - h.min())}
+
+        t = result["log"]["t"]
+        missed = [k for k, (a, b) in enumerate(result["bounds"])
+                  if not any(t[a] <= t_vid[i] <= t[b - 1] for i in touches)]
+        print(f"{stem:16s} IMU {np.mean(imu):5.1f}  window {np.mean(win):5.1f}  "
+              f"own {np.mean(own):5.1f} cm  ({len(touches)} touches, "
+              f"{len(result['bounds'])} windows"
+              + (f", NO TOUCH in window {missed}" if missed else "") + ")")
+
+    if not data:
+        print("no paired captures found in data_v2/raw")
+        return 1
+
+    allown = [v for c in data.values() for v in c["own_rom_cm"]]
+    allimu = [v for c in data.values() for v in c["imu_rom_cm"]]
+    print(f"\nover {len(allown)} reps: video's own extents "
+          f"{min(allown):.1f}-{max(allown):.1f} cm, reconstruction "
+          f"{min(allimu):.1f}-{max(allimu):.1f} cm "
+          f"({100 * (np.mean(allimu) / np.mean(allown) - 1):+.1f}%)")
+
+    out = ROOT / "analysis" / "41_paired_bench_video_rom.png"
+    plot.plot_v2_video_rom(data).savefig(out, dpi=105)
     print(f"wrote {out.relative_to(ROOT)}")
     return 0
 
@@ -949,6 +1031,8 @@ def main(argv: list[str]) -> int:
         return draw_paths()
     if "--rom" in argv:
         return draw_rom()
+    if "--v2rom" in argv:
+        return draw_v2_video_rom()
     if "--anchors" in argv:
         return draw_anchors()
     if "--bias" in argv:

@@ -1058,10 +1058,26 @@ detection cache, so trials cost the association and fit arithmetic alone.
     bench_92.5x4_3      0.99         0.37 px     29.5 cm     30.1      -1.8%
     bench_95x2          1.00         0.13 px     29.0 cm     29.5      -1.6%
 
-**Three of the four agree with the IMU to under two percent, and that is the
-first independent confirmation of anything in this project** — two instruments
-sharing no component, on the same set. `bench_92.5x4_1`'s -6.1% is unexplained
-and is why the gate stays at +/-15%.
+C23 read that as three of four agreeing with the IMU to under two percent, and
+called it the first independent confirmation of anything in this project.
+**RETRACTED by C24, 2026-08-03 — the `travel` and `IMU rep ROM` columns above
+are not the same quantity.** `travel` is the whole-clip marker range, which
+spans the un-rack, where the bar is held ~3 cm above lockout; `IMU rep ROM` is
+per rep. That ~3 cm is about the size of the disagreement the comparison was
+covering. Measured per rep, with the video finding its own reps by peak
+detection — no IMU, no sync — the video says **23.3-26.7 cm** across all 14 reps
+against the reconstruction's **28.4-30.7**: **~20% apart, not 1.6%.**
+
+The table is kept as run, because the numbers in it are right and it is the
+reading of them that was wrong. `bench_92.5x4_1`'s -6.1% is still unexplained,
+and C24 gives it company rather than an answer: it is also the only one of the
+four whose horizontal loses to the flat-line null, at 0.71x.
+
+**Neither instrument is convicted, and C24 declines to.**
+`markers.calibration_report` declares a 7.3-11.2 cm spacing bias on these same
+four clips — rim centroid 63-94 px off the detected plate centre, plate turning
+32-33 degrees across the clip — which is larger than the ~5 cm in dispute. See
+`analysis/41`, `python run.py --v2rom`.
 
 *No regression, and two improvements.* The five 2026-08-01 captures keep their
 travel to the decimal and two get better residuals — `bench_110x1` 1.07 to

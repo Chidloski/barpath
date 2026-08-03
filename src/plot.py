@@ -1111,3 +1111,107 @@ def plot_overview(results: dict, spec_cm: float = 1.0):
         fontsize=11)
     fig.tight_layout(rect=(0.02, 0, 1, 0.94))
     return fig
+
+
+def plot_v2_video_rom(data: dict):
+    """Per-rep vertical ROM on the four paired benches, three ways. C24.
+
+    `data` maps capture stem -> dict with `t_vid`, `height` (metres, on the IMU
+    clock), `bounds`, `t`, `imu_rom_cm`, `window_rom_cm` and `touches` (indices
+    into `t_vid` of the chest touches the VIDEO found by itself).
+
+    Three measurements of one quantity, and the gaps between them are the point
+    ---------------------------------------------------------------------------
+    `imu` is the reconstruction after step 7. `window` is the video's vertical
+    range inside the IMU's rep window — what `metrics.vs_truth` reports, so it
+    inherits the sync. `own` is the video's own trough-to-shoulder range, found
+    by peak detection on the height trace with **no IMU input and no sync at
+    all**, which is what makes it able to referee the other two.
+
+    It says two things that C23's whole-clip comparison could not.
+
+    The two instruments disagree by ~20% on every rep of every capture. `own`
+    runs 23.3-26.7 cm over all 14 reps; the reconstruction says 28.4-30.7.
+    **Do not read that as the IMU reading high** — this figure cannot assign it.
+    `markers.calibration_report` declares a spacing bias of 7.3-11.2 cm on these
+    same four clips, which is larger than the ~5 cm being argued over, so the
+    marker path is not currently clean enough to convict the reconstruction.
+    What the figure does settle is that the agreement C23 reported is not
+    evidence of agreement: it compared the video's WHOLE-CLIP travel against
+    per-rep IMU ROM and got -1.6%, and the whole-clip range includes the
+    un-rack, where the bar is held ~3 cm above lockout — about the size of the
+    per-rep gap. A whole-clip range and a per-rep range are not the same
+    quantity and should not have been compared.
+
+    And two of the four are synced a full rep out. On `bench_92.5x4_2` and
+    `_3` the IMU's window 0 contains no video touch at all while the video's
+    last rep falls outside every window — windows 1-3 hold video reps 1-3. That
+    is exactly the failure `metrics.bench_sync`'s docstring says it cannot
+    resolve, since a periodic set looks the same shifted by one rep, and it is
+    the first time the ambiguity has been caught rather than noted. The `window`
+    bars for those two captures are measured against the wrong reps and so is
+    their horizontal rms.
+
+    A red window is one containing no touch. The dashed line is the video's
+    whole-clip travel, drawn to show how much of it the un-rack contributes.
+
+    One reading trap in the bars: `own` is the video's k-th rep, which on the
+    two mis-synced captures is NOT the same rep as the IMU's k-th window. Purple
+    against blue is a per-capture comparison there, not a per-rep one.
+    """
+    names = list(data)
+    fig, axes = plt.subplots(2, len(names), figsize=(4.6 * len(names), 8.6),
+                             squeeze=False)
+
+    for j, name in enumerate(names):
+        c = data[name]
+        h = (np.asarray(c["height"]) - np.min(c["height"])) * 100
+        t_vid, t = np.asarray(c["t_vid"]), np.asarray(c["t"])
+        touches = list(c["touches"])
+
+        ax = axes[0][j]
+        ax.plot(t_vid, h, lw=1.1, color="0.25", zorder=2)
+        for k, (a, b) in enumerate(c["bounds"]):
+            t0, t1 = t[a], t[b - 1]
+            has = any(t0 <= t_vid[i] <= t1 for i in touches)
+            ax.axvspan(t0, t1, color="#7fbf7f" if has else "#d98880",
+                       alpha=0.45, zorder=0)
+            ax.text((t0 + t1) / 2, 0.97, str(k), ha="center", va="top",
+                    fontsize=8, color="0.2",
+                    transform=ax.get_xaxis_transform())
+        ax.plot(t_vid[touches], h[touches], "v", ms=7, color="#c0392b",
+                zorder=3, label="touch, found by the video alone")
+        ax.set_xlabel("time on the IMU clock, s", fontsize=9)
+        ax.set_title(name, fontsize=10)
+        if j == 0:
+            ax.set_ylabel("video bar height, cm")
+            ax.legend(fontsize=7, loc="lower left")
+
+        ax = axes[1][j]
+        imu, win, own = c["imu_rom_cm"], c["window_rom_cm"], c["own_rom_cm"]
+        x = np.arange(len(imu))
+        ax.bar(x - 0.26, imu, 0.26, color="#2c7fb8", label="IMU, after step 7")
+        ax.bar(x, win, 0.26, color="#e08214", label="video, in the IMU window")
+        padded = (list(own) + [np.nan] * len(imu))[:len(imu)]
+        ax.bar(x + 0.26, padded, 0.26,
+               color="#5e3c99", label="video, its own extents")
+        ax.axhline(c["whole_clip_cm"], ls="--", lw=1.2, color="0.3",
+                   label="video, whole clip")
+        ax.set_xticks(x)
+        ax.set_xlabel("rep", fontsize=9)
+        ax.set_ylim(0, max(40, c["whole_clip_cm"] + 9))
+        if j == 0:
+            ax.set_ylabel("vertical ROM, cm")
+            ax.legend(fontsize=7, loc="upper left", framealpha=0.9)
+
+    fig.suptitle(
+        "Per-rep vertical ROM on the four paired benches — the first captures "
+        "refereed by markers\n"
+        "The purple bar uses no IMU and no sync. It disagrees with the "
+        "reconstruction by ~20% on all 14 reps — unassigned, since the tracker "
+        "declares a 7.3-11.2 cm spacing bound on these same clips.\n"
+        "Red window = the IMU found a rep where the video shows no chest touch. "
+        "bench_92.5x4_2 and _3 are synced a full rep out.",
+        fontsize=11)
+    fig.tight_layout(rect=(0.01, 0, 1, 0.92))
+    return fig

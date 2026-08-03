@@ -219,15 +219,72 @@ coverage and 0.13-0.38 px median residual. `seed_frame` now decides by
 VERIFICATION — trial-track a shortlist, keep what actually follows the bar —
 with per-frame appearance demoted to a filter.
 
-**And video and IMU now agree.** Whole-clip marker travel against the IMU's
-per-rep ROM: **-1.6%, -1.8%, -1.6% and -6.1%.** Two instruments sharing no
-component, on the same set; three of the four inside two percent. That is the
-first independent confirmation of anything here, and it arrived only after a
-scale bug that the WRONG SIGN exposed — travel read 9-13% low when the clip
-contains an un-rack and should read high. `truth.plate_diameter` keys on the
-lift and returned the notched plates' 425 mm for a session shot on 450 mm blue
-calibrated discs. `truth.CALIBRATED_SESSIONS` now carries the exception.
-`bench_92.5x4_1`'s -6.1% is unexplained.
+C23 reported that video and IMU now agreed — whole-clip marker travel against
+the IMU's per-rep ROM at **-1.6%, -1.8%, -1.6% and -6.1%** — and called it the
+first independent confirmation of anything here. **C24 retracts that (2026-08-03).
+The two quantities are not the same quantity.** Whole-clip travel spans the
+un-rack, where the bar is held ~3 cm above lockout, so it is a per-*clip* range
+being compared against a per-*rep* one, and the ~3 cm it adds is about the size
+of the disagreement it was hiding. Measured per rep, with the video finding its
+own reps by peak detection — no IMU, no sync, so it can referee both sides —
+the video says **23.3-26.7 cm** across all 14 reps where the reconstruction says
+**28.4-30.7**. The instruments disagree by **~20% on every rep of all four
+captures**, not by 1.6%.
+
+**Do not read that as the IMU reading high; C24 cannot assign it, and says so.**
+`markers.calibration_report` declares a spacing bias of **7.3-11.2 cm** on these
+same four clips — the rim centroid sits 63-94 px off the detected plate centre
+and the plate turns 32-33° over the clip — which is larger than the ~5 cm being
+argued over. The marker path is not currently clean enough to convict the
+reconstruction. What is settled is that the agreement was an artefact of the
+comparison. *Evidence:* `analysis/41`, `python run.py --v2rom`.
+
+The scale bug C23 found is untouched by this and still stands, and the WRONG
+SIGN is still what exposed it — travel read 9-13% low when the clip contains an
+un-rack and should read high. `truth.plate_diameter` keys on the lift and
+returned the notched plates' 425 mm for a session shot on 450 mm blue calibrated
+discs. `truth.CALIBRATED_SESSIONS` now carries the exception.
+
+**All four are now scored by `metrics.vs_truth`, where only `bench_95x2` had
+been (C24).** Horizontal rms, against the marker referee:
+
+    capture           h rms   null   beats_null   sign
+    bench_95x2        1.46    4.33      2.96      0/2
+    bench_92.5x4_1    3.08    2.20      0.71      0/4
+    bench_92.5x4_2    1.86    2.89      1.55      1/4
+    bench_92.5x4_3    1.66    2.42      1.46      0/4
+
+`bench_92.5x4_1` is the one that **loses to the flat-line null**, and it is also
+the capture whose travel dissents at -6.1% where the other three agree to under
+two percent. Two independent metrics now finger the same capture; neither is
+explained.
+
+**And two of the four are synced a full rep out.** On `bench_92.5x4_2` and `_3`
+the IMU's window 0 contains no video chest touch at all, while the video's last
+rep falls outside every window; windows 1-3 hold video reps 1-3. That is exactly
+the ambiguity `metrics.bench_sync`'s docstring says it cannot resolve — a
+periodic set looks the same shifted by one rep — and this is the first time it
+has been caught rather than noted.
+
+**It is the sync, not the segmenter, and the offsets say so.** Touch minus
+window-centre, per rep:
+
+    bench_95x2       +0.47 +0.57                 mean +0.52 s   (period 4.90)
+    bench_92.5x4_1   +0.25 +0.09 +0.41 +0.19     mean +0.24 s   (period 2.73)
+    bench_92.5x4_2   +3.18 +2.83 +2.82 +3.03     mean +2.97 s   (period 2.70)
+    bench_92.5x4_3   +3.27 +3.36 +3.21 +3.57     mean +3.35 s   (period 2.93)
+
+The bad two are off by **1.10 and 1.14 rep periods**, and the spread *within*
+each capture is ~0.3 s — a rigid time shift, which a segmentation fault would
+not produce. So counting stays 14 of 14 and the windows are where they should
+be; the video's clock is placed a rep late against them. The good two sit at
++0.24 and +0.52 s, which is not an error either: C9 measured the chest touch at
+0.567-0.648 through a window rather than 0.5, so a small positive offset is what
+a correctly synced bench should give.
+
+**Their `h rms` above is measured against the wrong reps and must not be
+quoted**, which leaves the marker-refereed horizontal evidence at two captures,
+one of which loses to the null.
 
 **The squats could not be fixed and were deleted, and the blocker was the plate
 rather than the code:** its three stickers sit at 94.9/111.4/153.7 degrees,
@@ -260,9 +317,15 @@ dicts were already compatible — `markers.bar_path` returns a superset of
 and `bench_sync` read only `t` and `height`, so the whole sync apparatus was
 tracker-agnostic before anyone tried. What is **not** checked: whether a landing
 found on marker footage falls at the same instant as one on template footage.
-The six paired captures of 2026-08-03 are the first that could test it — the
-deadlift sync's 13.5 ms is the tolerance to hold them to — but that is blocked
-behind the seeding defect above.
+
+**That check is no longer blocked — it is unrunnable, which is worse (C24).**
+This used to say the six paired captures of 2026-08-03 were the first that could
+test it, against the deadlift sync's 13.5 ms, and that the seeding defect was in
+the way. C23 cleared the seeding defect and deleted the two squats, so **four
+remain and all four are bench, which has no floor landing to find.** Nothing in
+the corpus can run this comparison. It needs a marker-filmed *deadlift* with a
+watch on — which is one more reason for the capture-protocol item that already
+asks for markers on a lift other than bench.
 
 `synth.py` generates logs from a known bar path with injected bias. It was
 the keystone and is no longer. Its model of lifting is wrong in ways real
@@ -375,6 +438,13 @@ this project refereed by `markers.py`. All four carry the `phase` column with a
 ~3.0 s closing hold, count 14 of 14, sit inside `truth.VERTICAL_ROM_M`
 (28.4–30.7 cm), and replicate C6's attitude bound independently (0.010–0.058°
 opening, 0.062–0.146° closing, against 0.39–1.05° of gyro-only drift).
+
+Read that 28.4–30.7 as passing a *bound*, not as agreeing with the video. The
+marker footage puts the same 14 reps at 23.3–26.7 cm — also inside the band,
+since bench's is 24–31 — so both instruments clear it while disagreeing with
+each other by ~20%. That the band admits both is the band being wide, and it is
+the clearest illustration available of what `VERTICAL_ROM_M` is for and what it
+cannot do. See the C24 note under the two referees above, and `analysis/41`.
 
 The session also produced two squats. **They were deleted on 2026-08-03** —
 video and log, four gitignored files, unrecoverable — because that plate's
