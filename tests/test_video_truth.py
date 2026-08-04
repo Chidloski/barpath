@@ -294,6 +294,74 @@ def test_the_sweep_must_be_wide_enough_to_contain_its_own_peak(stem):
 
 
 @pytest.mark.parametrize("stem", sorted(PAIRED_BENCH_OFFSET_S))
+def test_a_lag_past_the_starting_window_is_found_by_widening(stem):
+    """C25 part 2 — the constant is a starting point, not a bound.
+
+    The owner's question about the first fix was the right one: a window wide
+    enough for eleven captures is still a bet that the twelfth behaves. So the
+    sweep widens until the peak is interior, and this asks whether that
+    actually recovers a lag past the starting window rather than merely
+    sounding better.
+
+    The test manufactures the case it cannot otherwise observe — no capture
+    held has a lag past 11.75 s — by shifting the video's clock by a known
+    amount and asking for the offset back. A shift of `SHIFT_S` puts every one
+    of these four beyond `SYNC_MAX_LAG_S`, where a single fixed sweep refuses.
+
+    Measured over 0-30 s of shift on all eleven bench captures (121 trials),
+    widening takes correct answers from 39 to 72 and silent errors from 12 to
+    15 — and seven of those fifteen are `bench_92.5x2` alone, a two-rep set
+    whose lag is not identifiable once perturbed. Excluding it, fixed and
+    adaptive both leave eight. See `bench_sync`'s search-window section.
+    """
+    from src import metrics
+
+    result, path, cadence = _paired(stem)
+    shift = metrics.SYNC_MAX_LAG_S - abs(PAIRED_BENCH_OFFSET_S[stem]) + 2.0
+    shifted = dict(path)
+    shifted["t"] = np.asarray(path["t"], float) + shift
+    want = PAIRED_BENCH_OFFSET_S[stem] - shift
+    assert abs(want) > metrics.SYNC_MAX_LAG_S, "the shift must clear the window"
+
+    got = metrics.bench_sync(shifted, result["log"], result["velocity"][:, 2],
+                             cadence)
+    assert abs(got["offset"] - want) < 0.25, (
+        f"{stem}: shifted by {shift:.2f} s the peak should be at {want:+.2f} s, "
+        f"got {got['offset']:+.2f} — the sweep did not widen onto it")
+
+    # Pinned to a single sweep there is nowhere to widen to, so it must refuse
+    # rather than hand back the sidelobe it can see.
+    with pytest.raises(ValueError, match="search boundary"):
+        metrics.bench_sync(shifted, result["log"], result["velocity"][:, 2],
+                           cadence, max_lag_s=metrics.SYNC_MAX_LAG_S)
+
+
+@pytest.mark.parametrize("stem", sorted(PAIRED_BENCH_OFFSET_S))
+def test_widening_does_not_disturb_a_peak_already_inside_the_window(stem):
+    """The non-regression that licenses shipping the widening at all.
+
+    A peak interior to the starting window is accepted exactly as a single
+    fixed sweep would accept it — widening is reached only when the peak is
+    against the boundary. That is why every measured number in the project
+    survives this change: all eleven bench captures have an interior peak, so
+    none of them takes the new path.
+
+    Asserted as an identity between the adaptive default and an explicit
+    `max_lag_s`, which is stronger than re-listing the offsets.
+    """
+    from src import metrics
+
+    result, path, cadence = _paired(stem)
+    adaptive = metrics.bench_sync(path, result["log"], result["velocity"][:, 2],
+                                  cadence)
+    pinned = metrics.bench_sync(path, result["log"], result["velocity"][:, 2],
+                                cadence, max_lag_s=metrics.SYNC_MAX_LAG_S)
+
+    assert adaptive["offset"] == pinned["offset"]
+    assert adaptive["corr"] == pinned["corr"]
+
+
+@pytest.mark.parametrize("stem", sorted(PAIRED_BENCH_OFFSET_S))
 def test_every_paired_bench_window_holds_one_chest_touch(stem):
     """The sync checked against something that is not the correlation curve.
 

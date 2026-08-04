@@ -59,7 +59,16 @@ PERIOD_TOL = 0.15       # rivals must sit within this of a WHOLE rep period.
 #                         land at 0.96-1.05 periods, so 0.15 is loose against
 #                         the data and still rejects a half-period rival, which
 #                         is the case that would actually matter.
-SYNC_MAX_LAG_S = 11.75  # s, the half-width of the lag sweep. NOT arbitrary and
+MIN_OVERLAP_S = 2.0     # s of shared record below which a lag is not scored
+MIN_OVERLAP_REPS = 3.0  # ...and it must also hold this many rep periods. You
+#                         cannot identify a periodic alignment from less signal
+#                         than a few periods: at 2 s a bench clip and its log
+#                         match on noise, which is where the far-field failures
+#                         in C25's shift experiment came from.
+WIDEN_FACTOR = 1.6      # how fast the sweep grows when the peak is at the edge
+STABLE_LAG_S = 0.25     # a widened peak must not move more than this when the
+#                         sweep is widened once more, or it was never a peak
+SYNC_MAX_LAG_S = 11.75  # s, where the lag sweep STARTS. NOT arbitrary and
 #                         NOT free to grow: see bench_sync's search-window
 #                         section. Too narrow and the true peak falls outside,
 #                         and the sweep returns a sidelobe one rep period away
@@ -171,7 +180,7 @@ def _band(y: np.ndarray) -> np.ndarray:
 
 
 def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
-               cadence_s: float, max_lag_s: float = SYNC_MAX_LAG_S) -> dict:
+               cadence_s: float, max_lag_s: float | None = None) -> dict:
     """Align a bench video to the IMU clock. Returns offset and correlation.
 
     THE PROBLEM, STATED PLAINLY
@@ -248,12 +257,60 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
     fact about `bench_92.5x2` rather than about the method — it is a two-rep
     set, so it has the least periodic structure to correlate.
 
+    SO THE WINDOW IS A STARTING POINT, NOT A BOUND
+    ----------------------------------------------
+    A constant wide enough for eleven captures is still a bet that the twelfth
+    behaves. The owner put exactly that to C25 — *what happens if there's a new
+    set with a bigger lag* — and the honest answer, measured rather than
+    argued, was that the constant alone is not good enough. Shifting each
+    bench video's clock by 0-30 s and asking for the offset back gives, over
+    121 trials:
+
+        variant                              ok   refused   SILENTLY WRONG
+        fixed 11.75 s                        39      70          12
+        widen until the peak is interior     71      32          18
+        ...plus the stability check          71      35          15
+        ...plus a 3-rep overlap floor        72      34          15
+
+    So widening nearly doubles the range over which the sync is RIGHT, and
+    naive widening buys that by turning refusals into silent errors, which is
+    the wrong direction. The two guards below pay most of that back.
+
+    `max_lag_s=None` (the default) now means: start at `SYNC_MAX_LAG_S` and
+    widen by `WIDEN_FACTOR` until the peak is interior, capped by how far these
+    two records can slide and still share `need` seconds. Passing a number
+    pins a single sweep, which is what the tests use to reproduce the old
+    failure.
+
+    **Where the residual 15 live, and why they are not a search problem.**
+    Seven of the fifteen are `bench_92.5x2` alone. Excluding it, fixed and
+    adaptive both leave **8** — identical — while correct answers roughly
+    double. That capture is a two-rep set whose correlation cannot identify
+    its lag once perturbed at all; it is the same capture that caps the
+    plateau above. The rest sit at 25-30 s of shift, where the records barely
+    share a set. **Every capture's unshifted answer is bit-identical to the
+    fixed-window one**, so this changes what happens to a capture we do not
+    have, and nothing about the eleven we do.
+
+    THE TWO GUARDS
+    --------------
+    *Stability.* A peak found only by widening must survive one more widening,
+    or it was never a peak — it was the best point inside an arbitrary box, and
+    a bigger box prefers somewhere else. This is what stops naive widening
+    walking onto a distant coincidence, and it is applied ONLY when widening
+    happened: a peak interior to the starting window is accepted exactly as
+    before, which is what keeps the eleven captures unmoved.
+
+    *Overlap.* A lag is only scored where the records share
+    `MIN_OVERLAP_REPS` rep periods. You cannot identify a periodic alignment
+    from less signal than a few periods; at the old flat 2 s floor a clip and
+    its log will match on noise, which is where the far-field failures were.
+
     AND THE PEAK MUST NOT SIT AGAINST THE BOUNDARY
     ----------------------------------------------
-    Widening fixes the captures in hand and does nothing about the next one
-    landing outside the new window, so the peak is now required to have a full
-    rep period of curve beyond it on both sides and this raises when it does
-    not.
+    The peak is required to have a full rep period of curve beyond it on both
+    sides. With the default that is what triggers widening; with an explicit
+    `max_lag_s` there is nowhere to widen to, so it raises.
 
     The reason is the acceptance rule rather than the peak. This method accepts
     because every rival above `RIVAL_FRAC` sits a whole rep period away — and a
@@ -464,37 +521,83 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
     t_i = np.arange(float(log["t"][0]), float(log["t"][-1]), 1.0 / SYNC_FS)
     v_imu = _band(np.interp(t_i, log["t"], velocity_z))
 
-    lags = np.arange(-max_lag_s, max_lag_s, 1.0 / SYNC_FS)
-    curve = np.full(len(lags), np.nan)
-    for j, lag in enumerate(lags):
-        g = grid + lag
-        m = (g >= t_i[0]) & (g <= t_i[-1])
-        if m.sum() < 2 * SYNC_FS:
+    need = max(MIN_OVERLAP_S, MIN_OVERLAP_REPS * cadence_s)
+
+    def sweep(half_width: float):
+        """Correlation against lag over +/-half_width. NaN where overlap is thin."""
+        lags = np.arange(-half_width, half_width, 1.0 / SYNC_FS)
+        curve = np.full(len(lags), np.nan)
+        for j, lag in enumerate(lags):
+            g = grid + lag
+            m = (g >= t_i[0]) & (g <= t_i[-1])
+            if m.sum() < need * SYNC_FS:
+                continue
+            a = v_video[m] - v_video[m].mean()
+            b = np.interp(g[m], t_i, v_imu)
+            b = b - b.mean()
+            curve[j] = a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-12)
+        return lags, curve
+
+    # How far the two records can slide and still share `need` seconds. Beyond
+    # this there is nothing left to correlate, so it is the honest ceiling on
+    # the search — a property of these two recordings, not a tuned number.
+    reach = max(abs(t_i[0] - hi), abs(t_i[-1] - lo)) - need
+    widening = max_lag_s is None
+    half = SYNC_MAX_LAG_S if widening else max_lag_s
+    widened = False
+
+    while True:
+        lags, curve = sweep(half)
+        if not np.isfinite(curve).any():
+            raise ValueError("bench sync: no lag gives enough overlap to correlate")
+
+        pk = int(np.nanargmax(curve))
+        corr, lag = float(curve[pk]), float(lags[pk])
+
+        # The peak must have a full rep period of curve beyond it on BOTH sides,
+        # or the rival test below is running on a truncated curve and cannot
+        # mean what it says. This is the exact defect that shipped at 5.0 s, and
+        # it presented as a segmentation fault.
+        if abs(lag) + cadence_s > half:
+            if not widening or half >= reach:
+                raise ValueError(
+                    f"bench sync: the peak is at {lag:+.2f} s, within one rep "
+                    f"period ({cadence_s:.2f} s) of the +/-{half:.2f} s search "
+                    f"boundary. Its whole-period rival lies outside the sweep, "
+                    f"so the rule this method accepts on — every rival is a "
+                    f"whole rep away — cannot be evaluated, and a peak against "
+                    f"the boundary may itself be the rival of a true peak the "
+                    f"sweep never saw."
+                    + ("" if widening else
+                       " Pass max_lag_s=None to let the sweep widen itself.")
+                    + (f" Widened to the {reach:.1f} s these two records share "
+                       f"and it is still against the edge; they may not cover "
+                       f"the same set." if widening else ""))
+            half = min(half * WIDEN_FACTOR, reach)
+            widened = True
             continue
-        a = v_video[m] - v_video[m].mean()
-        b = np.interp(g[m], t_i, v_imu)
-        b = b - b.mean()
-        curve[j] = a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-12)
 
-    if not np.isfinite(curve).any():
-        raise ValueError("bench sync: no lag gives enough overlap to correlate")
-
-    pk = int(np.nanargmax(curve))
-    corr, lag = float(curve[pk]), float(lags[pk])
-
-    # The peak must have a full rep period of curve beyond it on BOTH sides, or
-    # the rival test below is being run on a truncated curve and cannot mean
-    # what it says. See the search-window section of the docstring: this is the
-    # exact defect that shipped, and it presented as a segmentation fault.
-    if abs(lag) + cadence_s > max_lag_s:
+        # An interior peak inside the STARTING window is accepted as it always
+        # was, which is what keeps the eleven measured captures bit-identical.
+        # A peak we had to widen to find is held to a stricter test, because
+        # widening is what exposes distant coincidences: it must survive one
+        # more widening. If the answer moves when you look further, the lag was
+        # not identified — it was the best thing inside an arbitrary box.
+        if not widened or half >= reach:
+            break
+        lags2, curve2 = sweep(min(half * WIDEN_FACTOR, reach))
+        if not np.isfinite(curve2).any():
+            break
+        lag2 = float(lags2[int(np.nanargmax(curve2))])
+        if abs(lag2 - lag) <= STABLE_LAG_S:
+            break
         raise ValueError(
-            f"bench sync: the peak is at {lag:+.2f} s, within one rep period "
-            f"({cadence_s:.2f} s) of the +/-{max_lag_s:.2f} s search boundary. "
-            f"Its whole-period rival lies outside the sweep, so the rule this "
-            f"method accepts on — every rival is a whole rep away — cannot be "
-            f"evaluated, and a peak against the boundary may itself be the "
-            f"rival of a true peak the sweep never saw. Widen max_lag_s and "
-            f"re-measure; do not simply take this lag.")
+            f"bench sync: the peak moved from {lag:+.2f} s to {lag2:+.2f} s "
+            f"when the sweep was widened from {half:.1f} to "
+            f"{min(half * WIDEN_FACTOR, reach):.1f} s, so it is not a peak — "
+            f"it is the best point inside an arbitrary box, and a wider box "
+            f"prefers somewhere else. The lag is not identified on this "
+            f"capture and every number measured through it would be arbitrary.")
 
     # Every rival worth taking seriously must be a WHOLE-REP restatement of the
     # same alignment. See the docstring: that is the ambiguity this method
