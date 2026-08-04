@@ -321,7 +321,27 @@ rather than the code:** its three stickers sit at 94.9/111.4/153.7 degrees,
 which `_triangle_ok` rejects outright, and whose centroid falls 18.4% of the
 radius (~2.8 cm) from the true plate centre against a 1 cm spec. Bench's plate
 is 129/102/129, i.e. 8.6%, which is the whole difference between the two lifts.
-**Sticker the next squat plate at 120 degrees** — a tape measure, not code.
+C23 concluded: sticker the next squat plate at 120 degrees, a tape measure
+rather than code.
+
+**C26 supersedes that advice (2026-08-04), and the replacement is easier rather
+than harder.** Put **eight** stickers on, at whatever angles are convenient, all
+at the same distance from the rim. A circle projects to a conic and five points
+determine a conic wherever they sit, so `markers.fit_ellipse` never asks how the
+stickers are spaced. The 8.6% and 18.4% centroid offsets that decided which of
+the two lifts could be refereed lose their spacing term entirely: synthetically
+the centroid is out 7.4 px on bench's spacing and 13.6 on squat's, where the
+conic is out 1.7 px on **both**. What replaces the even-spacing requirement is a
+common RADIUS, which a tape gives you directly.
+It also fixes a second and larger term the three-sticker layout could not:
+`track`'s similarity fit reads foreshortening as distance, costing the scale
+11.2% at 40 degrees of tilt, where a conic's semi-major axis holds to 0.09%.
+
+Do not read that as a perspective fix — on ideal spacing the old centroid is the
+better centre estimator, 0.86 px against 1.72 at 20 degrees of tilt. The conic
+removes SPACING and TILT-SCALE, not perspective. **And none of it is gated on
+real footage yet**, because three points cannot determine a conic so no capture
+held can test it. See TASKS.md C26 and `src/README.md`.
 
 What C21 established, and the second point is the one that saves the next
 agent's time. Three admission gates in `candidates` each rejected the true

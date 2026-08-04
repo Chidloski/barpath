@@ -78,6 +78,14 @@ lifts working and not.
 admits the constellation without making it track, and no tolerance repairs the
 centroid bias. Sticker the next squat plate at 120 degrees with a tape measure.
 
+**Superseded 2026-08-04 by C26, and the code half of that is now wrong.** It IS
+fixed in code, just not by a tolerance: `markers.fit_ellipse` fits the conic a
+circle actually projects to, which needs five points and asks nothing about how
+they are spaced. The instruction to the owner changes too — **eight** stickers
+at a common radius, spaced however is convenient, which is an easier tape
+measurement than three at 120 degrees. Ungated on real footage until a capture
+exists. See TASKS.md C26.
+
 ### 2. `bench_92.5x4_1`'s -6.1%
 
 Cheap, self-contained, and the only anomaly left in the bench numbers. The other
@@ -105,8 +113,12 @@ keeps rising.
 squat to truth" was written before this session. Stepping back would not have
 helped: the squat footage was fine and the plate was the problem.
 
-1. **Re-sticker the squat plate at 120 degrees, then re-shoot a squat.** This is
-   the whole squat problem. Highest value on the list.
+1. **Put EIGHT stickers on the squat plate, all the same distance in from the
+   rim, then re-shoot a squat.** Rewritten 2026-08-04 by C26; it used to say
+   three at 120 degrees. Spacing no longer matters — measure the radius, not the
+   angles. This is the whole squat problem and still the highest value on the
+   list, and it is now also the first footage that can gate the conic path,
+   which nothing held can test.
 2. **A capture WITH the session running and 30+ s of wrist-down.** Unchanged.
    C16 restored the workout session; every capture between C7 and C16 is
    suspect.
@@ -118,6 +130,10 @@ helped: the squat footage was fine and the plate was the problem.
    the plate template, which C12 showed is lost at lockout — 97-100% of
    top-of-travel frames below `GOOD_SCORE`. Markers do not have that failure.
    This is the single change that would most improve the numbers P2 is built on.
+   Eight stickers here too — see item 1 — and note this is also the only capture
+   that could ever check whether a landing found on marker footage falls at the
+   same instant as one on template footage, which C24 recorded as unrunnable
+   because all four marker captures are bench.
 5. **Tape the deadlift lockout height, and the wrist-to-bar offset `d`.** `d`
    unblocks step 6, implemented and off by default purely for want of the
    number.

@@ -636,3 +636,208 @@ def test_paired_bench_travel_agrees_with_the_imu(paired, stem):
 
     assert 0.85 * imu < travel_cm < 1.15 * imu, (
         f"{stem}: video travel {travel_cm:.1f} cm against IMU rep ROM {imu} cm")
+
+
+# --------------------------------------------------------------------- C26 --
+# The conic path, for a plate with more than three stickers. None of these can
+# run on a real capture: every clip held carries THREE rim stickers, and three
+# points cannot determine a conic, so there is no regression footage for this
+# and will not be until an 8-sticker plate is filmed. What follows is therefore
+# synthetic on purpose and is confined to what synthetic data can still settle
+# here — algebraic identities about projection, in CLAUDE.md's words. It is not
+# evidence that the tracker works on footage.
+
+def _project_circle(n_markers, tilt_deg, roll_deg, f=1200.0, dist=3.0,
+                    r=0.20, centre_yx=(300.0, 400.0), spacing_deg=None):
+    """Perspective-project markers on a circle. Returns (points_yx, true_centre_yx).
+
+    `spacing_deg` gives uneven placement, so the real plates C23 measured —
+    129/102/129 on bench, 94.9/111.4/153.7 on squat — can be reproduced exactly.
+    """
+    if spacing_deg is None:
+        ang = np.arange(n_markers) * 2 * np.pi / n_markers
+    else:
+        ang = np.deg2rad(np.cumsum([0.0] + list(spacing_deg))[:n_markers])
+    pts3 = np.stack([r * np.cos(ang), r * np.sin(ang), np.zeros(len(ang))], 1)
+    t, ro = np.deg2rad(tilt_deg), np.deg2rad(roll_deg)
+    rz = np.array([[np.cos(ro), -np.sin(ro), 0], [np.sin(ro), np.cos(ro), 0], [0, 0, 1]])
+    rx = np.array([[1, 0, 0], [0, np.cos(t), -np.sin(t)], [0, np.sin(t), np.cos(t)]])
+    cam = ((rx @ rz) @ pts3.T).T + np.array([0, 0, dist])
+    ys = f * cam[:, 1] / cam[:, 2] + centre_yx[0]
+    xs = f * cam[:, 0] / cam[:, 2] + centre_yx[1]
+    return np.column_stack([ys, xs]), np.array(centre_yx, float)
+
+
+def test_fit_ellipse_recovers_a_known_circle_exactly():
+    """Zero tilt: the projection is a circle and the fit must return it."""
+    pts, true_c = _project_circle(8, 0, 0)
+    ell = markers.fit_ellipse(pts)
+    assert ell is not None
+    assert np.hypot(*(ell["centre"] - true_c)) < 1e-6
+    assert abs(ell["semi_minor"] / ell["semi_major"] - 1.0) < 1e-6
+
+
+@pytest.mark.parametrize("n", [5, 6, 8, 12])
+def test_fit_ellipse_is_indifferent_to_how_many_markers(n):
+    """Five is the minimum and more must not change the answer.
+
+    The claim the whole layout change rests on: a conic has five degrees of
+    freedom, so any number of points on the same circle determines the same
+    conic.
+    """
+    pts, _ = _project_circle(n, 25, 40)
+    ell = markers.fit_ellipse(pts)
+    ref = markers.fit_ellipse(_project_circle(64, 25, 40)[0])
+    assert ell is not None and ref is not None
+    assert np.hypot(*(ell["centre"] - ref["centre"])) < 0.05
+    assert abs(ell["semi_major"] - ref["semi_major"]) < 0.05
+
+
+def test_fit_ellipse_needs_five_points():
+    """Four cannot determine a conic and the fit must refuse rather than guess."""
+    pts, _ = _project_circle(4, 20, 0)
+    assert markers.fit_ellipse(pts) is None
+
+
+def test_conic_beats_the_centroid_on_the_REAL_plate_spacings():
+    """The claim that justifies eight stickers, on the spacings C23 measured.
+
+    Note what is NOT claimed. On IDEAL 120-degree spacing the centroid is the
+    better estimator of the two — both are biased outward by perspective and
+    the conic's bias is about twice the centroid's — and the companion test
+    below pins that, so nobody re-derives this as "the conic fixes
+    perspective". It does not. It removes the SPACING term, and on real plates
+    that term is the larger one.
+    """
+    for name, spacing in (("bench", [129.0, 102.0]),
+                          ("squat", [94.9, 111.4])):
+        p3, true_c = _project_circle(3, 20, 37, spacing_deg=spacing)
+        centroid_err = np.hypot(*(p3.mean(axis=0) - true_c))
+        p8, _ = _project_circle(8, 20, 37)
+        ell = markers.fit_ellipse(p8)
+        conic_err = np.hypot(*(ell["centre"] - true_c))
+        assert conic_err < centroid_err / 2.0, (
+            f"{name}: conic {conic_err:.2f} px vs centroid {centroid_err:.2f} px")
+
+
+def test_the_conic_centre_is_NOT_a_perspective_fix():
+    """Pinned so the limitation cannot quietly become a claim.
+
+    With three stickers at exactly 120 degrees the centroid is EXACT under an
+    affine camera and merely biased under a real one; the ellipse centre is
+    biased harder. If this ever starts failing, someone has made the conic
+    perspective-aware and the docstrings in `fit_ellipse` need rewriting.
+    """
+    p3, true_c = _project_circle(3, 30, 0)
+    p8, _ = _project_circle(8, 30, 0)
+    centroid_err = np.hypot(*(p3.mean(axis=0) - true_c))
+    conic_err = np.hypot(*(markers.fit_ellipse(p8)["centre"] - true_c))
+    assert conic_err > centroid_err
+
+
+@pytest.mark.parametrize("tilt", [0, 10, 20, 30, 40])
+def test_semi_major_is_tilt_invariant_where_the_mean_radius_is_not(tilt):
+    """The scale half, and the larger of the two errors this fixes.
+
+    `track` fits a similarity, which reads foreshortening as a change of
+    distance, so a tilting plate shrinks its own scale and drives it into
+    `m_per_px_t`. The semi-major axis of a projected circle is unforeshortened
+    under an affine camera.
+    """
+    ref = markers.fit_ellipse(_project_circle(8, 0, 0)[0])["semi_major"]
+    pts, _ = _project_circle(8, tilt, 0)
+    semi = markers.fit_ellipse(pts)["semi_major"]
+    mean_r = float(np.hypot(*(pts - pts.mean(axis=0)).T).mean())
+    assert abs(semi / ref - 1.0) < 0.005, f"semi-major moved {100*(semi/ref-1):.2f}%"
+    if tilt >= 30:
+        assert abs(mean_r / ref - 1.0) > 0.05, (
+            "the mean radius is supposed to be the BROKEN one here; if it has "
+            "stopped degrading, this test is no longer measuring anything")
+
+
+def test_axis_ratio_reports_the_tilt_it_assumes():
+    """`axis_ratio` is cos(tilt) under an affine camera, and is the falsifier."""
+    for tilt in (0, 20, 40):
+        pts, _ = _project_circle(8, tilt, 0)
+        ell = markers.fit_ellipse(pts)
+        ratio = ell["semi_minor"] / ell["semi_major"]
+        assert abs(ratio - np.cos(np.deg2rad(tilt))) < 0.02
+
+
+def test_ellipse_candidates_finds_eight_stickers_among_clutter():
+    """Seeding, on the layout the current seeder cannot admit at all."""
+    rng = np.random.default_rng(4)
+    pts, _ = _project_circle(8, 15, 25, dist=3.0, r=0.20,
+                             centre_yx=(100.0, 80.0))
+    clutter = np.column_stack([rng.uniform(5, 195, 14), rng.uniform(5, 155, 14)])
+    frame = _blob_frame(np.vstack([pts, clutter]), rng=rng)
+    got = markers.ellipse_candidates(frame, radius_band=(20.0, 150.0),
+                                     require_hub=False)
+    assert got, "no ellipse hypothesis found at all"
+    best = got[0]
+    d = np.hypot(*(best["rim"][:, None, :] - pts[None, :, :]).transpose(2, 0, 1))
+
+    # RECALL is what the seeder must not get wrong: every sticker on the plate
+    # has to be in the model, or `track` follows a partial constellation.
+    found = (d.min(axis=0) < 1.5).sum()
+    assert found == 8, f"only {found} of 8 stickers recovered"
+
+    # PRECISION is allowed to be imperfect and the arithmetic says it must be.
+    # A `tol_px` annulus round a 79 px ellipse is ~2450 px2 of a 200x160 frame,
+    # about 8% of it, so each unrelated detection has roughly a one-in-twelve
+    # chance of sitting on the true ellipse by luck; with ~25 of them, one or
+    # two coincidental inliers is the expected outcome, not a defect. They cost
+    # `track` a permanently unmatched slot — `score` caps at 8/9 rather than
+    # 1.0 — and nothing else, because association simply never finds them.
+    spurious = int((d.min(axis=1) >= 1.5).sum())
+    assert spurious <= 2, f"{spurious} inliers are not stickers, expected 0-2"
+
+
+def test_the_current_triangle_seeder_cannot_admit_eight_stickers():
+    """Why C26 exists, pinned as a fact rather than left in a commit message.
+
+    Eight evenly spaced stickers have no near-equilateral triple: the best
+    available is every third one, at 135/135/90 degrees, whose chord spread is
+    0.255 against `_triangle_ok`'s tolerance of 0.25. It misses by 0.005 and
+    the candidate list comes back empty.
+    """
+    import itertools
+    ang = np.arange(8) * 2 * np.pi / 8
+    pts = np.column_stack([np.cos(ang), np.sin(ang)]) * 100.0
+    best = max(markers._triangle_ok(pts[list(c)])
+               for c in itertools.combinations(range(8), 3))
+    assert best == 0.0, "8 evenly spaced stickers now pass _triangle_ok"
+
+
+def test_conic_track_falls_back_where_markers_are_missing():
+    """Occlusion must degrade to the similarity pose, not to a hole."""
+    pts, _ = _project_circle(8, 10, 0, centre_yx=(100.0, 80.0))
+    matched = np.repeat(pts[None, :, :], 4, axis=0)
+    matched[1, 5:] = np.nan          # 5 left: still enough
+    matched[2, 4:] = np.nan          # 4 left: not enough
+    con = markers.conic_track({"matched": matched})
+    assert np.isfinite(con["centre"][0, 0])
+    assert np.isfinite(con["centre"][1, 0])
+    assert not np.isfinite(con["centre"][2, 0])
+    assert con["n_used"].tolist() == [8, 5, 4, 8]
+
+
+@pytest.mark.parametrize("stem", PAIRED_BENCH)
+def test_the_conic_path_is_inert_on_a_three_sticker_capture(paired, stem):
+    """C26 must not touch any capture held. This is the gate that says so.
+
+    Everything filmed up to and including 2026-08-03 carries three rim
+    stickers, and three points cannot determine a conic, so `conic_track` has
+    nothing to fit and `bar_path` keeps the similarity pose for every frame.
+    If `axis_ratio` ever becomes finite on one of these, the new path has
+    started running on old footage and the nine captures' numbers are no longer
+    the ones the rest of the suite was written against.
+    """
+    if stem not in paired:
+        pytest.skip(f"{stem} not present")
+    path = paired[stem]
+    assert path["n_rim"] == 3
+    assert path["calibration"]["layout"] == "triangle"
+    assert not np.isfinite(np.asarray(path["axis_ratio"])).any(), (
+        "the conic refit produced a value on a three-sticker capture")
+    assert path["calibration"]["scale_from_tape"] is False

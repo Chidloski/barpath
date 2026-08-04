@@ -326,6 +326,42 @@ filmed from a tripod with retroreflective markers on the plate: three near the
 rim roughly a third of the circumference apart, one on the bar's end cap, each
 reflective disc ~1.5 cm.
 
+**Two rim layouts are supported as of C26 (2026-08-04), and every capture held
+uses the first.**
+
+| layout | seeder | pose | spacing must be | scale |
+|---|---|---|---|---|
+| 3 stickers | `candidates`, near-equilateral triples | centroid | ~120° apart | mean marker radius |
+| 5+ stickers | `ellipse_candidates`, circumcircle-seeded RANSAC | conic centre | anything | semi-major axis |
+
+The second exists because the owner is stickering the next plate with **eight**,
+and eight evenly spaced has no near-equilateral triple — the best available is
+every third one at 135/135/90°, chord spread 0.255 against `_triangle_ok`'s
+0.25 — so the three-sticker seeder returns nothing on it. `layout="auto"` tries
+the triangle first and falls through only on an empty list, which is what keeps
+the nine existing captures on exactly the path they were on;
+`test_the_conic_path_is_inert_on_a_three_sticker_capture` gates that.
+
+What the conic buys, measured synthetically and **not yet on any footage**:
+
+- **Spacing stops mattering.** Five points on a circle determine the conic
+  wherever they sit. On the spacings C23 measured, the centroid is out 7.4 px on
+  the bench plate and 13.6 on the squat plate; the conic is out **1.7 px on
+  both**, because that figure is its perspective floor and has no spacing term
+  in it at all.
+- **Scale stops caring about tilt.** The similarity fit reads foreshortening as
+  distance, so the mean marker radius loses 11.2% at 40° of tilt where the
+  semi-major axis holds to 0.09%. This is the bigger of the two.
+- **It is NOT a perspective fix.** With ideal 120° spacing the centroid is the
+  better centre — 0.86 px against the ellipse's 1.72 at 20° tilt — because both
+  are biased outward and the conic's bias is roughly double. A test pins this so
+  it cannot quietly become a claim.
+
+For the newer layout the physical requirement is a common **radius**, not even
+spacing — the opposite of C23's advice for the three-sticker plate, and easier
+with a tape. `bar_path(sticker_diameter_m=...)` also retires `STICKER_RATIO`
+when the sticker circle has been measured directly.
+
 It does not replace `truth.py` and cannot — no marker exists in `data/video/`,
 so every capture the pipeline is currently scored against is still refereed by
 the plate template. It is what future captures should use.
@@ -511,6 +547,12 @@ and 8.2 px, which is the difference between the two lifts.
 
 **Sticker the next squat plate at 120 degrees.** It fixes the rejection and the
 bias at once, and it is the cheapest thing on this list by a wide margin.
+
+*Superseded by C26, 2026-08-04: use eight stickers at a common radius instead,
+spaced however is convenient.* Both problems above are the three-sticker
+layout's, not the plate's — the conic seeder has no `_triangle_ok` rejection to
+fail and no spacing term to be biased by. The 18.4% and 8.6% offsets become
+1.7 px on either plate. See the two-layout table near the top of this file.
 
 Both squat captures were deleted on the owner's instruction, 2026-08-03 — video
 and IMU log, gitignored and unrecoverable. `data_v2` is four bench captures now.

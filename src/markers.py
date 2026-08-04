@@ -35,6 +35,22 @@ as specified by the owner:
     spaced approximately every third of the way round;
     one more on the end cap of the bar.
 
+**A second layout is supported as of C26 (2026-08-04): five or more stickers
+anywhere on the rim.** It exists because the owner is stickering the next plate
+with eight, and eight evenly spaced has no near-equilateral triple at all — the
+best available is every third one at 135/135/90 degrees, whose chord spread is
+0.255 against `_triangle_ok`'s tolerance of 0.25 — so the three-sticker seeder
+returns an empty candidate list on it. `seed_frame(layout=...)` picks between
+`candidates` and `ellipse_candidates`; `"auto"` tries the triangle first and
+falls through, which is why every capture to date takes exactly the path it
+took before. **No capture in this repo yet uses the second layout, so nothing
+below marked as measured on real footage refers to it.**
+
+For the newer layout what matters physically is a common RADIUS, not even
+spacing: the fit only requires the stickers to share a circle. That is the
+opposite of the advice C23 gave for the three-sticker plate, and it is easier
+to achieve with a tape.
+
 The reflective disc is ~1.5 cm across. At `data_v2`'s 360x640 that is ~5 px,
 which is small but is *plenty* for a centroid, and the margin is not close.
 Measured over sub-pixel placements of a blurred, noisy 5 px marker, `detect`
@@ -72,12 +88,28 @@ Measured per frame: the constellation's position, its rotation, and its apparent
 size. Size is the one that earns this module its keep — it is the scale, and it
 is now observed at every height instead of extrapolated from one frame.
 
-Assumed, and this is the load-bearing one: **that the three rim stickers are
-equally spaced.** Under an affine (weak-perspective) projection the centroid of
-three points 120 degrees apart on a circle is exactly the projected circle
-centre, and centroids are affine-covariant, so the centroid of the three tracked
-stickers is the bar axis. "Approximately every third" is not exactly 120
-degrees, and the departure costs a bias.
+Assumed, and this is the load-bearing one **on the three-sticker layout**:
+that the rim stickers are equally spaced. Under an affine (weak-perspective)
+projection the centroid of three points 120 degrees apart on a circle is exactly
+the projected circle centre, and centroids are affine-covariant, so the centroid
+of the three tracked stickers is the bar axis. "Approximately every third" is not
+exactly 120 degrees, and the departure costs a bias.
+
+**The five-or-more layout does not make that assumption at all** (C26). A circle
+projects to a conic, a conic has five degrees of freedom, and five points on the
+rim determine it wherever they sit — so `fit_ellipse` never asks how the
+stickers are spaced. Synthetically, on the spacings C23 measured, the centroid
+is out by 7.4 px on the bench plate and 13.6 px on the squat plate; the conic is
+out **1.7 px on both**, because it has no spacing term to grow — that 1.7 is the
+perspective floor described next, arriving unchanged.
+
+**Do not restate that as "the conic fixes perspective".** It does not, and on
+that term alone it is the worse estimator: with ideal 120-degree spacing at 20
+degrees of tilt the centroid is out 0.86 px and the ellipse centre 1.72, because
+both are biased outward and the conic's bias is about double. What it removes is
+the SPACING term, which on real plates is the larger one.
+`test_the_conic_centre_is_NOT_a_perspective_fix` pins the limitation so it
+cannot drift into a claim.
 
 The bias is bounded and the bound is computed, not hoped for. If the model
 centroid sits `e` from the true plate centre in plate coordinates, then as the
@@ -100,6 +132,23 @@ Limits, honestly
   **transferred rather than measured**, because that is a different plate
   carrying its own stickers. What this module removes is the *extrapolation* of
   the scale across the frame, not the calibration itself.
+
+  **`bar_path(sticker_diameter_m=...)` retires it, and it is a tape measure
+  rather than code** (C26). Given the measured diameter of the circle the
+  sticker centres sit on, `STICKER_RATIO` is not consulted and the absolute
+  scale stops being transferred from another plate. It is `None` on every
+  capture held, because nobody had measured it; `calibration["scale_from_tape"]`
+  says which of the two a given path used.
+- **The similarity fit cannot represent foreshortening, and on the three-sticker
+  layout that goes straight into the scale.** `track` has four degrees of
+  freedom, so a plate tipping in its own plane is reported as one moving away
+  from the camera, and `circumradius_px` carries it into `m_per_px_t`.
+  Synthetically the mean marker radius loses **11.2% at 40 degrees of tilt**.
+  With five or more stickers `conic_track` refits a conic per frame and takes
+  the semi-major axis, which is unforeshortened under an affine camera and holds
+  to 0.09% over the same range — the larger of the two errors C26 addresses, and
+  the one with no equivalent workaround on three markers. `axis_ratio` reports
+  the tilt actually present, so the assumption is visible rather than silent.
 - **The fit degrades with height, like the template does — but inside
   tolerance rather than past it, and the distinction is the whole claim of this
   module.** Pooled over the deadlifts the residual runs 0.16 px at the floor to
@@ -445,6 +494,289 @@ def candidates(frame: np.ndarray, dets: np.ndarray | None = None,
     return out[:top]
 
 
+# ------------------------------------------------------------------ conic --
+def fit_ellipse(pts: np.ndarray) -> dict | None:
+    """Least-squares conic through >= 5 points. Returns None if it is not an
+    ellipse.
+
+    Coordinates are (y, x) like everything else here, and `angle` is measured in
+    that frame. Returns `centre` (y, x), `semi_major`, `semi_minor`, `angle`.
+
+    Why a conic at all
+    ------------------
+    A circle photographed from anywhere projects to a conic, and a conic has 5
+    degrees of freedom, so 5 points on the rim determine the plate's outline
+    with no assumption about where on the rim they sit. That is the whole point:
+    **the fit does not care how the stickers are spaced, only that they share a
+    circle.** `_triangle_ok` and the centroid pose both care a great deal — see
+    the numbers below — and that assumption is the one C23 measured as violated
+    on both plates it looked at.
+
+    It also means correspondence is free. Every rim sticker lies on the same
+    circle, so the fit never has to decide which sticker is which, and rotation
+    about the bar axis slides the markers along a curve that does not change.
+
+    What it fixes, measured synthetically, and what it does NOT
+    -----------------------------------------------------------
+    Projecting markers on a 0.20 m circle at 3 m through a 1200 px focal length,
+    against the true projected centre:
+
+        term                          3-marker centroid   8-marker ellipse
+        perspective, ideal spacing, tilt 20 deg    0.86 px        1.72 px
+        spacing, real bench plate 129/102/129      7.38 px        0.00 px
+        scale error at 40 deg of tilt            -11.23 %         +0.09 %
+
+    **Read the first row before believing this function is a perspective fix.
+    It is not, and it is twice as bad on that term.** The ellipse centre is not
+    the projected circle centre under true perspective — both estimators are
+    biased outward and the conic's bias is about double the centroid's. What
+    the conic removes is the SPACING term, which on the real bench plate is
+    ~4x larger than the perspective term and on the squat plate larger still,
+    and it removes it completely rather than bounding it.
+
+    The scale row is the other half and is the cleaner win. `track` fits a
+    similarity, which cannot tell foreshortening from a change of distance, so
+    a tilting plate reads as a shrinking one and the mean marker radius carries
+    it straight into `m_per_px_t`. The semi-major axis of the projected circle
+    is unforeshortened under an affine camera, so it holds to 0.1% where the
+    mean radius loses 11%.
+
+    What would falsify the claim: footage where the plate leaves its own plane
+    far enough that the affine approximation fails — beyond roughly 40 degrees
+    the semi-major axis starts to carry real perspective error too, and neither
+    estimator's centre is usable. `axis_ratio` in `conic_track` is what says
+    how tilted the plate actually was, so the assumption is reported rather
+    than assumed.
+    """
+    p = np.asarray(pts, dtype=float)
+    p = p[np.isfinite(p).all(axis=1)]
+    if len(p) < 5:
+        return None
+    # Normalise before fitting. The design matrix holds squares of pixel
+    # coordinates, so at 640x360 its columns span ~5 orders of magnitude and the
+    # SVD's null vector is dominated by rounding. Centring and scaling to unit
+    # mean radius costs two lines and is the difference between a fit and noise.
+    mu = p.mean(axis=0)
+    s = float(np.hypot(*(p - mu).T).mean())
+    if not np.isfinite(s) or s <= 0:
+        return None
+    q = (p - mu) / s
+    u, v = q[:, 0], q[:, 1]
+    design = np.column_stack([u * u, u * v, v * v, u, v, np.ones_like(u)])
+    try:
+        # full_matrices=True is load-bearing at exactly five points, which is
+        # the minimum this function accepts and therefore the case it must not
+        # get wrong. The design matrix is then 5x6 with a one-dimensional null
+        # space, and the economy SVD returns only five rows of Vt — so `vt[-1]`
+        # would be the smallest NON-zero singular vector rather than the null
+        # vector, and the fit silently returns a conic through none of the
+        # points. It cost three test failures that each looked like a different
+        # bug.
+        _, _, vt = np.linalg.svd(design, full_matrices=True)
+    except np.linalg.LinAlgError:
+        return None
+    a, b, c, d, e, f = vt[-1]
+
+    m = np.array([[a, b / 2.0], [b / 2.0, c]])
+    # det > 0 is exactly the ellipse condition for a conic; a hyperbola or a
+    # parabola through the points means the fit has failed and callers must be
+    # able to tell that from a bad ellipse.
+    if np.linalg.det(m) <= 0:
+        return None
+    try:
+        cen = np.linalg.solve(m, [-d / 2.0, -e / 2.0])
+    except np.linalg.LinAlgError:
+        return None
+    fc = f + (d / 2.0) * cen[0] + (e / 2.0) * cen[1]
+    w, vec = np.linalg.eigh(m)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        sq = -fc / w
+    if not np.all(np.isfinite(sq)) or np.any(sq <= 0):
+        return None
+    ax = np.sqrt(sq)
+    order = np.argsort(-ax)
+    ax, vec = ax[order], vec[:, order]
+    return {"centre": cen * s + mu,
+            "semi_major": float(ax[0] * s),
+            "semi_minor": float(ax[1] * s),
+            "angle": float(np.arctan2(vec[1, 0], vec[0, 0]))}
+
+
+def _ellipse_residual(ell: dict, pts: np.ndarray) -> np.ndarray:
+    """Radial distance from each point to the ellipse, in px, along its own ray.
+
+    Not the algebraic residual, and not `|norm - 1|` scaled by an axis either.
+    Both of those shrink as the ellipse gets thinner, so a near-degenerate
+    sliver reports tiny residuals for points nowhere near it and RANSAC then
+    prefers slivers to plates — which is exactly what happened, on 14 scattered
+    clutter points, before this was written properly. Scaling by the point's own
+    distance from the centre keeps the measure in honest pixels whatever the
+    eccentricity.
+    """
+    d = np.asarray(pts, float) - ell["centre"]
+    ca, sa = np.cos(-ell["angle"]), np.sin(-ell["angle"])
+    r0 = d[:, 0] * ca - d[:, 1] * sa
+    r1 = d[:, 0] * sa + d[:, 1] * ca
+    a, b = max(ell["semi_major"], 1e-9), max(ell["semi_minor"], 1e-9)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        norm = np.hypot(r0 / a, r1 / b)
+        radial = np.hypot(r0, r1) * np.abs(norm - 1.0) / np.maximum(norm, 1e-9)
+    return np.where(np.isfinite(radial), radial, np.inf)
+
+
+def ellipse_candidates(frame: np.ndarray, dets: np.ndarray | None = None,
+                       top: int = 20, max_dets: int = 40,
+                       dark_max: float = 0.45,
+                       radius_band: tuple[float, float] = (28.0, 150.0),
+                       min_inliers: int = 5, tol_px: float = 2.5,
+                       min_axis_ratio: float = 0.35, loose_mult: float = 4.0,
+                       require_hub: bool = True,
+                       hub_frac: float = 0.80) -> list[dict]:
+    """Rim-constellation hypotheses for a plate with >= 5 stickers, by RANSAC.
+
+    Same output contract as `candidates` — a list of dicts with `rim`, `hub`,
+    `circumradius`, `centre` and `score` — so `seed_frame` groups, shortlists
+    and trial-tracks these exactly as it does triples, and every measured thing
+    in that function keeps applying. Two fields mean something different and the
+    difference is deliberate:
+
+    * `rim` holds however many inliers were found, not three.
+    * `circumradius` is the **semi-major axis**, not the mean marker radius. It
+      is the same quantity for an untilted plate and a tilt-invariant one
+      otherwise, which is what `seed_frame`'s size grouping wants: a rigid plate
+      that tips should not migrate between size groups. See `fit_ellipse`.
+
+    Seeded by CIRCUMCIRCLE, and that choice is the whole of why this works
+    ----------------------------------------------------------------------
+    Sampling five points directly and fitting a conic is the obvious method and
+    it fails outright at realistic inlier ratios. On the synthetic scene in
+    `tests/test_markers.py` — 8 stickers among 33 detections, i.e. 24% inliers
+    — a clean five-point draw comes up once in 4,200 samples, so 400 trials
+    finds the plate about 9% of the time and quietly returns a sliver through
+    the clutter the rest of the time. That is not a tuning problem; five-point
+    models are simply brutal at 24%.
+
+    So hypotheses come from TRIPLES instead, whose circumcircle is the plate's
+    outline exactly when the plate is square-on and approximately when it is
+    not. Three of eight from 33 comes up once in 97 draws — a hundredfold
+    better — and every triple can be enumerated outright, so there is no RNG
+    and the result is reproducible frame to frame. `loose_mult` widens the
+    tolerance for that first circular pass, because a circle fitted to points
+    on a tilted ellipse is wrong by roughly the eccentricity times the radius;
+    the conic refit that follows immediately re-selects inliers at the full
+    `tol_px`.
+
+    `min_inliers` is 5 because that is what determines a conic, not because 5 is
+    a comfortable number — a 5-inlier hypothesis is an exact fit and proves
+    nothing, exactly as `track`'s docstring says of a two-marker similarity. The
+    score below therefore leads on inlier COUNT so that an 8-sticker plate
+    outranks any 5-point coincidence, and `seed_frame`'s trial tracking remains
+    the thing that actually decides.
+    """
+    if dets is None:
+        dets = detect(frame)
+    if len(dets) < min_inliers:
+        return []
+    pts = dets[:len(dets) if len(dets) < max_dets else max_dets, :2]
+    n = len(pts)
+    if n < min_inliers:
+        return []
+
+    seen: set[tuple] = set()
+    out: list[dict] = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            for k in range(j + 1, n):
+                cc = _circumcircle(pts[i], pts[j], pts[k])
+                if cc is None:
+                    continue
+                ccen, crad = cc
+                if not (radius_band[0] <= crad <= radius_band[1]):
+                    continue
+                d = np.hypot(*(pts - ccen).T)
+                loose = np.nonzero(np.abs(d - crad) <= loose_mult * tol_px)[0]
+                if len(loose) < min_inliers:
+                    continue
+                key = tuple(loose.tolist())
+                if key in seen:
+                    continue
+                seen.add(key)
+                ell = fit_ellipse(pts[loose])
+                if ell is None:
+                    continue
+                if not (radius_band[0] <= ell["semi_major"] <= radius_band[1]):
+                    continue
+                if ell["semi_minor"] / ell["semi_major"] < min_axis_ratio:
+                    continue
+                inl = np.nonzero(_ellipse_residual(ell, pts) <= tol_px)[0]
+                if len(inl) < min_inliers:
+                    continue
+                got = _ellipse_hypothesis(
+                    frame, dets, pts, inl, radius_band, min_axis_ratio,
+                    dark_max, require_hub, hub_frac)
+                if got is not None:
+                    out.append(got)
+
+    # Deduplicate on the final inlier set: several triples of the same plate
+    # converge on it, and without this the shortlist `seed_frame` trial-tracks
+    # fills up with one constellation repeated.
+    best: dict[tuple, dict] = {}
+    for c in out:
+        key = tuple(sorted(map(tuple, np.round(c["rim"], 3).tolist())))
+        if key not in best or c["score"] > best[key]["score"]:
+            best[key] = c
+    ranked = sorted(best.values(), key=lambda c: -c["score"])
+    return ranked[:top]
+
+
+def _circumcircle(p: np.ndarray, q: np.ndarray,
+                  r: np.ndarray) -> tuple[np.ndarray, float] | None:
+    """Centre and radius of the circle through three points, or None if collinear."""
+    ax, ay = float(p[1]), float(p[0])
+    bx, by = float(q[1]), float(q[0])
+    cx, cy = float(r[1]), float(r[0])
+    d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+    if abs(d) < 1e-9:
+        return None
+    a2, b2, c2 = ax * ax + ay * ay, bx * bx + by * by, cx * cx + cy * cy
+    ux = (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d
+    uy = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d
+    cen = np.array([uy, ux])
+    return cen, float(np.hypot(ay - uy, ax - ux))
+
+
+def _ellipse_hypothesis(frame, dets, pts, inl, radius_band, min_axis_ratio,
+                        dark_max, require_hub, hub_frac) -> dict | None:
+    """Refit on the full inlier set and package it like a `candidates` entry."""
+    # The triple only located the hypothesis; refitting on every inlier is what
+    # makes per-sticker placement error average down instead of propagating
+    # from whichever three happened to be picked.
+    ref = fit_ellipse(pts[inl])
+    if ref is None or not (radius_band[0] <= ref["semi_major"] <= radius_band[1]):
+        return None
+    # `min_axis_ratio` is about cos(70 degrees), i.e. the plate would have to be
+    # more than 70 degrees out of the camera's plane to be refused. That is well
+    # past the point this module measures anything useful — see `fit_ellipse` on
+    # where the affine argument fails — so it costs nothing real, and it is what
+    # keeps near-degenerate slivers from hoovering up scattered clutter.
+    if ref["semi_minor"] / ref["semi_major"] < min_axis_ratio:
+        return None
+    if _interior_mean(frame, pts[inl]) > dark_max:
+        return None
+    d = np.hypot(*(pts - ref["centre"]).T)
+    near = np.nonzero(d < hub_frac * ref["semi_minor"])[0]
+    hub = pts[near[np.argmin(d[near])]] if len(near) else None
+    if require_hub and hub is None:
+        return None
+    resid = float(np.mean(_ellipse_residual(ref, pts[inl])))
+    bright = float(dets[inl, 2].mean()) if dets.shape[1] > 2 else 1.0
+    return {"rim": pts[inl], "hub": hub,
+            "circumradius": float(ref["semi_major"]),
+            "centre": ref["centre"],
+            "axis_ratio": float(ref["semi_minor"] / ref["semi_major"]),
+            "score": len(inl) * bright * float(np.exp(-resid / 2.0))}
+
+
 def plate_radius_near(frame: np.ndarray, centre: np.ndarray,
                       circumradius: float) -> tuple[float, float, int, float]:
     """Detect the plate rim in a window around a known constellation.
@@ -581,8 +913,30 @@ def _suppress(dets: np.ndarray, static: np.ndarray,
 
 def seed_frame(stack: np.ndarray, n_sample: int = 30,
                max_trials: int = 12, per_group: int = 4,
-               dets_all: list[np.ndarray] | None = None) -> tuple[int, dict, tuple]:
+               dets_all: list[np.ndarray] | None = None,
+               layout: str = "auto") -> tuple[int, dict, tuple]:
     """Find the constellation to track, and the frame to take its shape from.
+
+    `layout` picks the hypothesis generator and nothing else — grouping,
+    shortlisting and trial-tracking below are common to both, so everything
+    C21 and C23 measured about hypothesis SELECTION keeps applying whichever
+    is used.
+
+    * `"triangle"` — `candidates`, three rim stickers ~120 degrees apart. The
+      layout every capture up to and including 2026-08-03 was shot with.
+    * `"ellipse"` — `ellipse_candidates`, five or more anywhere on the rim.
+    * `"auto"` (default) — try `triangle` and fall back to `ellipse` when it
+      finds nothing. **The order matters and it is the conservative one:** an
+      8-sticker plate cannot produce an admissible triple, so it falls through,
+      while a 3-sticker plate cannot produce a 5-point conic, so it never
+      reaches the fallback. Existing captures therefore take exactly the path
+      they took before C26, which is what keeps the nine of them unmoved.
+
+      The fallback is on an EMPTY candidate list rather than on a quality
+      comparison, deliberately. Ranking a triple against a conic would need a
+      merit that spans two different models, and `_trial_merit` is explicitly
+      not that — it is calibrated on how well one hypothesis tracks, not on how
+      well two families do.
 
     Returns `(index, constellation, plate)`, where `plate` is
     `plate_radius_near`'s `(centre_y, centre_x, radius_px, score)`. The plate is
@@ -625,15 +979,26 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30,
     per = ([detect(stack[i]) for i in idx] if dets_all is None
            else [dets_all[i] for i in idx])
     static = _static_from(per)
-    pool = []
-    for i, dets in zip(idx, per):
-        for c in candidates(stack[i], dets=_suppress(dets, static)):
-            pool.append((i, c))
+
+    def gather(gen):
+        got = []
+        for i, dets in zip(idx, per):
+            for c in gen(stack[i], dets=_suppress(dets, static)):
+                got.append((i, c))
+        return got
+
+    if layout not in ("auto", "triangle", "ellipse"):
+        raise ValueError(f"layout must be auto, triangle or ellipse, not {layout!r}")
+    pool = gather(candidates) if layout in ("auto", "triangle") else []
+    if not pool and layout in ("auto", "ellipse"):
+        pool = gather(ellipse_candidates)
     if not pool:
         raise ValueError(
             "no sticker constellation found in any sampled frame. Either the "
-            "markers are not visible in this capture, or the plate is far "
-            "outside the 28-150 px radius band `candidates` searches."
+            "markers are not visible in this capture, the plate is far outside "
+            "the 28-150 px radius band searched, or there are too few stickers "
+            "for either layout — `candidates` needs three roughly 120 degrees "
+            "apart and `ellipse_candidates` needs five anywhere on the rim."
         )
 
     # Group by apparent size. The constellation is rigid, so the true one holds
@@ -750,7 +1115,12 @@ def _trial_merit(stack: np.ndarray, seed: int, model: dict,
     n_markers = np.asarray(trk["n_markers"])
     resid = np.asarray(trk["residual_px"])
     covered = float(np.isfinite(np.asarray(trk["centre"])[:, 0]).mean())
-    three = n_markers >= 3
+    # "Full" means every rim marker the model carries, which is 3 for a triangle
+    # and 5+ for an ellipse. The argument in the docstring above is about an
+    # EXACT fit proving nothing, and exactness is a property of the model's
+    # degrees of freedom rather than of the number three, so it transfers
+    # unchanged. With a triangle model this is `n_markers >= 3` as before.
+    three = n_markers >= int(trk.get("n_rim", 3))
     if not three.any():
         return 0.0
     r3 = float(np.nanmedian(resid[three]))
@@ -930,6 +1300,11 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
     n = len(stack)
     rim0 = model["rim"]
     local = rim0 - rim0.mean(axis=0)          # model coordinates, origin at centre
+    # `n_rim` is 3 for a triangle model and 5+ for an ellipse one. Everything
+    # below is written against it rather than against a literal 3, so the two
+    # layouts share one association loop; with three markers every expression
+    # here reduces to what it was before C26 and the tests pin that.
+    n_rim = len(local)
     model_r = float(np.hypot(*local.T).mean())
     max_angle_step = np.deg2rad(max_angle_step_deg)
 
@@ -940,6 +1315,11 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
     score = np.full(n, np.nan)
     hubs = np.full((n, 2), np.nan)
     resid = np.full(n, np.nan)
+    # Where each rim marker was actually SEEN, per frame, NaN where it was not.
+    # `conic_track` needs the observations rather than the fitted pose: the
+    # similarity has already absorbed foreshortening into its scale by the time
+    # it reports one, so refitting a conic to the fit would recover nothing.
+    matched = np.full((n, n_rim, 2), np.nan)
 
     for step in (1, -1):
         s, a, off = 1.0, 0.0, rim0.mean(axis=0)
@@ -966,13 +1346,15 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
             g = gate * min(gap, 4) + 0.25 * float(np.hypot(*vel))
 
             src_l, dst_l, used = [], [], set()
-            for m in range(3):
+            slot_l = []
+            for m in range(n_rim):
                 d = np.hypot(*(pts - pred[m]).T)
                 for j in np.argsort(d)[:3]:
                     if d[j] < g and int(j) not in used:
                         used.add(int(j))
                         src_l.append(local[m])
                         dst_l.append(pts[j])
+                        slot_l.append(m)
                         break
 
             ns = na = noff = None
@@ -1038,7 +1420,9 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
             angle[i] = na
             nmark[i] = nm
             resid[i] = r
-            score[i] = (nm / 3.0) * float(np.exp(-r / 2.0))
+            score[i] = (nm / n_rim) * float(np.exp(-r / 2.0))
+            for slot, pt in zip(slot_l, dst_l):
+                matched[i, slot] = pt
 
             circum = ns * model_r
             d = np.hypot(*(pts - c).T)
@@ -1054,7 +1438,55 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
 
     return {"centre": centre, "scale": scale, "angle": angle,
             "n_markers": nmark, "score": score, "hub": hubs,
-            "residual_px": resid, "circumradius_px": scale * model_r}
+            "residual_px": resid, "circumradius_px": scale * model_r,
+            "matched": matched, "n_rim": n_rim}
+
+
+def conic_track(trk: dict, min_markers: int = 5) -> dict:
+    """Refit a conic to the markers seen in each frame. C26.
+
+    Returns `centre` (N, 2), `semi_major_px` (N,), `axis_ratio` (N,) and
+    `n_used` (N,), all NaN in frames where fewer than `min_markers` rim markers
+    were matched. Callers fall back to the similarity pose there rather than
+    reaching for a worse conic — see `bar_path`.
+
+    This exists because `track` cannot supply what it needs. The similarity fit
+    has four degrees of freedom and cannot represent foreshortening, so a
+    tilting plate is reported as a shrinking one and `circumradius_px` carries
+    the tilt straight into `m_per_px_t`. Synthetically that is -11.2% at 40
+    degrees of tilt against +0.09% for the semi-major axis, so on a lift where
+    the plate tips this is the larger of the two errors this module has. The
+    fix has to read the OBSERVED marker positions, which is why `track` now
+    records `matched`.
+
+    `axis_ratio` is the diagnostic that makes the assumption falsifiable: it is
+    cos(tilt) under an affine camera, so a clip whose ratio wanders far from 1
+    is one where the plate left its plane and where `fit_ellipse`'s affine
+    argument — and therefore the scale it produces — is on thinner ice. It is
+    reported rather than gated, because no capture yet exists to set a gate on.
+    """
+    m = np.asarray(trk["matched"], float)
+    n = len(m)
+    centre = np.full((n, 2), np.nan)
+    semi = np.full(n, np.nan)
+    ratio = np.full(n, np.nan)
+    used = np.zeros(n, int)
+    if m.ndim != 3 or m.shape[1] < min_markers:
+        return {"centre": centre, "semi_major_px": semi,
+                "axis_ratio": ratio, "n_used": used}
+    for i in range(n):
+        pts = m[i][np.isfinite(m[i]).all(axis=1)]
+        used[i] = len(pts)
+        if len(pts) < min_markers:
+            continue
+        ell = fit_ellipse(pts)
+        if ell is None:
+            continue
+        centre[i] = ell["centre"]
+        semi[i] = ell["semi_major"]
+        ratio[i] = ell["semi_minor"] / ell["semi_major"]
+    return {"centre": centre, "semi_major_px": semi,
+            "axis_ratio": ratio, "n_used": used}
 
 
 # -------------------------------------------------------------- calibration --
@@ -1125,7 +1557,8 @@ def calibration_report(stack: np.ndarray, seed: int, model: dict,
 
 # --------------------------------------------------------------- bar path --
 def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
-             diameter_m: float | None = None) -> dict:
+             diameter_m: float | None = None, layout: str = "auto",
+             sticker_diameter_m: float | None = None) -> dict:
     """Track the stickers and return the bar path in metres.
 
     The returned dict is deliberately key-compatible with `truth.bar_path` — it
@@ -1160,9 +1593,10 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
     # this is what lets `seed_frame` trial-track a shortlist (C23) for about
     # the price of the single track it used to do.
     dets_all = [detect(f) for f in stack]
-    seed, model, plate = seed_frame(stack, dets_all=dets_all)
+    seed, model, plate = seed_frame(stack, dets_all=dets_all, layout=layout)
     trk = track(stack, seed, model, static=model.get("static"),
                 dets_all=dets_all)
+    con = conic_track(trk)
 
     diam = diameter_m if diameter_m is not None else truth.plate_diameter(video)
     # The absolute scale, and note what it does NOT depend on: any per-capture
@@ -1172,11 +1606,37 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
     # run, but only to be reported in `calibration` as a cross-check — it sets
     # nothing. That is a deliberate reversal of `truth.py`, where the rim
     # detection IS the scale and a bad one is silent.
-    sticker_r_m = 0.5 * diam * STICKER_RATIO
+    # `sticker_diameter_m` is the tape-measured diameter of the circle the
+    # sticker CENTRES sit on. Given it, `STICKER_RATIO` is not consulted at all
+    # and the absolute scale stops being a constant transferred from another
+    # plate — which is the one limitation the module docstring calls its
+    # weakest. It is None on every capture to date because nobody had measured
+    # it; measuring it on a new plate is a tape measure, not code.
+    if sticker_diameter_m is not None:
+        sticker_r_m = 0.5 * float(sticker_diameter_m)
+    else:
+        sticker_r_m = 0.5 * diam * STICKER_RATIO
     m_per_px_seed = sticker_r_m / model["circumradius"]
     cal = calibration_report(stack, seed, model, trk, plate, m_per_px_seed)
+    cal["scale_from_tape"] = sticker_diameter_m is not None
+    cal["layout"] = "ellipse" if trk.get("n_rim", 3) >= 5 else "triangle"
+    cal["axis_ratio_median"] = (float(np.nanmedian(con["axis_ratio"]))
+                                if np.isfinite(con["axis_ratio"]).any()
+                                else float("nan"))
 
     cen = trk["centre"]
+    circum_px = np.asarray(trk["circumradius_px"], float)
+    # Where the conic could be refit, it supersedes the similarity for BOTH the
+    # centre and the scale. Frames with too few markers keep the similarity
+    # pose, so occlusion degrades to the old behaviour rather than to a hole.
+    # On a three-sticker capture `conic_track` returns all-NaN and this is a
+    # no-op, which is what keeps the nine existing captures bit-identical.
+    use = np.isfinite(con["centre"][:, 0]) & np.isfinite(con["semi_major_px"])
+    if use.any():
+        cen = cen.copy()
+        cen[use] = con["centre"][use]
+        circum_px = circum_px.copy()
+        circum_px[use] = con["semi_major_px"][use]
     ok = np.isfinite(cen[:, 0])
     ref = np.nanmax(cen[:, 0])            # lowest point in frame = bar at floor
     refx = float(np.nanmedian(cen[:, 1]))
@@ -1189,7 +1649,7 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
     # frame. Distances are measured from the frame centre, which stands in for
     # the principal point — see the module docstring's Limits.
     with np.errstate(invalid="ignore", divide="ignore"):
-        m_per_px_t = sticker_r_m / trk["circumradius_px"]
+        m_per_px_t = sticker_r_m / circum_px
     cy0, cx0 = stack.shape[1] / 2.0, stack.shape[2] / 2.0
     x_m = (cen[:, 1] - cx0) * m_per_px_t
     h_m = -(cen[:, 0] - cy0) * m_per_px_t
@@ -1219,7 +1679,9 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
         "hub": trk["hub"],
         "centre_px": cen,
         "residual_px": trk["residual_px"],
-        "circumradius_px": trk["circumradius_px"],
+        "circumradius_px": circum_px,
+        "axis_ratio": con["axis_ratio"],
+        "n_rim": int(trk.get("n_rim", 3)),
         "calibration": cal,
         "sticker_radius_m": sticker_r_m,
     }

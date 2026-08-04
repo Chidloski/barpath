@@ -1023,6 +1023,79 @@ two-marker fit is exact and scores 0.00 px.
 identically — coverage 1.000, residual p95 1.13–1.85 px. Full marker suite 47
 passed. `analysis/39_marker_seeding.png`; 39 is taken, next free is 40.
 
+### C26 — a conic fit, so a plate can carry more than three stickers (2026-08-04)
+
+**Built for footage that does not exist yet, which is unusual here and is
+stated up front.** The owner is stickering the next plate with **eight** rim
+markers, and the shipping seeder cannot admit them: `candidates` enumerates
+triples and `_triangle_ok` wants near-equilateral, but eight evenly spaced has
+no admissible triple — the best is every third one at 135/135/90 degrees, chord
+spread **0.255 against a tolerance of 0.25**. It misses by 0.005 and the
+candidate list comes back empty, so without this the session would have produced
+another untrackable capture.
+
+*What was added.* `fit_ellipse` (five-point conic), `ellipse_candidates` (a
+seeder with the same output contract as `candidates`, so `seed_frame`'s grouping
+and C23's trial-tracking apply unchanged), `conic_track` (a per-frame refit),
+and `layout=` on `seed_frame`/`bar_path`. `track` now works for any number of
+rim markers rather than exactly three.
+
+*What it buys, synthetically.* Two separate terms, and they are not equally
+interesting:
+
+| term | 3-marker centroid | 8-marker conic |
+|---|---|---|
+| centre, real bench spacing 129/102/129 | 7.38 px | **1.71 px** |
+| centre, real squat spacing 94.9/111.4 | 13.55 px | **1.71 px** |
+| scale at 40 deg of tilt | **-11.23 %** | +0.09 % |
+| perspective, ideal 120 deg spacing, 20 deg tilt | **0.86 px** | 1.72 px |
+
+**The first two rows are one number twice, and that is the finding.** The
+conic's centre error is 1.71 px on both plates because it does not depend on the
+spacing at all — it is the perspective floor of the last row, arriving unchanged.
+The centroid's error is the spacing term *added on top of* its own 0.86 px floor,
+and it grows 7.38 -> 13.55 as the plate gets worse. That is why the same code
+refereed bench and could not referee squat.
+
+**Read the last row.** The conic is *not* a perspective fix and is twice as bad
+on that term — the ellipse centre is not the projected circle centre under true
+perspective, and both estimators are biased outward. So on a plate stickered at
+exactly 120 degrees this change would make the centre slightly WORSE. What it
+removes is the SPACING assumption, which on real plates dominates that
+difference, and the TILT dependence of the scale, which is larger still and has
+no workaround on three markers.
+`test_the_conic_centre_is_NOT_a_perspective_fix` pins the limitation so it
+cannot drift into a claim.
+
+*Two things worth carrying forward.* The physical requirement for the new layout
+is a common **radius**, not even spacing — the opposite of what C23 told the
+owner for the three-sticker plate, and easier with a tape. And
+`bar_path(sticker_diameter_m=...)` retires `STICKER_RATIO` whenever the sticker
+circle has actually been measured, which is the module's own stated weakest
+point.
+
+*Two bugs worth recording because both looked like something else.*
+`np.linalg.svd(..., full_matrices=False)` on a 5x6 design returns only five rows
+of `Vt`, so `vt[-1]` is the smallest NON-zero singular vector rather than the
+null vector — the fit silently returned a conic through none of the points, at
+exactly the five-point minimum, and surfaced as three unrelated test failures.
+And the first residual scaled by the semi-minor axis, so a near-degenerate
+sliver reported tiny distances for points nowhere near it and RANSAC preferred
+slivers to plates.
+
+*Seeding is by circumcircle, not by five-point RANSAC, and the arithmetic
+forced it.* At a realistic 24% inlier ratio a clean five-point draw comes up
+once in 4,200 samples, so 400 trials finds the plate ~9% of the time. Triples
+come up once in 97 and can be enumerated outright, so there is no RNG.
+
+**Ungated on real footage, and it must stay that way in the record until a
+capture exists.** Three points cannot determine a conic, so none of the nine
+captures held can regression-test any of this; the maths is gated synthetically,
+which CLAUDE.md permits for algebraic identities and nothing more. What IS
+gated on real captures is that the new path never runs on them —
+`test_the_conic_path_is_inert_on_a_three_sticker_capture`, plus `bench_95x2`
+still reading 29.02 cm of travel against C23's 29.0.
+
 ### C23 — the paired bench captures track; squat is blocked on the plate (2026-08-03)
 
 C21 removed three admission gates and the six 2026-08-03 captures still did not
@@ -1115,6 +1188,12 @@ plate rim. Their angular spacing is **94.9 / 111.4 / 153.7 degrees**, not
 **The cheapest fix is a tape measure, not code: re-sticker the squat plate at
 120 degrees.** That removes the `_triangle_ok` rejection and the bias together.
 Nothing in the reconstruction changes; this is the referee only.
+
+*Still a tape measure, but the wrong one — superseded by C26 above.* Eight
+stickers at a common radius, spaced however is convenient, removes both problems
+without the plate having to be even at all, and removes a third the conic path
+addresses and this entry does not mention: the 11.2% the similarity fit loses
+from the SCALE at 40 degrees of tilt.
 
 **Both squat captures were DELETED on the owner's instruction, 2026-08-03** —
 `squat_140x5` and `squat_150x5`, video and IMU log, four files. They were
