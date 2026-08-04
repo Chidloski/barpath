@@ -279,9 +279,43 @@ not. The true correlation peaks sit at **-6.37 s and -7.08 s, outside the
 it could see and that point happened to be one rep period late. Given the whole
 curve the true peaks win by **50% and 76%** (0.66 vs 0.44, 0.67 vs 0.38), so
 this was never the inherent ambiguity — it was a truncated search, and it was
-fixable. `SYNC_MAX_LAG_S` is 11.75 s now, the middle of a 10.00-13.50 s plateau
-measured over all eleven bench captures and the three deadlift controls, and a
-peak within one rep period of the boundary is **refused** rather than returned.
+fixable.
+
+**And the replacement is a starting point rather than a bound, because a
+constant would only have moved the cliff (C25 part 2).** `SYNC_MAX_LAG_S` is
+11.75 s, the middle of a 10.00-13.50 s plateau measured over all eleven bench
+captures and the three deadlift controls — but the sweep now WIDENS from there
+until the peak has a full rep period of curve beyond it, capped by how far the
+two records can slide and still share signal. That cap is a property of the
+recordings rather than a tuned number.
+
+The owner asked what happens to a capture whose lag is bigger still, and the
+answer was measured rather than argued: shift each bench video's clock by
+0-30 s and ask for the offset back, 121 trials.
+
+    variant                              ok   refused   SILENTLY WRONG
+    fixed 11.75 s                        39      70          12
+    widen until the peak is interior     71      32          18
+    ...plus the stability check          71      35          15
+    ...plus a 3-rep overlap floor        72      34          15
+
+So a fixed window does **not** merely refuse a bigger lag — twelve of those
+come back silently wrong — and the usable headroom was ~9 s rather than 11.75,
+`bench_92.5x4_3` refusing at a 2 s shift because its true lag of -7.08 leaves
+only 2 s of margin. Naive widening then buys correctness with silent errors,
+which is the wrong direction, so two guards pay it back: a peak found only by
+widening must survive one MORE widening, and a lag is scored only where the
+records share three rep periods.
+
+**Seven of the residual fifteen are `bench_92.5x2` alone.** Excluding it, fixed
+and adaptive both leave eight while correct answers roughly double — so what is
+left is a capture whose lag is not identifiable, not a search that is too
+narrow. It is a two-rep set, and it is the same capture whose true peak loses
+to a coincidence 13.6 s away. Not fixed, and not fixable by widening.
+
+Every capture's unshifted answer is bit-identical, which is what licensed
+shipping this: an interior peak is accepted exactly as a single fixed sweep
+would accept it, and none of the eleven takes the new path.
 *Evidence:* `metrics.bench_sync`, `tests/test_video_truth.py`.
 
 Touch minus window-centre, per rep, corrected:

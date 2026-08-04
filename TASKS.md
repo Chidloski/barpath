@@ -1308,13 +1308,15 @@ and the three deadlift controls:
 | > 13.50 | `bench_92.5x2` prefers a spurious peak at **+13.59 s** (0.44) over its true peak (0.37) |
 | >= 20 | `bench_90x4_2` and `bench_92.5x2` acquire fractional rivals and refuse |
 
-`SYNC_MAX_LAG_S = 11.75`, the middle of that plateau. The deadlift control is
-unmoved across the whole sweep — 3, 14 and 18 ms against the landings/impacts
-fit — so the licence for trusting a bench number is intact.
+`SYNC_MAX_LAG_S = 11.75`, the middle of that plateau, and as of part 2 below
+it is where the sweep STARTS rather than where it stops. The deadlift control
+is unmoved across the whole sweep — 3, 14 and 18 ms against the landings/
+impacts fit — so the licence for trusting a bench number is intact.
 
 *And a guard, because widening does not stop the next capture landing outside.*
-The peak must have a full rep period of curve beyond it on both sides or
-`bench_sync` raises. The reason is the acceptance rule rather than the peak:
+The peak must have a full rep period of curve beyond it on both sides. Under
+part 2 below this is what triggers widening; with an explicit `max_lag_s` there
+is nowhere to widen to, so `bench_sync` raises. The reason is the acceptance rule rather than the peak:
 this method accepts because every rival above `RIVAL_FRAC` sits a whole rep
 away, and a peak within one period of the boundary is one whose ±1 P rival is
 off the end of the sweep and cannot be examined — accepting there is accepting
@@ -1364,6 +1366,72 @@ calls the whole-clip agreement "the closest this project has come to an
 independent confirmation of anything", which C24 retracted in CLAUDE.md and
 `analysis/README.md` but not in that docstring. C25 did not touch it — it is
 C24's leftover, not something this change falsified.
+
+### C25 part 2 — the search window is a starting point, not a bound (2026-08-04)
+
+Raised by the owner against part 1: *"you've just hardcoded the fix, what
+happens if there's a new set with bigger lag."* Correct. Part 1 claimed the
+boundary guard turned a bigger lag into a refusal rather than a wrong number,
+and that claim had not been measured.
+
+*Measured.* Shift each bench video's clock by 0-30 s and ask `bench_sync` for
+the offset back — 121 trials over the eleven bench captures:
+
+| variant | ok | refused | SILENTLY WRONG |
+|---|---|---|---|
+| fixed 11.75 s (part 1, `c085599`) | 39 | 70 | **12** |
+| widen until the peak is interior | 71 | 32 | **18** |
+| ...plus the stability check | 71 | 35 | **15** |
+| ...plus a 3-rep overlap floor | **72** | 34 | **15** |
+
+Two things part 1 got wrong. Silent failures survive a fixed window — twelve of
+them. And the usable headroom is **~9 s, not 11.75**: `bench_92.5x4_3` already
+refuses at a 2 s shift, because its true lag of -7.08 s leaves 2 s of margin
+against its own 2.68 s cadence. The constant was a bet that no future capture
+exceeds ~9 s.
+
+*The fix.* `max_lag_s` defaults to `None`, meaning start at `SYNC_MAX_LAG_S`
+and widen by `WIDEN_FACTOR` until the peak is interior, capped by `reach` — how
+far the two records can slide and still share `need` seconds. `reach` is
+derived from the two recordings, so the only tuned quantity left is where the
+search begins, and beginning in the wrong place now costs time rather than
+correctness.
+
+*Naive widening is the wrong trade and the table says so:* 39 -> 71 correct at
+the price of 12 -> 18 silent errors. A refusal is recoverable and a wrong
+number is not, so two guards pay it back.
+
+  - **Stability.** A peak found only by widening must survive one MORE
+    widening, or it was never a peak — it was the best point inside an
+    arbitrary box, and a bigger box prefers somewhere else. Applied ONLY when
+    widening happened, which is what keeps the eleven captures bit-identical:
+    a peak interior to the starting window is accepted exactly as before.
+  - **Overlap.** A lag is scored only where the records share
+    `MIN_OVERLAP_REPS` rep periods. You cannot identify a periodic alignment
+    from less signal than a few periods, and at the old flat 2 s floor a clip
+    and its log match on noise. That is where the far-field failures were.
+
+*What is left, and it is not a search problem.* Seven of the residual fifteen
+are `bench_92.5x2` alone. **Excluding it, fixed and adaptive both leave eight**
+while correct answers roughly double. It is a two-rep set — the least periodic
+structure in the corpus — and it is the same capture whose true peak (0.37)
+loses to a coincidence 13.6 s away (0.44), which is what caps the plateau in
+part 1. Its lag is not identifiable once perturbed at all. Not fixed.
+
+*The non-regression that licensed shipping it.* Every capture's unshifted
+answer is bit-identical, asserted as an identity between the adaptive default
+and a pinned sweep rather than by re-listing offsets — all eleven have an
+interior peak, so none takes the new path.
+
+*Gated by* `tests/test_video_truth.py`:
+`test_a_lag_past_the_starting_window_is_found_by_widening` (a lag is
+manufactured past the window by shifting the clock, since no capture held has
+one) and `test_widening_does_not_disturb_a_peak_already_inside_the_window`.
+
+*The durable lesson.* A constant wide enough for every capture you hold is
+still a bet about the one you do not, and "it would refuse rather than lie" is
+a claim about behaviour — it has to be measured like any other. Both C25 parts
+began with a number nobody had tested against data.
 
 ---
 
