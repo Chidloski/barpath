@@ -1585,3 +1585,42 @@ the kind C25 had to make on bench has not been run here. And nothing about
 whether a landing found on marker footage falls at the same instant as one on
 template footage: these are the first captures that COULD answer it, and it is
 undone rather than blocked.
+
+---
+
+## 43 — the ceiling on constant error models (C28, 2026-08-04)
+
+Branch `c28-imu-video-oracle`. `src/oracle.py`. Four panels, and the top-left
+one is the answer to "how close can the IMU be fitted to the video".
+
+**Top left — the ladder.** Blue is each model fitted ON the capture it is scored
+on, so it is a CEILING no estimator can beat. Red is leave-one-out. The null is
+the dashed line at ~1.6 cm. Read the gap between the bars, not the blue bar:
+fifteen physically-named parameters fitted against the answer reach 1.23 cm, and
+every one of them collapses to 3.3-4.6 when asked to transfer to a capture it
+was not fitted on. **P3's error is not a constant in any frame.**
+
+**Top right — which frame the pause bias belongs in.** `calibrate.accel_bias`
+subtracts a world-frame constant; its own docstring says the bias is body-frame.
+Correcting that helps deadlift (orange, 5 of 6) and hurts bench (purple, 10 of
+11, including `bench_90x4_2` going 0.64 -> 2.32). That split is the figure's
+second finding: the pause residual is a MIXTURE of a world-frame tilt leak and a
+body-frame offset, so neither pure correction is right.
+
+**Bottom left — separating them needs the two holds to DIFFER.** Recovered
+body-frame |b| against how far the wrist rotated between the opening and closing
+C3 holds. Above ~30 degrees it lands on P4's table measurement of 0.0245 m/s^2
+(the blue line) — the first on-wrist measurement of the accelerometer bias.
+Below, the solve is amplifying hold-mean noise by 4-16x and returns 0.1-0.4.
+
+**Bottom right — and two holds can never be enough.** The third singular value
+of `R_open - R_close` is zero at every separation, because
+`R_1 - R_2 = R_1(I - R_1^T R_2)` and a rotation fixes its own axis. Rank <= 2,
+exactly, forever. The body-bias component along the axis the wrist turns about
+is unobservable from two postures. **Three holds at least 30 degrees apart close
+it** — a five-second change to the capture protocol, no code.
+
+**What it does not show.** Nothing about time-varying error, which is what is
+left once this family is excluded, and nothing about whether the marker referee
+itself is right in absolute scale — C27's open sticker-circle measurement is
+upstream of every number here, though `beats_null` is nearly invariant to it.

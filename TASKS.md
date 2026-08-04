@@ -1023,6 +1023,104 @@ two-marker fit is exact and scores 0.00 px.
 identically — coverage 1.000, residual p95 1.13–1.85 px. Full marker suite 47
 passed. `analysis/39_marker_seeding.png`; 39 is taken, next free is 40.
 
+### C28 — the ceiling on constant error models, and why two holds cannot separate them (2026-08-04)
+
+Branch `c28-imu-video-oracle`, per the reconstruction-modules rule. The owner
+asked how close the IMU can be brought to C27's marker paths using only steps
+that would be logical as error mitigation. **Answer: to about the flat-line
+null, and nothing that gets there transfers.** `src/oracle.py`, `analysis/43`.
+
+*The method, and the discipline that makes it evidence.* Every parameter names
+a real defect and its FITTED VALUE is checked against what that defect is known
+to be — B2's |d| = 21/64/60 cm against a real 10-15 is the cautionary case.
+Every model is also fitted leave-one-out, because an error model is a property
+of the watch and should transfer while an absorber should not. All parameters
+are constant over the capture; per-rep bases reach any residual you like and
+B3's oracle already showed that means nothing.
+
+    model                        ceiling   leave-one-out
+    baseline                      4.00          4.00
+    +bias                         4.00          4.00
+    +tilt                         2.00          4.07
+    +tilt+scale                   2.00          3.26
+    +tilt+scale+lever             1.45          4.55
+    +tilt+gravref                 1.83          3.57
+    all five (15 params)          1.23          3.47
+
+**The null is 1.54-1.68 cm.** Fifteen parameters fitted directly against the
+answer reach 1.23; `bias+tilt` at 2.00 is still worse than a straight line. And
+nothing generalises — every model collapses to 3.3-4.6 under LOO and two make
+the held-out capture worse, `bias+tilt` sending `deadlift_185x3` to 21.39 cm.
+
+**This reproduces B2 independently, on new data and a better referee.** `lever`
+fits at 10.6 / 10.0 / 21.7 cm — plausible, unlike B2's 21/64/60, which is worth
+noting — and STILL loses under LOO, 4.55 against a 4.00 baseline. C28 initially
+speculated B2's conclusion might have been an artefact of the lockout-broken
+referee C12 later found. It was not. B2 stands.
+
+*The conclusion is structural:* **P3's error is not a constant in any frame.**
+Not body, not world, not a scale, not a lever arm. The whole constant-parameter
+family caps out at the null, so no estimator for any of them was ever going to
+pay off, and that is the thing this entry exists to save the next agent from.
+
+## Two findings inside the negative result
+
+**1. `calibrate.accel_bias` subtracts in the wrong frame — on deadlift only.**
+It measures the mean world acceleration over the stillest pre-set second and
+subtracts it as a WORLD-frame constant, while its own docstring says the bias
+is fixed in the BODY frame. Those agree only while the watch does not move, and
+P3 is that the forearm rotates. Rotating it properly: **deadlift better on 5 of
+6** (median 8.21 -> 4.61, `deadlift_185x3` 11.44 -> 3.82), **bench worse on 10
+of 11** (median 1.88 -> 2.99, `bench_90x4_2` 0.64 -> 2.32 destroying the best
+capture in the project).
+
+**Not proposed as a change.** A fix that halves deadlift and doubles bench is
+not a fix; it is evidence that the pause residual is a MIXTURE, which is what
+C6's `anchor_tilt` docstring already says it is — "the tilt leak plus the
+body-frame accel bias rotated into the world".
+
+**2. Two still holds can NEVER separate those two terms. This is a theorem, not
+a conditioning problem.** The C3 phase column gives two holds at two postures,
+which looks like six equations for six unknowns:
+
+    r = tau + R . b        (tau world-frame tilt leak, b body-frame bias)
+    r_open - r_close = (R_open - R_close) . b
+
+But `R_open - R_close = R_open (I - R_open^T R_close)`, and the relative
+rotation fixes its own axis, so `(I - Delta) n = 0` identically. **The
+difference of two rotation matrices is always rank <= 2, exactly**, verified at
+5-179 degrees of separation with the third singular value at machine zero every
+time. The body-bias component along the axis the wrist turns about is
+unobservable from two holds, permanently.
+
+C28 met this as |b| = 1.8e12 m/s^2 out of `np.linalg.lstsq(..., rcond=None)`,
+which divides by the zero singular value rather than declining it. Truncating to
+the observable plane gives the minimum-norm answer, and there the method WORKS
+and validates against P4:
+
+    rel. rotation between holds   noise amplification   recovered |b|
+    3.6 deg                            16.1x               0.417
+    6.6 / 13.8 deg                    8.7 / 4.2x       0.104 / 0.339
+    33-150 deg                        0.5-1.8x           0.008-0.023
+
+Above ~30 degrees the recovered bias lands on P4's table value of **0.0245
+m/s^2** — the first time the accelerometer bias has been measured ON THE WRIST
+rather than on a table. Below it, it recovers noise.
+
+**Capture protocol, and it costs five seconds:** hold the bar still at THREE
+deliberately different wrist postures before the set, ~1.5 s each, at least 30
+degrees apart. Three pairwise differences have three different null axes, so
+only b = 0 lies in all of them: the decomposition becomes fully observable and
+well-conditioned. A tape-measure-class change, no code.
+
+*Note what this does NOT buy.* Even where the decomposition succeeds it does not
+improve horizontal rms, because — see the ladder — a correctly measured constant
+bias is not what P2 is. It is worth having as a measurement of the sensor, not
+as a correction.
+
+*Evidence:* `analysis/43_imu_video_oracle.png`, `src/oracle.py`,
+`tests/test_oracle.py` (10 passed). 43 is taken, next free is 44.
+
 ### C27 — the conic path meets real 8-sticker footage, and P2 gets a referee (2026-08-04)
 
 Three 8-sticker deadlifts arrived — `deadlift_160x6_1`, `_2`, `deadlift_185x3`,

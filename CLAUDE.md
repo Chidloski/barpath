@@ -875,6 +875,37 @@ off-pipeline version. Note the "66–253 cm" figure in the A4 section of
 `analysis/README.md` predates the acceleration sign fix; it is 3.4–35.9 cm now.
 
 **P3 — The error sits at rep frequency, where no filter or line can reach it.**
+
+**C28 measured the ceiling on 2026-08-04 and it is at the null (branch
+`c28-imu-video-oracle`, not landed).** Every physically-named CONSTANT error
+model — body-frame accel bias, world-frame tilt, accelerometer scale, the step-6
+lever arm `d`, and an attitude error growing with |a| — fitted directly against
+C27's marker paths, i.e. against the answer:
+
+    model                        ceiling   leave-one-out
+    baseline                      4.00          4.00
+    +tilt                         2.00          4.07
+    +tilt+scale+lever             1.45          4.55
+    all five (15 params)          1.23          3.47
+
+The flat-line null is 1.54-1.68 cm. **Fifteen parameters fitted on the answer
+reach 1.23, and nothing transfers** — every model collapses to 3.3-4.6 under
+leave-one-out and two make the held-out capture worse. So **P3's error is not a
+constant in ANY frame**, and no estimator for one was going to pay off. This
+also reproduces B2 independently: `lever` fits at a plausible 10.6/10.0/21.7 cm
+here, unlike B2's 21/64/60, and still loses under LOO.
+
+Two findings inside that negative result, both in TASKS.md C28. `calibrate.accel_bias`
+subtracts a body-frame quantity in the WORLD frame, which helps deadlift on 5 of
+6 and hurts bench on 10 of 11 — a mixture, exactly as C6's `anchor_tilt`
+docstring says. And **two still holds can never separate the tilt leak from the
+accel bias**: `R_open - R_close = R_open(I - Delta)` and the relative rotation
+fixes its own axis, so the difference of two rotation matrices is always rank
+<= 2, exactly. Where the holds differ by more than ~30 degrees the observable
+part recovers P4's table value of 0.0245 m/s^2 — the first on-wrist measurement
+of the accelerometer bias. **Three holds at different postures would close it,
+which is a five-second capture change and no code.**
+
 The accel bias is fixed in the *body* frame and the forearm rotates through the
 rep, so in the world frame that error is periodic **at rep frequency** — the
 one shape a per-rep line cannot separate from real motion.
