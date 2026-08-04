@@ -83,8 +83,10 @@ fixed in code, just not by a tolerance: `markers.fit_ellipse` fits the conic a
 circle actually projects to, which needs five points and asks nothing about how
 they are spaced. The instruction to the owner changes too — **eight** stickers
 at a common radius, spaced however is convenient, which is an easier tape
-measurement than three at 120 degrees. Ungated on real footage until a capture
-exists. See TASKS.md C26.
+measurement than three at 120 degrees. **Gated on real footage 2026-08-04 by
+C27** — three 8-sticker deadlifts, 99.2-100% coverage — which found four defects
+in the surrounding code while the conic maths itself held. See TASKS.md C26 and
+C27.
 
 ### 2. `bench_92.5x4_1`'s -6.1%
 
@@ -113,33 +115,48 @@ keeps rising.
 squat to truth" was written before this session. Stepping back would not have
 helped: the squat footage was fine and the plate was the problem.
 
-1. **Put EIGHT stickers on the squat plate, all the same distance in from the
+1. **Measure the STICKER-CIRCLE diameter of the 8-sticker plate with a tape**,
+   centre-to-centre across, and put it in `truth`/`bar_path(sticker_diameter_m=)`.
+   Promoted to the top on 2026-08-04 by C27: the conic path is now gated on
+   three real deadlifts and the ONE thing left open is the absolute scale, which
+   still rides on `STICKER_RATIO = 0.858` borrowed from the old three-sticker
+   plate. Against it the video reads 4.6-9.3% below the reconstruction. A ratio
+   of ~0.92 would close it exactly — do not adopt that by fitting it. Thirty
+   seconds with a tape settles which instrument is right about per-rep ROM.
+
+2. **Put EIGHT stickers on the SQUAT plate, all the same distance in from the
    rim, then re-shoot a squat.** Rewritten 2026-08-04 by C26; it used to say
    three at 120 degrees. Spacing no longer matters — measure the radius, not the
-   angles. This is the whole squat problem and still the highest value on the
-   list, and it is now also the first footage that can gate the conic path,
-   which nothing held can test.
-2. **A capture WITH the session running and 30+ s of wrist-down.** Unchanged.
+   angles. Squat is now the only lift with no external horizontal check at all;
+   the conic path itself is proven on deadlift as of C27, so this is a capture
+   problem rather than a code one.
+3. **A capture WITH the session running and 30+ s of wrist-down.** Unchanged.
    C16 restored the workout session; every capture between C7 and C16 is
    suspect.
-3. **A bench single.** C5's singleton rule is predicted to segment onto the
+4. **A bench single.** C5's singleton rule is predicted to segment onto the
    unrack (`bench_92.5x2`'s unrack moves the bar 0.433 m against 0.295 and 0.239
    for its real reps), and a bench single **cannot be synced** by `bench_sync`
    at all, since the whole-rep-period rule needs a cadence.
-4. **A deadlift on marker footage.** All three deadlift captures are refereed by
+5. **A deadlift on marker footage.** All three deadlift captures are refereed by
    the plate template, which C12 showed is lost at lockout — 97-100% of
    top-of-travel frames below `GOOD_SCORE`. Markers do not have that failure.
    This is the single change that would most improve the numbers P2 is built on.
-   Eight stickers here too — see item 1 — and note this is also the only capture
-   that could ever check whether a landing found on marker footage falls at the
-   same instant as one on template footage, which C24 recorded as unrunnable
-   because all four marker captures are bench.
-5. **Tape the deadlift lockout height, and the wrist-to-bar offset `d`.** `d`
+   **DONE 2026-08-04 (C27) — three of them, 15 reps.** They track at 99.2-100%
+   coverage and gave P2 its first deadlift numbers measured through a referee
+   that does not fail at lockout. What remains from this item is the check C24
+   called unrunnable: whether a landing found on marker footage falls at the
+   same instant as one on template footage, against the deadlift sync's 13.5 ms.
+   Nothing blocks it now; it is simply undone.
+6. **Tape the deadlift lockout height, and the wrist-to-bar offset `d`.** `d`
    unblocks step 6, implemented and off by default purely for want of the
    number.
-6. **Measure the plates you actually film on**, and record which set was used.
-   `truth.PLATE_DIAMETER_M` and `CALIBRATED_SESSIONS` both depend on it, and
-   getting it wrong is worth 6% of every distance.
+7. **Measure the plates you actually film on**, and record which set was used.
+   `truth.PLATE_DIAMETER_M`, `CALIBRATED_SESSIONS` and now
+   `STICKER_PLATE_DIAMETER_M` all depend on it, and getting it wrong is worth 6%
+   of every distance. C27 added the third of those because the stickers went on
+   a 425 mm notched plate loaded OUTBOARD of the 445 mm bumper — so "which plate
+   is widest" and "which plate has the stickers" are different questions on a
+   deadlift, and only the first was being asked.
 
 ## Things that will bite you
 

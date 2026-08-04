@@ -130,6 +130,37 @@ PLATE_DIAMETER_M = {"bench": 0.425, "squat": 0.450, "deadlift": 0.445}
 CALIBRATED_SESSIONS = ("20260803",)
 CALIBRATED_DIAMETER_M = 0.450
 
+# The plate the STICKERS are on, which is not always the largest plate in shot,
+# and on a deadlift is not (C27, 2026-08-04). `plate_diameter` above answers
+# "what is the outline the template tracker sees", and for a deadlift that is
+# the 445 mm bumper because it is the widest thing on the bar. `markers.py`
+# asks a different question — how big is the disc the stickers were stuck to —
+# and on the 2026-08-04 session the answer is the 425 mm black notched plate
+# loaded OUTBOARD of the bumper. Owner, 2026-08-04: "one bumper plate of
+# diameter 44.5 and then black notched plates after with a diameter of 42.5".
+#
+# Using 445 there overstates every marker distance in the session by 4.7%. Note
+# the bar still starts at 22.25 cm off the ground — that is set by the bumper,
+# which is the plate carrying the load, and is unaffected by which plate the
+# stickers went on.
+STICKER_PLATE_DIAMETER_M = {"20260804": 0.425}
+
+
+def sticker_plate_diameter(name: str | Path) -> float:
+    """Diameter in metres of the plate the retroreflective stickers are on.
+
+    Defaults to `plate_diameter`, which is what every capture before
+    2026-08-04 implicitly assumed — `STICKER_RATIO` was calibrated through that
+    same call, so the two errors cancel there and must keep cancelling. Only a
+    session known to have stickered something other than the widest plate
+    appears in the table.
+    """
+    stem = Path(name).stem
+    for tag, diam in STICKER_PLATE_DIAMETER_M.items():
+        if tag in stem:
+            return diam
+    return plate_diameter(name)
+
 # Per-rep vertical range of motion, (floor, ceiling) in metres.
 #
 # The ceilings are measured for this lifter: bench 0.35 (0.32 typical), squat

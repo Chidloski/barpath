@@ -8,6 +8,7 @@
     python run.py --stages             # draw the pipeline stage by stage
     python run.py --rom                # per-rep vertical ROM against the bounds
     python run.py --v2rom              # C24: per-rep ROM on the paired benches
+    python run.py --dlconic            # C27: 8-sticker deadlifts, conic vs pipeline
     python run.py --anchors            # C6: attitude before and after a set
     python run.py --bias               # B6: constant-bias corrections vs the video
     python run.py --closure            # C11: vertical momentum, bench vs deadlift
@@ -287,6 +288,70 @@ def draw_rom() -> int:
     out = ROOT / "analysis" / "23_rom_bounds.png"
     plot.plot_rom_bounds(recon, video).savefig(out, dpi=105)
     print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_dl_conic() -> int:
+    """C27 — the three 8-sticker deadlifts: conic referee against the pipeline.
+
+    Writes `analysis/42_conic_deadlift.png`. Everything here is measured with
+    `layout="auto"`, i.e. the path a caller gets by default, because C27's
+    whole point is that `auto` was silently taking the wrong one.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import markers, metrics, plot
+
+    raw = ROOT / "data_v2" / "raw"
+    data: dict = {}
+    for path in sorted(raw.glob("deadlift_*.csv")):
+        stem = path.stem.split("_20260")[0]
+        result = pipeline.run(path)
+        clip = pipeline.find_video(path)
+        if clip is None:
+            print(f"{stem}: no marker clip paired — skipped")
+            continue
+        bp = markers.bar_path(clip, layout="auto", check=False)
+        try:
+            m = metrics.vs_truth(result, clip)
+        except ValueError as exc:
+            print(f"{stem}: vs_truth refused — {exc}")
+            continue
+        t_vid, _, height, _ = metrics._video_on_imu_clock(result, clip, None)
+
+        h = np.asarray(bp["height"])
+        nm = np.asarray(bp["n_markers"], dtype=float)
+        ok = np.isfinite(h) & (nm > 0)
+        lo, hi = np.nanmin(h[ok]), np.nanmax(h[ok])
+        frac = (h[ok] - lo) / (hi - lo)
+        dec = np.clip((frac * 10).astype(int), 0, 9)
+        decile = [float(np.median(nm[ok][dec == d])) if (dec == d).any() else np.nan
+                  for d in range(10)]
+
+        data[stem] = {
+            "t_vid": t_vid, "height": height,
+            "bounds": result["bounds"], "t": result["log"]["t"],
+            "per_rep": m["per_rep"],
+            "h_rms": m["pipeline_h_rms"], "null_h_rms": m["null_h_rms"],
+            "beats_null": m["beats_null"],
+            "imu_rom_cm": [float((r[:, 2].max() - r[:, 2].min()) * 100)
+                           for r in result["reps"]],
+            "n_rim": int(bp["n_rim"]),
+            "coverage": float(np.isfinite(h).mean()),
+            "resid_px": float(np.nanmedian(bp["residual_px"])),
+            "decile_markers": decile,
+        }
+        print(f"{stem}: n_rim {bp['n_rim']}, coverage {np.isfinite(h).mean()*100:.1f}%, "
+              f"h_rms {m['pipeline_h_rms']:.2f} cm, beats_null {m['beats_null']:.2f}")
+
+    if not data:
+        print("nothing to draw")
+        return 1
+    fig = plot.plot_v2_deadlift_conic(data)
+    out = ROOT / "analysis" / "42_conic_deadlift.png"
+    fig.savefig(out, dpi=110)
+    print(f"wrote {out}")
     return 0
 
 
@@ -1034,6 +1099,8 @@ def main(argv: list[str]) -> int:
         return draw_paths()
     if "--rom" in argv:
         return draw_rom()
+    if "--dlconic" in argv:
+        return draw_dl_conic()
     if "--v2rom" in argv:
         return draw_v2_video_rom()
     if "--anchors" in argv:

@@ -1023,6 +1023,121 @@ two-marker fit is exact and scores 0.00 px.
 identically — coverage 1.000, residual p95 1.13–1.85 px. Full marker suite 47
 passed. `analysis/39_marker_seeding.png`; 39 is taken, next free is 40.
 
+### C27 — the conic path meets real 8-sticker footage, and P2 gets a referee (2026-08-04)
+
+Three 8-sticker deadlifts arrived — `deadlift_160x6_1`, `_2`, `deadlift_185x3`,
+15 reps — and they are the **first captures able to test anything C26 shipped**.
+C26 said so itself and the record was right to insist on it: four separate
+defects surfaced, three in C26 and one in this entry's own first fix.
+
+*It crashed immediately, and the reason generalises.* `_reacquire` returns a
+TRIANGLE and `_best_correspondence` fits it against the model, so a nine-point
+model raised `operands could not be broadcast together with shapes (3,) (10,)`.
+Worse than a shape bug: `_reacquire` gates on `_triangle_ok(tol=0.22)` and
+**eight evenly spaced stickers have no admissible triple** — best is every third
+at 135/135/90, chord spread 0.255 — so the layout chosen precisely so spacing
+would stop mattering could not re-acquire at all. **The same 0.255 that
+motivated C26 recurs one function down, unfixed, because C26 grepped for the
+seeder and not for every consumer of triangle geometry.** Fixed with
+`_reacquire_conic` and `_conic_correspondence`; the second is the interesting
+one, since on a circle a labelling IS a rotation, so it tests the
+`len(found) x len(local)` rotations that put a found point on a model point —
+81 — rather than 504 ordered triples.
+
+It matters on deadlift specifically: with association alone coverage is **73.6%**
+against bench's 98-100%, because the tracker loses the plate at the floor
+impact. Bench has no impact; these three have 15.
+
+*The detector fires more than once per sticker.* Seed models came back with 9
+and 10 slots for 8 physical stickers, extras separated by **0.07-0.26 px**, and
+`deadlift_160x6_1` carried a TRIPLE at 73.0/73.1/73.1 degrees. `fit_ellipse` is
+unweighted least squares, so a doubled sticker votes twice. It showed as a
+sticker-radius spread about the model centroid of 69.2-110.1 px — a 0.63 ratio,
+MORE eccentric than the conic's own fitted 0.82, so it could not be
+foreshortening. `_merge_close` fixes it and the effect is large: whole-clip
+travel 76.2 -> 57.5 cm and 95.6 -> 55.2 cm. It also fixed, on its own, the
+`deadlift_185x3` sync failure ("1 video landing against 3 IMU impacts"), which
+had looked like a separate defect and was a symptom of the same one.
+
+*`layout="auto"` never reached the conic.* It fell through only on an EMPTY
+triangle list, and the assumption behind that — "an 8-sticker plate cannot
+produce an admissible triple, so it falls through" — is true of the eight
+stickers and says nothing about the rest of the frame. `candidates` returned
+clutter triples on all three, so `vs_truth` scored them on a three-marker model
+riding two markers for 37% of frames while the eight sat plainly in shot. A
+silent wrong answer to a caller who asked for the default.
+
+**Pooling both families into one shortlist was the first fix and it was wrong**
+— worth recording because the failure is not the obvious one. `max_trials` is a
+fixed budget of 12, group quality leads on `len(rim)`, so spurious conics off a
+3-sticker plate crowded genuine triangles out of the shortlist *before
+trial-tracking ever saw them*: `bench_92.5x4_3` fell to 8.2 cm of travel against
+a real 24-31. Each family now gets its own selection budget and only the winners
+are compared, on `_trial_merit`, whose three ingredients — full-marker fraction,
+residual, apparent-size spread — are dimensionless and family-neutral. All four
+benches return to C23's numbers exactly: `bench_95x2` 29.0 cm, residuals
+0.13-0.38 px.
+
+*And one defect of this entry's own making.* The re-acquisition path reported
+`n_markers` as the conic's raw inlier count, giving 20 and 26 against a 10-slot
+model, which then divided through `score` as if the fit were better than
+perfect. It counts model slots filled now.
+
+**The stickered plate is not the widest plate, and on a deadlift it is not**
+(owner, 2026-08-04: "one bumper plate of diameter 44.5 and then black notched
+plates after with a diameter of 42.5"). `plate_diameter` answers "what outline
+does the template tracker see" — for deadlift the 445 mm bumper — and
+`markers.py` needs a different quantity, the disc the stickers were stuck to,
+which here is a 425 mm notched plate loaded outboard. Worth 4.7% of every marker
+distance in the session. `truth.sticker_plate_diameter` splits the two and falls
+through to `plate_diameter` everywhere else, so nothing earlier moves. The bar
+still starts 22.25 cm up: that is set by the bumper, which carries the load.
+
+## What the footage says
+
+*The referee works, and that is the headline.* Coverage 99.2 / 100 / 100%,
+median residual 0.55 / 0.59 / 0.28 px, and **every marker found in every decile
+of travel, floor to lockout**. Contrast C12: the plate template is below
+`GOOD_SCORE` in 166/166 top-of-travel frames. The referee that P2's deadlift
+numbers were measured through fails exactly where the measurement is taken; this
+one does not.
+
+Per-rep video ROM is **51.4 / 51.9 / 51.5 cm — a 0.5 cm spread**, against the
+three template-refereed deadlifts' 59.1 / 66.8 / 47.6, a 19 cm spread on a range
+of motion fixed by the lifter's own limbs. `video_rom_flags` is empty on all
+three, a first for any deadlift here. Sync lands at 19.2 / 16.0 / 9.3 ms.
+
+*And the verdict on the reconstruction is worse, and more certain:*
+
+    capture            h rms   null   beats_null   v rms   sign
+    deadlift_160x6_1    7.22   1.65      0.23      3.45    1/6
+    deadlift_160x6_2    4.55   1.55      0.34      3.70    1/6
+    deadlift_185x3     11.44   1.60      0.14      1.76    0/3
+
+All three are **3-7x worse than drawing no fore-aft motion at all**. The video
+puts the bar inside 4.3-6.2 cm of fore-aft; the reconstruction sweeps 20-35.
+Read these as replacing rather than confirming the old 0.70 / 0.35 / 0.13: those
+were measured through a tracker C12 showed inventing ~10 cm of fore-aft at
+lockout, which inflates `null_h_rms` and therefore FLATTERED the pipeline. These
+are the first deadlift `beats_null` figures that mean what they say.
+
+Two things improved: sign disagreement is 1/6, 1/6, 0/3 against 4/6, 2/6, 1/3,
+and `deadlift_185x3`'s vertical at 1.76 cm is inside the +/-2-3 cm spec.
+
+**Open, and it is the absolute scale.** `STICKER_RATIO = 0.858` is still
+borrowed from the old three-sticker plate, and against it the video reads
+**4.6-9.3% BELOW** the reconstruction (51.4-51.9 against 54.0-56.7). The video's
+own consistency is excellent, so this is one constant and not noise: a ratio of
+~0.92 — stickers ~1.75 cm in from a 21.25 cm rim — would close it exactly, which
+is physically ordinary and must NOT be adopted by fitting it. The measurement
+that settles it is the sticker-circle diameter with a tape, into
+`bar_path(sticker_diameter_m=)`. Note `beats_null` barely moves under it
+(0.24/0.35/0.15 at 445 mm, 0.23/0.34/0.14 at 425), so the horizontal verdict
+does not depend on the open question.
+
+*Evidence:* `analysis/42_conic_deadlift.png`, `python run.py --dlconic`,
+`tests/test_markers.py`. 42 is taken, next free is 43.
+
 ### C26 — a conic fit, so a plate can carry more than three stickers (2026-08-04)
 
 **Built for footage that does not exist yet, which is unusual here and is

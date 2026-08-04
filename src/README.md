@@ -329,12 +329,29 @@ reflective disc ~1.5 cm.
 **Two rim layouts are supported as of C26 (2026-08-04), and every capture held
 uses the first.**
 
-| layout | seeder | pose | spacing must be | scale |
-|---|---|---|---|---|
-| 3 stickers | `candidates`, near-equilateral triples | centroid | ~120° apart | mean marker radius |
-| 5+ stickers | `ellipse_candidates`, circumcircle-seeded RANSAC | conic centre | anything | semi-major axis |
+| layout | seeder | re-acquire | pose | spacing must be | scale |
+|---|---|---|---|---|---|
+| 3 stickers | `candidates`, near-equilateral triples | `_reacquire` | centroid | ~120° apart | mean marker radius |
+| 5+ stickers | `ellipse_candidates`, circumcircle-seeded | `_reacquire_conic` | conic centre | anything | semi-major axis |
 
-The second exists because the owner is stickering the next plate with **eight**,
+**The re-acquire column is C27's and it is not a detail.** `_reacquire` gates on
+`_triangle_ok(tol=0.22)`, and eight evenly spaced stickers have no admissible
+triple — the same 0.255 that made `candidates` reject the layout. So the
+5+ layout needed its own re-acquisition or it could not recover from an
+occlusion at all, which on a deadlift means it cannot survive the floor impact:
+with association alone the three 2026-08-04 captures cover **73.6%** of frames
+against bench's 98-100%.
+
+`layout="auto"` runs BOTH families through their own selection budget and
+compares only the winners, on `_trial_merit`. It used to try the triangle and
+fall through only on an EMPTY list; that assumed an 8-sticker plate produces no
+admissible triple anywhere in the FRAME, which is false — clutter does — so
+`auto` silently tracked the 2026-08-04 deadlifts on three markers. Pooling both
+into one shortlist was the first fix and broke the benches, because `max_trials`
+is a fixed budget and conics outrank triples on group quality, so they crowded
+the real triangles out before trial-tracking saw them.
+
+The second layout exists because the owner stickered a plate with **eight**,
 and eight evenly spaced has no near-equilateral triple — the best available is
 every third one at 135/135/90°, chord spread 0.255 against `_triangle_ok`'s
 0.25 — so the three-sticker seeder returns nothing on it. `layout="auto"` tries
@@ -356,6 +373,21 @@ What the conic buys, measured synthetically and **not yet on any footage**:
   better centre — 0.86 px against the ellipse's 1.72 at 20° tilt — because both
   are biased outward and the conic's bias is roughly double. A test pins this so
   it cannot quietly become a claim.
+
+**C27 ran it on real footage for the first time (2026-08-04), on three
+8-sticker deadlifts, and the maths held while everything around it did not.**
+Coverage 99.2-100%, median residual 0.28-0.59 px, and every marker found in
+every decile of travel — floor to lockout — where the plate TEMPLATE is below
+`GOOD_SCORE` in 166/166 top-of-travel frames. Per-rep video ROM lands at
+51.4 / 51.9 / 51.5 cm, a 0.5 cm spread, against the template-refereed
+deadlifts' 59.1 / 66.8 / 47.6.
+
+The four defects it exposed are in TASKS.md C27. Two are worth knowing before
+touching this module: the detector fires **more than once per sticker**
+(0.07-0.26 px apart, so `_merge_close` deduplicates before any fit, because
+`fit_ellipse` is unweighted least squares and a doubled sticker votes twice),
+and the plate the stickers are ON is not always the widest plate in shot — see
+`truth.sticker_plate_diameter`, worth 4.7% on these captures.
 
 For the newer layout the physical requirement is a common **radius**, not even
 spacing — the opposite of C23's advice for the three-sticker plate, and easier

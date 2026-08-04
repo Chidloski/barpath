@@ -745,13 +745,59 @@ def _circumcircle(p: np.ndarray, q: np.ndarray,
     return cen, float(np.hypot(ay - uy, ax - ux))
 
 
+def _merge_close(pts: np.ndarray, weight: np.ndarray | None = None,
+                 merge_px: float = 3.0) -> np.ndarray:
+    """Collapse detections of the SAME sticker to one point. Returns (K, 2).
+
+    `detect` fires more than once on a single sticker: on the 2026-08-04
+    deadlifts the seed constellations came back with 9 and 10 points for 8
+    physical stickers, the extras separated by **0.07 to 0.26 px**, and
+    `deadlift_160x6_1` carried a triple at 73.0/73.1/73.1 degrees.
+
+    That is not cosmetic, because `fit_ellipse` is an unweighted least squares
+    over its inlier set: a doubled sticker gets two votes and pulls the conic
+    toward itself. It showed up as a spread of sticker radii about the model
+    centroid of 69.2-110.1 px on that capture — a 0.63 ratio, MORE eccentric
+    than the 0.82 axis ratio the conic itself fitted, so it could not be
+    foreshortening. Deduplicating is what keeps the layout's one physical
+    requirement, a common radius, from being violated by the detector rather
+    than by the plate.
+
+    Greedy by descending weight, which is stable frame to frame in a way that
+    an agglomerative pass is not: the strongest detection of a cluster is the
+    one kept, and anything within `merge_px` of an already-kept point is
+    dropped. `merge_px` is 3.0 because the real stickers here are never closer
+    than 35 degrees of arc — some 40 px — while the duplicates are sub-pixel,
+    so the two populations are separated by more than an order of magnitude and
+    no threshold in between is delicate.
+    """
+    p = np.asarray(pts, dtype=float)
+    if len(p) < 2:
+        return p
+    order = (np.argsort(-np.asarray(weight, dtype=float))
+             if weight is not None else np.arange(len(p)))
+    keep: list[int] = []
+    for i in order:
+        if all(np.hypot(*(p[i] - p[j])) > merge_px for j in keep):
+            keep.append(int(i))
+    return p[sorted(keep)]
+
+
 def _ellipse_hypothesis(frame, dets, pts, inl, radius_band, min_axis_ratio,
                         dark_max, require_hub, hub_frac) -> dict | None:
-    """Refit on the full inlier set and package it like a `candidates` entry."""
+    """Refit on the deduplicated inlier set and package it like a `candidates` entry."""
     # The triple only located the hypothesis; refitting on every inlier is what
     # makes per-sticker placement error average down instead of propagating
     # from whichever three happened to be picked.
-    ref = fit_ellipse(pts[inl])
+    #
+    # Deduplicate BEFORE the refit, not after. `fit_ellipse` is an unweighted
+    # least squares, so a sticker detected twice votes twice and drags the
+    # conic onto itself; averaging down only works over distinct stickers. See
+    # `_merge_close` for the measurement that forced this.
+    rim = _merge_close(pts[inl], dets[inl, 2] if dets.shape[1] > 2 else None)
+    if len(rim) < 5:
+        return None
+    ref = fit_ellipse(rim)
     if ref is None or not (radius_band[0] <= ref["semi_major"] <= radius_band[1]):
         return None
     # `min_axis_ratio` is about cos(70 degrees), i.e. the plate would have to be
@@ -761,20 +807,23 @@ def _ellipse_hypothesis(frame, dets, pts, inl, radius_band, min_axis_ratio,
     # keeps near-degenerate slivers from hoovering up scattered clutter.
     if ref["semi_minor"] / ref["semi_major"] < min_axis_ratio:
         return None
-    if _interior_mean(frame, pts[inl]) > dark_max:
+    if _interior_mean(frame, rim) > dark_max:
         return None
     d = np.hypot(*(pts - ref["centre"]).T)
     near = np.nonzero(d < hub_frac * ref["semi_minor"])[0]
     hub = pts[near[np.argmin(d[near])]] if len(near) else None
     if require_hub and hub is None:
         return None
-    resid = float(np.mean(_ellipse_residual(ref, pts[inl])))
+    resid = float(np.mean(_ellipse_residual(ref, rim)))
     bright = float(dets[inl, 2].mean()) if dets.shape[1] > 2 else 1.0
-    return {"rim": pts[inl], "hub": hub,
+    # Score on DISTINCT stickers. Scoring on `len(inl)` would rank a hypothesis
+    # by how often the detector stuttered, which is the opposite of what the
+    # inlier count is meant to mean.
+    return {"rim": rim, "hub": hub,
             "circumradius": float(ref["semi_major"]),
             "centre": ref["centre"],
             "axis_ratio": float(ref["semi_minor"] / ref["semi_major"]),
-            "score": len(inl) * bright * float(np.exp(-resid / 2.0))}
+            "score": len(rim) * bright * float(np.exp(-resid / 2.0))}
 
 
 def plate_radius_near(frame: np.ndarray, centre: np.ndarray,
@@ -911,6 +960,63 @@ def _suppress(dets: np.ndarray, static: np.ndarray,
     return dets[d >= radius]
 
 
+def _select_hypothesis(stack, pool, static, dets_all, max_trials, per_group):
+    """Pick the best hypothesis from ONE family. (merit, frame, constellation, group).
+
+    Split out of `seed_frame` by C27 so that `layout="auto"` can run the
+    triangle and ellipse families independently and compare only their winners.
+    Everything in here is C21's and C23's work unchanged — grouping by apparent
+    size, then deciding by trial-tracking rather than by appearance.
+    """
+    # Group by apparent size. The constellation is rigid, so the true one holds
+    # its circumradius all clip; a coincidence does not recur at a stable size.
+    groups: list[list] = []
+    for i, c in sorted(pool, key=lambda p: -p[1]["circumradius"]):
+        for g in groups:
+            if abs(c["circumradius"] - g[0][1]["circumradius"]) < 0.15 * g[0][1]["circumradius"]:
+                g.append((i, c))
+                break
+        else:
+            groups.append([(i, c)])
+
+    scored = []
+    for g in groups:
+        cen = np.array([c["centre"] for _, c in g])
+        frames_seen = len({i for i, _ in g})
+        spread = float(np.hypot(*(cen.max(axis=0) - cen.min(axis=0))))
+        quality = float(np.mean([c["score"] for _, c in g]))
+        # Movement is in pixels and dominates deliberately; a static hypothesis
+        # scores near zero however pretty it is.
+        scored.append((quality * frames_seen * (1.0 + spread), g))
+    scored.sort(key=lambda r: -r[0])
+
+    # --- decide by VERIFICATION, not by appearance (C23) --------------------
+    # The group score above is kept as a FILTER and demoted from being the
+    # DECIDER. On the 2026-08-03 captures the true constellation sits inside
+    # the winning group and then loses `max(..., score)`, which ranks on
+    # per-frame appearance — the one signal this docstring already says does
+    # not work. So a shortlist is trial-tracked and whichever hypothesis
+    # actually follows the bar wins. On `bench_95x2` that separates the plate
+    # from the best impostor by 0.87 against 0.24.
+    shortlist = []
+    for _, g in scored:
+        shortlist += _spread_members(g, per_group)
+        if len(shortlist) >= max_trials:
+            break
+    shortlist = shortlist[:max_trials]
+
+    graded = sorted(((_trial_merit(stack, i, c, static, dets_all), i, c)
+                     for i, c in shortlist), key=lambda r: -r[0])
+
+    g = scored[0][1]
+    if graded and graded[0][0] > 0.0:
+        merit, i, c = graded[0]
+    else:
+        merit = 0.0
+        i, c = max(g, key=lambda p: p[1]["score"])
+    return merit, i, c, g
+
+
 def seed_frame(stack: np.ndarray, n_sample: int = 30,
                max_trials: int = 12, per_group: int = 4,
                dets_all: list[np.ndarray] | None = None,
@@ -925,18 +1031,28 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30,
     * `"triangle"` — `candidates`, three rim stickers ~120 degrees apart. The
       layout every capture up to and including 2026-08-03 was shot with.
     * `"ellipse"` — `ellipse_candidates`, five or more anywhere on the rim.
-    * `"auto"` (default) — try `triangle` and fall back to `ellipse` when it
-      finds nothing. **The order matters and it is the conservative one:** an
-      8-sticker plate cannot produce an admissible triple, so it falls through,
-      while a 3-sticker plate cannot produce a 5-point conic, so it never
-      reaches the fallback. Existing captures therefore take exactly the path
-      they took before C26, which is what keeps the nine of them unmoved.
+    * `"auto"` (default) — generate BOTH and let trial-tracking choose, exactly
+      as it already chooses among triples.
 
-      The fallback is on an EMPTY candidate list rather than on a quality
-      comparison, deliberately. Ranking a triple against a conic would need a
-      merit that spans two different models, and `_trial_merit` is explicitly
-      not that — it is calibrated on how well one hypothesis tracks, not on how
-      well two families do.
+      **This used to fall through to `ellipse` only on an EMPTY triangle list,
+      and that was wrong on the first real 8-sticker footage (C27).** The
+      reasoning it rested on — "an 8-sticker plate cannot produce an admissible
+      triple, so it falls through" — is true of the eight stickers and says
+      nothing about the rest of the frame. On all three 2026-08-04 deadlifts
+      `candidates` returned a non-empty list built from clutter, the fallback
+      never fired, and `vs_truth` scored the captures on a three-marker model
+      riding two markers for 37% of frames while the eight sat plainly in shot.
+      A silent wrong answer, and the caller had asked for `auto`.
+
+      The old note said ranking a triple against a conic needs a merit spanning
+      two model families and that `_trial_merit` is not one. On inspection it
+      is: its three ingredients — the fraction of frames holding every marker,
+      the residual where they are all held, and the spread of apparent size —
+      are dimensionless and say nothing about how many points the model has.
+      What it measures is whether a hypothesis follows a rigid object, which is
+      the question here. The full-marker term does make an 8-point model work
+      harder than a 3-point one, so the bias is toward the incumbent triangle;
+      that is the safe direction and the measured margins clear it anyway.
 
     Returns `(index, constellation, plate)`, where `plate` is
     `plate_radius_near`'s `(centre_y, centre_x, radius_px, score)`. The plate is
@@ -989,10 +1105,13 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30,
 
     if layout not in ("auto", "triangle", "ellipse"):
         raise ValueError(f"layout must be auto, triangle or ellipse, not {layout!r}")
-    pool = gather(candidates) if layout in ("auto", "triangle") else []
-    if not pool and layout in ("auto", "ellipse"):
-        pool = gather(ellipse_candidates)
-    if not pool:
+    pools = []
+    if layout in ("auto", "triangle"):
+        pools.append(gather(candidates))
+    if layout in ("auto", "ellipse"):
+        pools.append(gather(ellipse_candidates))
+    pools = [p for p in pools if p]
+    if not pools:
         raise ValueError(
             "no sticker constellation found in any sampled frame. Either the "
             "markers are not visible in this capture, the plate is far outside "
@@ -1001,52 +1120,18 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30,
             "apart and `ellipse_candidates` needs five anywhere on the rim."
         )
 
-    # Group by apparent size. The constellation is rigid, so the true one holds
-    # its circumradius all clip; a coincidence does not recur at a stable size.
-    groups: list[list] = []
-    for i, c in sorted(pool, key=lambda p: -p[1]["circumradius"]):
-        for g in groups:
-            if abs(c["circumradius"] - g[0][1]["circumradius"]) < 0.15 * g[0][1]["circumradius"]:
-                g.append((i, c))
-                break
-        else:
-            groups.append([(i, c)])
-
-    scored = []
-    for g in groups:
-        cen = np.array([c["centre"] for _, c in g])
-        frames_seen = len({i for i, _ in g})
-        spread = float(np.hypot(*(cen.max(axis=0) - cen.min(axis=0))))
-        quality = float(np.mean([c["score"] for _, c in g]))
-        # Movement is in pixels and dominates deliberately; a static hypothesis
-        # scores near zero however pretty it is.
-        scored.append((quality * frames_seen * (1.0 + spread), g))
-    scored.sort(key=lambda r: -r[0])
-
-    # --- decide by VERIFICATION, not by appearance (C23) --------------------
-    # The group score above is kept as a FILTER and demoted from being the
-    # DECIDER. On the 2026-08-03 captures the true constellation sits inside
-    # the winning group and then loses `max(..., score)`, which ranks on
-    # per-frame appearance — the one signal this docstring already says does
-    # not work. So a shortlist is trial-tracked and whichever hypothesis
-    # actually follows the bar wins. On `bench_95x2` that separates the plate
-    # from the best impostor by 0.87 against 0.24.
-    shortlist = []
-    for _, g in scored:
-        shortlist += _spread_members(g, per_group)
-        if len(shortlist) >= max_trials:
-            break
-    shortlist = shortlist[:max_trials]
-
-    graded = sorted(((_trial_merit(stack, i, c, static, dets_all), i, c)
-                     for i, c in shortlist), key=lambda r: -r[0])
-
-    g = scored[0][1]
-    if graded and graded[0][0] > 0.0:
-        merit, i, c = graded[0]
-    else:
-        merit = 0.0
-        i, c = max(g, key=lambda p: p[1]["score"])
+    # Each family is selected SEPARATELY and only the winners are compared.
+    # Pooling the two into one shortlist was tried first (C27) and it broke the
+    # three benches: `max_trials` is a fixed budget, an 8-point conic scores
+    # `len(rim)` in the group quality where a triple scores 3, so spurious
+    # conics off a 3-sticker plate simply crowded the real triangles out of the
+    # shortlist before trial-tracking ever saw them. `bench_92.5x4_3` went to
+    # 8.2 cm of travel against a real 24-31. Giving each family its own budget
+    # removes the interaction; the merit then decides between two hypotheses
+    # that have each had a fair run.
+    outcomes = [_select_hypothesis(stack, p, static, dets_all,
+                                   max_trials, per_group) for p in pools]
+    merit, i, c, g = max(outcomes, key=lambda o: o[0])
 
     cen = np.array([cc["centre"] for _, cc in g])
     spread = float(np.hypot(*(cen.max(axis=0) - cen.min(axis=0))))
@@ -1216,6 +1301,142 @@ def _best_correspondence(local: np.ndarray, tri: np.ndarray,
     return best[1:] if best else (None, None, None, None)
 
 
+def _reacquire_conic(frame: np.ndarray, dets: np.ndarray, centre: np.ndarray,
+                     radius: float, search: float, tol_px: float = 2.5,
+                     loose_mult: float = 4.0, min_inliers: int = 5,
+                     min_axis_ratio: float = 0.35, rad_tol: float = 0.25,
+                     dark_max: float = 0.45) -> np.ndarray | None:
+    """Find a 5+ sticker rim afresh by conic fit. (K, 2) inliers, or None.
+
+    **`_reacquire`'s triangle search cannot serve this layout, and the reason is
+    the same arithmetic that created the layout.** Eight evenly spaced stickers
+    have no near-equilateral triple — the best is every third one at 135/135/90
+    degrees, a chord spread of 0.255 against the 0.22 `_reacquire` passes to
+    `_triangle_ok` — so a plate stickered precisely so that spacing would stop
+    mattering would have been unable to re-acquire at all. C26 could not see
+    this: it shipped with no 5+ capture in the corpus, and said so. C27 found it
+    on the first three, where it surfaced as a shape mismatch rather than a
+    miss, `_best_correspondence` being handed a triple to fit against a
+    nine-point model.
+
+    Why it matters here specifically: re-acquisition is what carries a DEADLIFT.
+    `_reacquire`'s own docstring records the tracker losing the plate at the
+    floor impact, and with association alone these three clips cover 73.6% of
+    frames against bench's 98-100%. Bench has no impact; a deadlift has one per
+    rep.
+
+    The search is anchored the same way `_reacquire` anchors it — on the model's
+    own radius and the last KNOWN centre, never an extrapolated one. Read that
+    function for why extrapolating walks the search box off the bottom of the
+    frame at exactly the impact where it is most needed.
+    """
+    if len(dets) < min_inliers:
+        return None
+    pts = dets[:, :2]
+    d = np.hypot(*(pts - np.asarray(centre, dtype=float)).T)
+    near = np.nonzero(d < search + radius * (1.0 + rad_tol))[0][:28]
+    if len(near) < min_inliers:
+        return None
+    p = pts[near]
+    lo, hi = radius * (1.0 - rad_tol), radius * (1.0 + rad_tol)
+    n = len(p)
+    seen: set[tuple] = set()
+    best = None
+    for i in range(n):
+        for j in range(i + 1, n):
+            for k in range(j + 1, n):
+                cc = _circumcircle(p[i], p[j], p[k])
+                if cc is None:
+                    continue
+                ccen, crad = cc
+                if not (lo <= crad <= hi):
+                    continue
+                dd = np.hypot(*(p - ccen).T)
+                loose = np.nonzero(np.abs(dd - crad) <= loose_mult * tol_px)[0]
+                if len(loose) < min_inliers:
+                    continue
+                key = tuple(loose.tolist())
+                if key in seen:
+                    continue
+                seen.add(key)
+                ell = fit_ellipse(p[loose])
+                if ell is None:
+                    continue
+                if not (lo <= ell["semi_major"] <= hi):
+                    continue
+                if ell["semi_minor"] / ell["semi_major"] < min_axis_ratio:
+                    continue
+                inl = np.nonzero(_ellipse_residual(ell, p) <= tol_px)[0]
+                if len(inl) < min_inliers:
+                    continue
+                if _interior_mean(frame, p[inl]) > dark_max:
+                    continue
+                # One point per sticker here too, for the same reason as in
+                # `_ellipse_hypothesis` and with the extra one that `track`
+                # reports the returned count as `n_markers`.
+                rim = _merge_close(p[inl], dets[near][inl, 2]
+                                   if dets.shape[1] > 2 else None)
+                if len(rim) < min_inliers:
+                    continue
+                resid = float(np.mean(_ellipse_residual(ell, rim)))
+                sc = len(rim) * float(np.exp(-resid / 2.0))
+                if best is None or sc > best[0]:
+                    best = (sc, rim)
+    return best[1] if best is not None else None
+
+
+def _conic_correspondence(local: np.ndarray, found: np.ndarray,
+                          prev_angle: float) -> tuple:
+    """Match an unlabelled 5+ rim to the model. (scale, angle, offset, residual).
+
+    `_best_correspondence` resolves the 3-fold tie by enumerating six
+    permutations, and that does not generalise — ordered triples of a nine-point
+    model are 504, and the found set is not a triple anyway. **It does not need
+    to.** The rim lies on a circle, so a labelling IS a rotation, and the only
+    rotations worth testing are the ones that put some found point on some model
+    point: `len(found) * len(local)` candidates, which is 81 rather than 504.
+
+    The tie-break is `_best_correspondence`'s, unchanged, and so is the reason
+    for it. An 8-sticker rim has an 8-fold symmetry where a triangle has 3, so
+    there are more equally good labellings, not fewer — but the centre this
+    module reports is the same under every one of them, and only `angle`'s
+    continuity depends on the choice. So the rule is still: among the fits that
+    land, take the one that moves `angle` least.
+
+    Scale comes from the MEAN radius, matching `track`'s `model_r`, and
+    deliberately not from the conic's semi-major axis. The semi-major is the
+    better scale — that is most of why C26 exists — but it is `conic_track`'s
+    to apply, once, to the observations. Using it here would foreshorten the
+    similarity that predicts where markers should be next, which is not what
+    that similarity is for.
+    """
+    if len(found) < 3:
+        return None, None, None, None
+    ell = fit_ellipse(found)
+    cen = ell["centre"] if ell is not None else found.mean(axis=0)
+    fr = found - cen
+    mr = float(np.hypot(*local.T).mean())
+    fmean = float(np.hypot(*fr.T).mean())
+    if not np.isfinite(fmean) or mr <= 0 or fmean <= 0:
+        return None, None, None, None
+    s = fmean / mr
+    th_f = np.arctan2(fr[:, 0], fr[:, 1])
+    th_m = np.arctan2(local[:, 0], local[:, 1])
+    best = None
+    for tf in th_f:
+        for tm in th_m:
+            cand = float(np.angle(np.exp(1j * (tf - tm))))
+            mapped = _apply_yx(s, cand, local, cen)
+            dm = np.hypot(*(mapped[:, None, :] - found[None, :, :]).transpose(2, 0, 1))
+            r = float(dm.min(axis=1).mean())
+            if r > 0.25 * mr:            # not the same shape, whatever the angle
+                continue
+            jump = abs(np.angle(np.exp(1j * (cand - prev_angle))))
+            if best is None or jump < best[0]:
+                best = (jump, s, cand, cen, r)
+    return best[1:] if best is not None else (None, None, None, None)
+
+
 def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
           max_scale_step: float = 0.06, max_angle_step_deg: float = 12.0,
           max_jump_px: float = 30.0, max_scale_dev: float = 0.25,
@@ -1383,10 +1604,25 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
                 # stickers recur past `recur_max` and the tracker was
                 # blindfolded to the plate it was already holding.
                 rdets = dets if static is None else _suppress(dets, static)
-                tri = _reacquire(stack[i], rdets, prev_centre, s * model_r,
-                                 search=min(45.0 + 30.0 * gap, 260.0))
-                if tri is not None:
-                    cs, ca, coff, cr = _best_correspondence(local, tri, a)
+                search = min(45.0 + 30.0 * gap, 260.0)
+                # The two layouts re-acquire by different geometry, and this is
+                # the one place where sharing the code was not possible. See
+                # `_reacquire_conic`: a triangle search cannot find an evenly
+                # spaced 8-sticker rim at all, because no triple of it is
+                # near-equilateral.
+                got = None
+                if n_rim > 3:
+                    found = _reacquire_conic(stack[i], rdets, prev_centre,
+                                             s * model_r, search)
+                    if found is not None:
+                        got = _conic_correspondence(local, found, a)
+                else:
+                    tri = _reacquire(stack[i], rdets, prev_centre, s * model_r,
+                                     search)
+                    if tri is not None:
+                        got = _best_correspondence(local, tri, a)
+                if got is not None:
+                    cs, ca, coff, cr = got
                     # A re-acquisition gets the SAME plausibility test as an
                     # association, and for a sharper reason. It is the one path
                     # that can teleport: it is not anchored to the previous
@@ -1406,8 +1642,30 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
                                 < max_angle_step * gap
                             and np.hypot(*(cc - prev_centre))
                                 < max_jump_px * gap):
-                        ns, na, noff, r, nm = cs, ca, coff, cr, 3
                         used = set()
+                        # The association attempt that just failed may have left
+                        # partial lists behind, and `matched` is what
+                        # `conic_track` refits from — so a re-acquisition must
+                        # replace them rather than inherit them. Each found
+                        # point takes the model slot it lands nearest.
+                        pred_r = _apply_yx(cs, ca, local, coff)
+                        obs = found if n_rim > 3 else tri
+                        slot_l, dst_l = [], []
+                        taken: set[int] = set()
+                        for pt in obs:
+                            k = int(np.argmin(np.hypot(*(pred_r - pt).T)))
+                            if k not in taken:
+                                taken.add(k)
+                                slot_l.append(k)
+                                dst_l.append(pt)
+                        # `n_markers` counts MODEL SLOTS filled, so that it is
+                        # the same quantity on both paths and can never exceed
+                        # `n_rim`. Reporting the raw inlier count here gave 20
+                        # and 26 against a 10-slot model, which then divided
+                        # through `score` as if the fit were better than
+                        # perfect.
+                        ns, na, noff, r = cs, ca, coff, cr
+                        nm = len(slot_l)
 
             if ns is None:
                 gap += 1
@@ -1598,7 +1856,14 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
                 dets_all=dets_all)
     con = conic_track(trk)
 
-    diam = diameter_m if diameter_m is not None else truth.plate_diameter(video)
+    # `sticker_plate_diameter`, NOT `plate_diameter`. The two differ whenever
+    # the stickers went on something other than the widest plate on the bar,
+    # which is the 2026-08-04 deadlifts: stickers on a 425 mm notched plate
+    # loaded outboard of the 445 mm bumper that sets the bar height. It falls
+    # through to `plate_diameter` everywhere else, so nothing before that
+    # session moves. See `truth.STICKER_PLATE_DIAMETER_M`.
+    diam = (diameter_m if diameter_m is not None
+            else truth.sticker_plate_diameter(video))
     # The absolute scale, and note what it does NOT depend on: any per-capture
     # rim detection. The sticker circle's size in metres follows from the plate's
     # known diameter and one measured constant (`STICKER_RATIO`); its size in

@@ -190,9 +190,11 @@ footage, not by preference. `truth.py` tracks the plate as a dark disc and is
 the referee for everything in `data/video/`. `markers.py` (C15, 2026-08-01)
 tracks retroreflective stickers and is the referee for `data_v2/`, which is
 filmed from a tripod with markers on the plate. **The four bench captures of
-2026-08-03 are refereed by `markers.py` as of C23** and are the only ones that
-are; everything else is scored by `truth.py`, because `data/video/` has no
-markers. See the C21/C23 note below.
+2026-08-03 are refereed by `markers.py` as of C23, and the three 8-sticker
+deadlifts of 2026-08-04 as of C27**; everything else is scored by `truth.py`,
+because `data/video/` has no markers. The deadlifts are the first captures
+refereed by the CONIC path, and the first marker footage of a lift other than
+bench. See the C21/C23 note below.
 `markers.py` is what a future capture should be judged by: on the same five
 clips it tracks 100% of frames where the plate template loses the bar at every
 lockout and reports 0.2 cm of travel on one bench set. See `src/README.md` and
@@ -373,9 +375,31 @@ It also fixes a second and larger term the three-sticker layout could not:
 
 Do not read that as a perspective fix — on ideal spacing the old centroid is the
 better centre estimator, 0.86 px against 1.72 at 20 degrees of tilt. The conic
-removes SPACING and TILT-SCALE, not perspective. **And none of it is gated on
-real footage yet**, because three points cannot determine a conic so no capture
-held can test it. See TASKS.md C26 and `src/README.md`.
+removes SPACING and TILT-SCALE, not perspective. See TASKS.md C26 and
+`src/README.md`.
+
+**C26 shipped ungated and C27 gated it on 2026-08-04, on three 8-sticker
+deadlifts. Four defects surfaced, and the shape of them is the lesson.** The
+conic MATHS was right; everything around it that still assumed three markers was
+not. `_reacquire` returns a triangle and `_best_correspondence` fitted it against
+the model, so the tracker crashed — and could never have worked anyway, because
+`_reacquire` gates on `_triangle_ok(tol=0.22)` and eight evenly spaced stickers
+have no admissible triple. **The 0.255-against-0.25 that motivated C26 recurs one
+function further down**, because C26 fixed the seeder and did not grep for the
+other consumers of triangle geometry. `layout="auto"` never reached the conic at
+all, falling through only on an EMPTY triangle list while `candidates` returned
+clutter triples, so `vs_truth` silently scored these captures on a three-marker
+model riding two markers for 37% of frames. And the detector fires more than
+once per sticker — 9 and 10 model slots for 8 stickers, extras 0.07-0.26 px
+apart — which double-weights a sticker in an unweighted least-squares fit;
+deduplicating moved whole-clip travel 76.2 to 57.5 cm and 95.6 to 55.2.
+
+**The stickered plate is not the widest plate, and on a deadlift it is not.**
+`truth.plate_diameter` answers "what outline does the template tracker see" —
+the 445 mm bumper — and `markers.py` needs the disc the stickers are ON, a
+425 mm notched plate loaded outboard (owner, 2026-08-04). Worth 4.7% of every
+marker distance. `truth.sticker_plate_diameter` splits the two. The bar still
+starts 22.25 cm up; that is set by the bumper, which carries the load.
 
 What C21 established, and the second point is the one that saves the next
 agent's time. Three admission gates in `candidates` each rejected the true
@@ -402,7 +426,17 @@ and `bench_sync` read only `t` and `height`, so the whole sync apparatus was
 tracker-agnostic before anyone tried. What is **not** checked: whether a landing
 found on marker footage falls at the same instant as one on template footage.
 
-**That check is no longer blocked — it is unrunnable, which is worse (C24).**
+**C27 unblocked this on 2026-08-04 and it is now simply UNDONE rather than
+unrunnable.** The three 8-sticker deadlifts are marker-filmed deadlifts with a
+watch on — exactly the capture this asked for — and their landings sync at
+19.2 / 16.0 / 9.3 ms. What has not been done is the comparison itself: whether a
+landing found on marker footage falls at the same instant as one found on
+template footage, against the deadlift sync's 13.5 ms. Nothing blocks it now.
+
+*The paragraph below is C24's and is kept because its reasoning is still the
+record of why this waited.*
+
+**That check WAS blocked, then unrunnable, which was worse (C24).**
 This used to say the six paired captures of 2026-08-03 were the first that could
 test it, against the deadlift sync's 13.5 ms, and that the seeding defect was in
 the way. C23 cleared the seeding defect and deleted the two squats, so **four
@@ -515,8 +549,8 @@ removed in `7004c32` because no video exists for them; measurements made
 before that commit say 13 captures, and measurements between it and 2026-07-30
 say 10 and 44 reps. Both are correct as of when they were taken.
 
-**A second dataset opened on 2026-08-03**: `data_v2/raw/` holds **four bench
-captures, 14 reps**, each with a marker clip beside it in `data_v2/video/` —
+**A second dataset opened on 2026-08-03 and grew on 2026-08-04**: `data_v2/raw/`
+holds **four bench captures (14 reps) and three 8-sticker deadlifts (15 reps)**, each with a marker clip beside it in `data_v2/video/` —
 the first IMU logs ever paired with marker footage, and the first captures in
 this project refereed by `markers.py`. All four carry the `phase` column with a
 ~3.0 s closing hold, count 14 of 14, sit inside `truth.VERTICAL_ROM_M`
@@ -535,7 +569,9 @@ video and log, four gitignored files, unrecoverable — because that plate's
 stickers are placed too unevenly to referee (C23). They had supplied a rep
 count of 9 of 10 and squat's first replication of the attitude bound; both are
 gone with them, and C22's fatigue finding is measured on data that no longer
-exists. **The corpus is 21 captures and 86 reps.**
+exists. **The corpus is 24 captures and 101 reps** — 21 and 86 plus the three 8-sticker
+deadlifts of 2026-08-04 (6, 6 and 3 reps), which count 15 of 15 and are the
+first captures in this project refereed by the conic marker path (C27).
 
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
@@ -560,7 +596,8 @@ of a 1.35–1.55 band bounded by real data on both sides. **The live limitation:
 rest-pause or cluster set has a real mid-set gap above 1.45 and would be split.**
 No such capture exists.
 
-**Counting is 21 of 21 captures, 86 of 86 reps** — the two captures that broke
+**Counting is 24 of 24 captures, 101 of 101 reps** (C27 added three deadlifts at
+6/6, 6/6 and 3/3, every floor impact found) — the two captures that broke
 it were deleted (see above), so this is a smaller claim than 22/23 rather than
 a better one.
 
@@ -662,9 +699,44 @@ error does not. And **"vertical comes out fine" is false**; vertical was never
 measured per rep before A3 and it misses its own looser spec on all three
 captures.
 
-**READ THIS FIRST, BEFORE THE NULL MODEL — 2026-07-31 (C12). The deadlift
-referee is lost at lockout, and every deadlift number below is measured through
-it.** Spotted by the owner from `analysis/33`: the video traces a flat ~10 cm
+**READ THIS FIRST OF ALL — 2026-08-04 (C27). Deadlift now has a referee that
+does NOT fail at lockout, and it makes the verdict below worse rather than
+better.** Three 8-sticker deadlifts, tracked by the conic path: coverage
+99.2-100%, median residual 0.28-0.59 px, and **every marker found in every
+decile of travel, floor to lockout**, against the plate template's 166/166
+top-of-travel frames below `GOOD_SCORE`.
+
+Per-rep video ROM comes out **51.4 / 51.9 / 51.5 cm — a 0.5 cm spread** — where
+the three template-refereed deadlifts give 59.1 / 66.8 / 47.6, a 19 cm spread on
+a range of motion fixed by the lifter's own limbs. That is the "do not quote the
+spread" problem below, fixed by the referee rather than by code.
+
+    capture            h rms   null   beats_null   v rms   sign
+    deadlift_160x6_1    7.22   1.65      0.23      3.45    1/6
+    deadlift_160x6_2    4.55   1.55      0.34      3.70    1/6
+    deadlift_185x3     11.44   1.60      0.14      1.76    0/3
+
+**All three are 3-7x worse than drawing no fore-aft motion at all.** The video
+puts the bar inside 4.3-6.2 cm of fore-aft; the reconstruction sweeps 20-35.
+**These REPLACE the 0.70 / 0.35 / 0.13 below rather than confirming them** — C12
+showed those were measured through a tracker inventing ~10 cm of fore-aft at
+lockout, which inflates `null_h_rms` and therefore flattered the pipeline. These
+are the first deadlift `beats_null` figures that mean what they say.
+
+Two things did improve: sign disagreement is 1/6, 1/6, 0/3 against 4/6, 2/6, 1/3,
+and `deadlift_185x3`'s vertical at 1.76 cm is inside the +/-2-3 cm spec.
+
+*Open:* the absolute scale still rests on `STICKER_RATIO = 0.858`, borrowed from
+the old three-sticker plate, and against it the video reads 4.6-9.3% BELOW the
+reconstruction. A ratio of ~0.92 would close it exactly and must not be adopted
+by fitting it; the sticker-circle diameter with a tape settles it, into
+`bar_path(sticker_diameter_m=)`. `beats_null` barely moves under it, so the
+horizontal verdict does not depend on the open question. *Evidence:*
+`analysis/42`, `python run.py --dlconic`, TASKS.md C27.
+
+**READ THIS SECOND — 2026-07-31 (C12). The deadlift PLATE-TEMPLATE referee is
+lost at lockout, and every deadlift number below that predates C27 is measured
+through it.** Spotted by the owner from `analysis/33`: the video traces a flat ~10 cm
 fore-aft line at the top of the pull, which is against the physics of the lift —
 the bar is held against the thighs at lockout and is very nearly still. It is
 the tracker moving, not the bar.
@@ -697,7 +769,7 @@ size, which was the first guess: shrinking `half` raises NCC to 0.69 and makes
 the track worse, inflating ROM from 60.5 to 74.1 cm. The fix is a wider shot,
 not code. *Evidence:* `analysis/34`, `tests/test_video_truth.py`.
 
-**READ THIS SECOND — 2026-07-31 (C10). Against the null model, most of the
+**READ THIS THIRD — 2026-07-31 (C10). Against the null model, most of the
 pipeline is worse than useless on the horizontal.** `metrics.vs_truth` now
 reports `null_h_rms`: what you score by drawing **no fore-aft motion at all**, a
 straight vertical line. `beats_null` is that over the pipeline's error.

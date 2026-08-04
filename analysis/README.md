@@ -1533,3 +1533,55 @@ instrument is right about the 20%; `own` and `IMU` never depended on the sync,
 so the fix leaves the 20% exactly as it was. The `window` bars did depend on
 it, and on the two mis-synced captures window 0 had been reporting 2.4 and
 1.4 cm of a ~25 cm rep, having landed on the un-rack.
+
+---
+
+## 42 — the first 8-sticker footage: conic referee vs the reconstruction (C27, 2026-08-04)
+
+`python run.py --dlconic` -> `analysis/42_conic_deadlift.png`. Three deadlifts,
+`deadlift_160x6_1`, `_2` and `deadlift_185x3`, 15 reps. Everything is measured
+through `layout="auto"` — the path a caller gets by default — because C27's
+whole finding is that `auto` had been silently taking the wrong one.
+
+**Row 1** puts both instruments' vertical on one clock; they lie on top of each
+other. **Row 2** is per-rep vertical ROM. **Row 3 is the figure.** **Row 4** is
+the referee's own health, and it is the one that licenses the rest.
+
+*Read row 4 first, because C12 is the reason it is drawn.* Median markers
+matched per decile of travel, floor to lockout, is the **full count in every
+decile on all three captures** — 7/7, 8/8, 8/8. The plate template that P2's
+older deadlift numbers were measured through is below `truth.GOOD_SCORE` in
+166/166 top-of-travel frames, i.e. it fails exactly where the measurement is
+taken. This referee does not, so row 3 can be believed in a way its predecessor
+could not.
+
+*Row 3 is the project's actual question and the answer is bad.* The video keeps
+the bar inside 4.3-6.2 cm of fore-aft; the reconstruction sweeps **20-35 cm**.
+`beats_null` is 0.23 / 0.34 / 0.14, so all three are **3-7x worse than drawing
+no fore-aft motion at all**, against a ~1 cm spec on the axis the display
+stretches 4x.
+
+**These replace the old 0.70 / 0.35 / 0.13 rather than confirming them.** The
+old figures were measured through a tracker inventing ~10 cm of fore-aft at
+lockout, which goes into `null_h_rms` and therefore FLATTERED the pipeline. C12
+already said the deadlift `beats_null` figures were too generous by 15-45%;
+these are the first that mean what they say.
+
+*What row 2 shows and what it cannot.* Per-rep video ROM is 51.4 / 51.9 /
+51.5 cm — a **0.5 cm spread** — against 59.1 / 66.8 / 47.6 for the three
+template-refereed deadlifts, a 19 cm spread on a range of motion fixed by the
+lifter's own limbs. That is the "do not quote the spread" defect in P2, fixed by
+the referee rather than by code. But the reconstruction reads 54.0-56.7, so the
+two instruments differ by 4.6-9.3% and **row 2 cannot say which is right**: the
+absolute scale still rests on `STICKER_RATIO = 0.858`, borrowed from a different
+plate. A ratio of ~0.92 would close the gap exactly, which is physically
+ordinary and must not be adopted by fitting it. `beats_null` barely moves under
+that change (0.24/0.35/0.15 at 445 mm, 0.23/0.34/0.14 at 425), so row 3 does not
+depend on the open question and row 2 does.
+
+**What it does not show.** Nothing about phase beyond the shading — the sync is
+19.2 / 16.0 / 9.3 ms and the windows hold their reps, but a whole-rep check of
+the kind C25 had to make on bench has not been run here. And nothing about
+whether a landing found on marker footage falls at the same instant as one on
+template footage: these are the first captures that COULD answer it, and it is
+undone rather than blocked.
