@@ -1023,6 +1023,175 @@ two-marker fit is exact and scores 0.00 px.
 identically — coverage 1.000, residual p95 1.13–1.85 px. Full marker suite 47
 passed. `analysis/39_marker_seeding.png`; 39 is taken, next free is 40.
 
+### C29 — the jump state, and fixing the structure that annihilated it (2026-08-05)
+
+Branch `c29-jump-state`, cut from `c28-imu-video-oracle` (d329a2a) rather than
+from main, because it builds on `src/oracle.py`. **The owner needs to know that
+before landing either.** Two halves: the jump fails on the shipping detrend for
+a structural reason, and moving the detrend's boundaries fixes it.
+
+## Part 2, the fix — and BOTH changes are needed
+
+Correcting at the impact only works if the detrend's boundaries are somewhere
+else. `oracle.jump_rest_windows` keeps step 7's machinery exactly — independent
+endpoint lines, start-aligned, `correct.detrend_set` — and moves the windows to
+rest-to-rest. Measured on all six deadlifts, all three axes corrected:
+
+    arm                                h rms   beats_null   v rms
+    SHIPPING (impact windows)           8.21      0.29       4.90
+    rest windows, NO correction          10.66      0.21      11.92   <- CONTROL
+    rest windows + 0.20 s                3.93      0.69       3.22
+    rest windows + 0.30 s                4.10      0.70       3.30
+
+**Read the control row first: moving the windows ALONE is worse than shipping.**
+And C29's part 1 shows the correction alone is annihilated. Neither change helps
+by itself; together they take the frame-internal horizontal from 10.66 to 3.93
+and the vertical from 11.92 to 3.22. All six captures improve, and
+`deadlift_155x6_1` and `deadlift_180x3` cross **beats_null = 1.0** for the first
+time in this project (1.19 and 1.03).
+
+*The window width is not a fudge factor.* The optimum is a broad plateau from
+**0.10 to 0.50 s**, and B6 independently measured the strap ringing at "several
+hundred milliseconds" without reference to any of this. A single-sample jump
+(0.00) is WORSE than the control at 13.83 — the error accumulates over the
+ringing, it does not arrive as a delta.
+
+*The failed first attempt is the informative one.* `detrend_knots` applied one
+CONTINUOUS piecewise-linear drift with knots at the rest instants and cost
+8.21 -> 17.00 with ROM at 70-138 cm. The shipping detrend fits INDEPENDENT lines
+— two free parameters per rep with no continuity — and a continuous drift has
+about one per knot. **So what makes step 7 load-bearing is not the closure, it
+is the per-rep INDEPENDENCE**, which nobody had named. `rest_windows` keeps that
+and moves only where the boundaries fall.
+
+## Evaluated properly, and one number qualifies the rest
+
+*The rep-subset worry is real but small.* Dropping the first and last rep from
+SHIPPING too — the ones the rest frame cannot see — moves it 8.21 -> 7.05, not
+to 3.93. So the like-for-like gain is roughly **7.05 -> 3.93, 44%**, and the
+frame-internal control-vs-treatment is **10.66 -> 3.93, 63%**.
+
+*The whole distribution moves, not the median.* Per rep, shipping's interior
+reps against the treatment: median 6.02 -> 3.98, p25 4.18 -> 3.05, p75
+8.11 -> 5.96, worst 15.44 -> 13.13. **And zero reps in either are under 1 cm.**
+Nothing here is in spec; the spec is not in sight.
+
+**THE QUALIFICATION: it improves TRACKING, not invented travel.** P2's actual
+complaint is that the reconstruction draws fore-aft motion the bar never made.
+Per-rep fore-aft excursion, median in cm:
+
+    video   7.2      shipping  12.4  (1.7x)      fixed  14.4  (2.0x)
+
+On the three marker-refereed captures alone, where the referee can be trusted at
+lockout, it is video 5.4, shipping 14.4, fixed 13.8. **So the fix makes the path
+follow the video's shape and timing much better point-for-point while still
+sweeping roughly 2.5x the fore-aft range the bar actually moved through.**
+`h_rms` improves on 6 of 6 captures; excursion improves on only 3 of 6. Anyone
+quoting the 44% must quote this next to it.
+
+## What this is NOT
+
+**The frame scores 19 of 30 reps against 30/30.** `rest_instants` needs an
+impact either side and rejects the final one of each set, where the lifter
+releases the bar, so the first and last rep of every set drop out. The
+shipping-vs-treatment comparison is therefore NOT like-for-like on two counts,
+different windows and a different rep subset. **The control is, exactly** — same
+windows, same 19 reps, same everything but the correction — so 10.66 -> 3.93 is
+the number to quote and 8.21 -> 3.93 is not.
+
+Still deadlift-only and always will be: no rest anchor on bench or squat. Six
+captures. And `beats_null` at 0.70 median is still below 1.0, so the median
+capture remains worse than a flat line — this is a large step, not an arrival.
+
+### C29 part 1 — the jump state at the impact: annihilated by construction (2026-08-05)
+
+Branch `c29-jump-state`, cut from `c28-imu-video-oracle` (d329a2a) rather than
+from main, because it builds on `src/oracle.py`. **The owner needs to know that
+before landing either.**
+
+C28b ended by pointing at a jump state: the impact predicts horizontal error at
+r = 0.772, every correction tried spreads that information smoothly across the
+rep, and B6 measured the error to be localised at the landing. C29 built it.
+**It does not work, and the reason is structural rather than empirical.**
+
+*One experiment, not two.* `oracle.jump_correction` removes the same observable
+`dv` over a WINDOW of `width_s` starting at the impact; `width_s=None` uses the
+whole rest-to-rest interval and reproduces `impact_correction` exactly (pinned
+by a test). Sweeping the width therefore interpolates between C28b's failure
+and a pure jump, and the curve is the result.
+
+    width_s    160x6_1  160x6_2   185x3  155x6_1  155x6_2   180x3   median
+    SHIPPING      7.22     4.55   11.44     5.05     9.19   15.44     8.21
+    0.02          7.20     4.57   11.45     5.07     9.11   15.43     8.16
+    0.10          7.12     4.67   11.53     5.21     8.82   15.55     7.97
+    0.30          6.97     5.04   11.69     4.77     8.12   15.77     7.55
+    1.00          7.66     4.76    8.28     6.11     5.56   11.32     6.88
+    FULL(=C28b)   7.94     7.39   11.58    10.00     7.98   10.57     8.99
+    NULL          1.68     1.54    1.59     3.55     3.23    1.96
+
+## The pure jump does nothing, and it was PREDICTED to
+
+At 0.02 s the numbers are shipping's to within a few hundredths. That is not a
+tuning failure — it is exact, and the reason is a structural incompatibility
+between the two things this project has been trying to combine:
+
+**`segment.rep_bounds` ends every rep AT a floor impact.** So a velocity error
+that steps at the impact is constant within each rep, its position error is
+linear in t within each rep, and `correct.detrend_rep` removes a line. **The
+correction lands exactly in the detrend's null space.** Gated as algebra in
+`test_a_velocity_step_at_a_rep_BOUNDARY_is_annihilated_by_the_detrend`.
+
+So: "use the impact, the one externally true instant" and "close each rep with
+a line whose boundaries are the impacts" are not merely hard to combine. Any
+correction localised at the boundary is INVISIBLE to what follows it. That is
+the sharpest statement of the bind B7, B6, C19 and C28b were all pushing
+against, and it is new.
+
+## The wider window looks like a win and is regression to the mean
+
+At width ~1.0 s the median improves 8.21 -> 6.88 cm, 16%, and the window turns
+out not to be a tuned parameter at all: it clips at 0.72-1.00 s, which IS the
+[impact -> rest instant] span, exactly B6's ringing window. Three captures
+improve by 27-40% and three degrade by 5-21%.
+
+**But the three that improve are the three worst, which is what regression to
+the mean looks like.** Measured per rep, n = 20:
+
+    median h_rms                         6.15 -> 6.62 cm   (WORSE)
+    improved on                          10/20 reps        (a coin flip)
+    corr(improvement, |dv_h|)            +0.523
+    corr(improvement, baseline error)    +0.551
+    PARTIAL(improvement, |dv_h| | base)  +0.184            <- does not survive
+    PARTIAL(improvement, base | |dv_h|)  +0.272            <- does
+
+**The screening structure is the exact INVERSE of C28b's.** There the observable
+screened off the confound (0.472 vs 0.184) and that is why C28b's correlation
+was believable. Here the baseline screens off the observable. The per-capture
+16% is not physics.
+
+*What is safe about it, at least.* Horizontal-only, so per-rep vertical ROM is
+untouched — 56-57 -> 56-57 cm — where B6's splice pushed it to 82.6 against a
+61 cm ceiling. That is the one design lesson worth carrying: B6's splice was
+vertical and "could not move a metric that reads columns 0 and 1", so the
+horizontal jump had genuinely never been tried before this.
+
+## Five for five
+
+    B7    anchored position at the impacts            lost
+    B6    spliced velocity across them (vertical)     lost
+    C19   raised the detrend to a quadratic           lost
+    C28b  constant accel per rest-to-rest interval    lost
+    C29   a jump state AT the impact                  annihilated
+
+**And C29 says the next one will too, unless it moves the detrend.** The
+correction and the detrend's null space coincide at the impact. B7's ablation
+already showed the detrend cannot simply be dropped — error goes to 3-5 m — so
+the remaining move is a detrend whose BOUNDARIES do not sit on the impacts, or
+a constraint that replaces closure entirely. Nothing here has tried that.
+
+*Evidence:* `analysis/44_jump_state.png`, `oracle.jump_correction`,
+`tests/test_oracle.py` (14 passed). 44 is taken, next free is 45.
+
 ### C28b — the impact IS informative about horizontal, and every use of it misspends it (2026-08-05)
 
 Branch `c28-imu-video-oracle`. The owner asked whether a Kalman filter could

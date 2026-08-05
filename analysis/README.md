@@ -1624,3 +1624,34 @@ it** — a five-second change to the capture protocol, no code.
 left once this family is excluded, and nothing about whether the marker referee
 itself is right in absolute scale — C27's open sticker-circle measurement is
 upstream of every number here, though `beats_null` is nearly invariant to it.
+
+---
+
+## 44 — the jump state at the impact (C29, 2026-08-05)
+
+Branch `c29-jump-state`, cut from `c28-imu-video-oracle`. `oracle.jump_correction`.
+
+**Left — the sweep, and the flat left edge is the finding.** The same observable
+velocity error is removed over a window of decreasing width at the impact. At
+0.02 s the curves sit on the shipping line: a pure jump changes NOTHING, because
+`rep_bounds` ends each rep at an impact, so a step there is constant within a rep,
+linear in position, and `detrend_rep` removes a line. The correction is in the
+detrend's null space, exactly. The right-hand end is C28b's whole-interval spread,
+which is worse than shipping. Note the null (green) sits far below everything.
+
+**Middle — the apparent optimum, per rep.** At ~1 s the per-capture median looks
+16% better. Per rep it is a coin flip: 10 of 20 improved, median 6.15 -> 6.62 cm.
+The points above the diagonal are as numerous as those below.
+
+**Right — why the per-capture win is not real.** The improvement correlates with
+the observable (+0.523) AND with the baseline error (+0.551). Partial out one at
+a time and the observable does not survive (+0.184) while the baseline does
+(+0.272). **The inverse of C28b**, where the observable screened off the confound
+and that is what made it believable. The three captures that improved were the
+three worst.
+
+**What it does not show.** Nothing about the vertical, which is untouched by
+construction — horizontal-only, so ROM stays at 56-57 cm where B6's vertical
+splice pushed it to 82.6 against a 61 ceiling. And nothing about a detrend whose
+boundaries avoid the impacts, which is what this figure argues is the only move
+left.

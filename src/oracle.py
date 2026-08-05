@@ -580,3 +580,278 @@ def impact_correction(result: dict) -> dict:
     out["reps"] = reps
     out["bar_position"] = position
     return out
+
+
+def jump_correction(result: dict, width_s: float | None = None,
+                    axes: tuple = (0, 1)) -> dict:
+    """Remove the observable velocity error in a WINDOW at the impact. C29.
+
+    The same observable as `impact_correction` — the velocity error read at the
+    rest instants, no video — removed over a window of `width_s` starting at the
+    floor impact instead of spread across the whole rest-to-rest interval.
+    `width_s=None` uses the whole interval and reproduces `impact_correction`
+    exactly, which is what makes this ONE experiment rather than two: sweeping
+    the width interpolates between C28b's failure and a pure jump.
+
+    Why a window at the impact is the physically motivated shape. B6 measured
+    cumulative velocity as smooth and physical through the pull and the descent,
+    then ringing violently for several hundred milliseconds AT the floor impact
+    and settling short — the watch still moving on a compliant strap after the
+    bar has stopped. So the error is not distributed over the rep; it is created
+    in the few hundred ms after contact. Four corrections have now failed by
+    being smooth across the rep (B7, B6, C19, C28b) and this is the first that
+    is not.
+
+    **A pure instantaneous jump is expected to do NOTHING, and that is a
+    prediction rather than a caveat.** `segment.rep_bounds` ends each rep at an
+    impact, so a velocity step exactly at the impact is a step exactly at a rep
+    boundary: within a rep the velocity correction is then constant, the
+    position correction is linear in t, and step 7's per-rep linear detrend
+    removes a line. The correction would be annihilated by construction.
+
+    What rescues it, if anything does, is that the rest instant sits ~0.85 s
+    AFTER the impact — inside the NEXT rep. A correction ramping over that
+    window is quadratic where it overlaps the following rep, and a linear
+    detrend cannot remove a quadratic. So the sweep is really asking whether
+    there is a width small enough to be localised and large enough to survive
+    step 7, and the answer may be that no such width exists.
+
+    `axes` is (0, 1) — horizontal only. B6's splice was vertical and could not
+    move a horizontal metric at all ("a column-2 correction cannot move a metric
+    that reads columns 0 and 1"), so the horizontal jump has never been tried.
+    """
+    from . import correct, segment
+    log = result["log"]
+    t = log["t"]
+    impacts = list(result.get("impacts") or [])
+    rest = segment.rest_instants(log, impacts)
+    world = np.asarray(result["world_accel"], dtype=float).copy()
+    vel = result["velocity"]
+    ax = list(axes)
+
+    applied = []
+    for j in range(len(rest) - 1):
+        i0, i1 = rest[j], rest[j + 1]
+        dv = vel[i1] - vel[i0]                    # observable; true dv is zero
+        if width_s is None:
+            a, b = i0, i1
+        else:
+            inside = [k for k in impacts if i0 < k <= i1]
+            if not inside:
+                continue
+            a = inside[-1]
+            n = max(1, int(round(width_s / float(np.median(log["dt"])))))
+            b = min(i1, a + n)
+        span = t[b] - t[a]
+        if span <= 0:
+            continue
+        world[a:b + 1, ax] -= (dv[ax] / span)
+        applied.append((int(a), int(b), float(span)))
+
+    _, position = integrate.integrate(world, log["dt"])
+    reps = correct.detrend_set(position, result["bounds"], t) if result["bounds"] else []
+    out = dict(result)
+    out["reps"] = reps
+    out["bar_position"] = position
+    out["jump_windows"] = applied
+    return out
+
+
+def rest_knots(result: dict) -> list[int]:
+    """Detrend boundaries that are NOT the impacts. C29.
+
+    The C29 structural failure is that `segment.rep_bounds` ends each rep at a
+    floor impact, so a correction localised at the impact is constant within
+    every rep, linear in position, and removed exactly by the per-rep line. The
+    correction and the detrend's null space coincide.
+
+    These knots move the boundaries off the impacts and onto the moments the bar
+    is actually at rest. That is a better place for them on its own terms, and
+    the point is worth stating separately from the jump: **today's boundaries
+    sit where the bar is still moving.** `segment.rest_instants` says so —
+    against video the bar is travelling at 0.4-1.0 m/s at the impact and reaches
+    a near-zero crossing ~150 ms later. A closure asserted at the impact is
+    asserted at a moment the closure premise is false.
+
+    The C3 holds bookend it. `phase == 0` and `phase == 2` are genuine still
+    periods, so they are legitimate knots and they matter: without one at the
+    front, the first pull of a set lies entirely before the first rest instant
+    and would go undetrended. Captures with no `phase` column fall back to the
+    first and last samples, which is weaker and is why this is deadlift-and-
+    2026-07-30-onward in practice.
+    """
+    from . import calibrate, segment
+    log = result["log"]
+    n = len(log["t"])
+    knots = list(segment.rest_instants(log, result.get("impacts")))
+    hw = calibrate.hold_windows(log, 1.5)
+    if hw.get("open") is not None:
+        knots.append(int(np.median(hw["open"])))
+    else:
+        knots.append(0)
+    if hw.get("close") is not None:
+        knots.append(int(np.median(hw["close"])))
+    else:
+        knots.append(n - 1)
+    return sorted(set(int(k) for k in knots if 0 <= k < n))
+
+
+def detrend_knots(position: np.ndarray, knots, t: np.ndarray,
+                  axes: tuple = (0, 1, 2)) -> np.ndarray:
+    """Piecewise-linear detrend with boundaries at `knots`, globally continuous.
+
+    Same premise as step 7 — the bar comes back to where it was — asserted at
+    the knots instead of at the rep boundaries, and as ONE continuous
+    piecewise-linear drift rather than as independent per-rep lines. A jump
+    inside a knot interval then shows up as a kink, and a line cannot remove a
+    kink, which is the whole point of C29's fix.
+
+    Outside the first and last knot the drift is held flat rather than
+    extrapolated: a slope fitted to the last interval and run past the end of
+    the data is exactly how B7's anchor walked off, and there is nothing out
+    there to constrain it.
+    """
+    p = np.asarray(position, dtype=float).copy()
+    k = np.asarray(sorted({int(x) for x in knots}), dtype=int)
+    if len(k) < 2:
+        return p
+    ref = p[k[0]]
+    out = p.copy()
+    for ax in axes:
+        drift = np.interp(t, t[k], p[k, ax] - ref[ax])   # flat outside
+        out[:, ax] = p[:, ax] - drift
+    return out
+
+
+def jump_then_knots(result: dict, width_s: float | None = 0.0,
+                    axes: tuple = (0, 1)) -> dict:
+    """C29's fix: correct at the impact, then detrend on boundaries that avoid it.
+
+    `width_s=0.0` is the pure jump the structural result says is annihilated by
+    the SHIPPING detrend. Under `detrend_knots` it should survive, because the
+    impact is now interior to a knot interval. `width_s=None` spreads it over
+    the whole rest-to-rest interval, i.e. C28b's shape, so the two can be
+    compared under the same detrend.
+
+    Pass `width_s=-1` to apply no correction at all and measure the knot
+    detrend on its own — the control that says whether any gain is the jump or
+    just the moved boundaries.
+    """
+    from . import segment
+    log = result["log"]
+    t = log["t"]
+    world = np.asarray(result["world_accel"], dtype=float).copy()
+    vel = result["velocity"]
+    ax = list(axes)
+
+    if width_s is not None and width_s >= 0.0:
+        rest = segment.rest_instants(log, result.get("impacts"))
+        impacts = list(result.get("impacts") or [])
+        dtm = float(np.median(log["dt"]))
+        for j in range(len(rest) - 1):
+            i0, i1 = rest[j], rest[j + 1]
+            dv = vel[i1] - vel[i0]
+            inside = [k for k in impacts if i0 < k <= i1]
+            if not inside:
+                continue
+            a = inside[-1]
+            b = min(i1, a + max(1, int(round(width_s / dtm)))) if width_s > 0 else a + 1
+            span = t[b] - t[a]
+            if span <= 0:
+                continue
+            world[a:b + 1, ax] -= (dv[ax] / span)
+    elif width_s is None:
+        rest = segment.rest_instants(log, result.get("impacts"))
+        for j in range(len(rest) - 1):
+            i0, i1 = rest[j], rest[j + 1]
+            span = t[i1] - t[i0]
+            if span <= 0:
+                continue
+            world[i0:i1 + 1, ax] -= ((vel[i1] - vel[i0])[ax] / span)
+
+    _, position = integrate.integrate(world, log["dt"])
+    corrected = detrend_knots(position, rest_knots(result), t)
+    reps = []
+    for a, b in result["bounds"]:
+        seg = corrected[a:b].copy()
+        reps.append(seg - seg[0])
+    out = dict(result)
+    out["reps"] = reps
+    out["bar_position"] = corrected
+    return out
+
+
+def rest_windows(result: dict) -> list[tuple]:
+    """Rep windows running rest-to-rest instead of impact-to-impact. C29.
+
+    The honest version of "move the detrend boundaries", after the continuous
+    `detrend_knots` failed. **That failure was the informative one:** the
+    shipping detrend fits INDEPENDENT lines, two free parameters per rep with no
+    continuity between them, and a continuous piecewise-linear drift has about
+    one per knot. Replacing the first with the second removed most of the
+    detrend's absorbing power and cost 8.21 -> 17.00 cm with vertical ROM at
+    70-138 against a 61 cm ceiling — the same shape of failure as B7's ablation.
+    So the detrend is load-bearing for a reason nobody had named: it is not the
+    closure that carries it, it is the per-rep INDEPENDENCE.
+
+    These windows keep that independence exactly and move only where the
+    boundaries fall. A rest-to-rest window is still a whole rep — descent,
+    landing, pull instead of pull, descent, landing — and it puts the impact in
+    the MIDDLE, where a correction localised there is a kink a line cannot
+    remove, rather than at the edge where it is a slope a line removes exactly.
+    """
+    from . import segment
+    rest = segment.rest_instants(result["log"], result.get("impacts"))
+    return [(int(a), int(b) + 1) for a, b in zip(rest[:-1], rest[1:])]
+
+
+def jump_rest_windows(result: dict, width_s: float | None = 0.0,
+                      axes: tuple = (0, 1)) -> dict:
+    """Correct at the impact, detrend per rest-to-rest window. C29's real fix.
+
+    Identical machinery to the shipping step 7 — `correct.detrend_set`,
+    independent endpoint lines, start-aligned — with the windows moved off the
+    impacts. `width_s=0.0` is the pure jump, `-1` applies no correction and is
+    the control, `None` reproduces C28b's whole-interval spread.
+
+    **`bounds` is replaced, so `metrics.vs_truth` scores these windows on both
+    sides.** The video is compared over the same windows as the reconstruction,
+    which is what keeps it a fair comparison — but it is NOT the same quantity
+    as the shipping number, because the reps being scored are different spans of
+    the same lifting. Read the control row before the treatment rows.
+    """
+    from . import correct, segment
+    log = result["log"]
+    t = log["t"]
+    world = np.asarray(result["world_accel"], dtype=float).copy()
+    vel = result["velocity"]
+    ax = list(axes)
+    rest = segment.rest_instants(log, result.get("impacts"))
+    impacts = list(result.get("impacts") or [])
+    dtm = float(np.median(log["dt"]))
+
+    for j in range(len(rest) - 1):
+        i0, i1 = rest[j], rest[j + 1]
+        dv = vel[i1] - vel[i0]
+        if width_s is None:
+            a, b = i0, i1
+        elif width_s < 0:
+            continue
+        else:
+            inside = [k for k in impacts if i0 < k <= i1]
+            if not inside:
+                continue
+            a = inside[-1]
+            b = min(i1, a + max(1, int(round(width_s / dtm)))) if width_s > 0 else a + 1
+        span = t[b] - t[a]
+        if span <= 0:
+            continue
+        world[a:b + 1, ax] -= (dv[ax] / span)
+
+    _, position = integrate.integrate(world, log["dt"])
+    bounds = rest_windows(result)
+    out = dict(result)
+    out["bounds"] = bounds
+    out["reps"] = correct.detrend_set(position, bounds, t) if bounds else []
+    out["bar_position"] = position
+    return out

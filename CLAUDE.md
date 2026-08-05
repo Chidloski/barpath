@@ -995,8 +995,65 @@ correction anyone has applied. **The bottleneck is the correction's shape in
 time, not the measurement.**
 
 *For anyone reaching for a Kalman filter:* a random-walk bias state distributes
-its correction smoothly by construction and would reproduce this exactly. What
-the evidence points at is a jump state AT the impact. A smoother is the right
+its correction smoothly by construction and would reproduce this exactly. C28b
+pointed at a jump state AT the impact instead — **and C29 built it, on
+2026-08-05, and it is ANNIHILATED BY CONSTRUCTION.**
+
+`segment.rep_bounds` ends every rep at a floor impact, so a velocity error that
+steps at the impact is constant within each rep, its position error is linear in
+t, and `correct.detrend_rep` removes a line. **The correction lands exactly in
+the detrend's null space** — gated as algebra, not measured. Widening the window
+to the [impact -> rest] span looks like a 16% win per capture and is regression
+to the mean: per rep it improves 10 of 20, the median gets worse, and the
+baseline SCREENS OFF the observable (partial +0.184 for the observable against
++0.272 for the baseline), which is the exact inverse of C28b's structure.
+
+**C29 THEN FIXED IT, and both changes are needed.** Keep step 7's machinery —
+independent endpoint lines — and move its windows to rest-to-rest so the impact
+falls INSIDE a window as a kink rather than at its edge as a slope. Measured on
+all six deadlifts, correcting all three axes, against the control that moves the
+windows and applies no correction:
+
+    arm                              h rms   beats_null   v rms
+    SHIPPING (impact windows)         8.21      0.29       4.90
+    rest windows, NO correction      10.66      0.21      11.92   <- CONTROL
+    rest windows + 0.20 s             3.93      0.69       3.22
+
+**Moving the windows alone is WORSE than shipping, and the correction alone is
+annihilated. Only together do they work.** All six captures improve;
+`deadlift_155x6_1` and `deadlift_180x3` cross `beats_null = 1.0` for the first
+time in this project. The window width is a broad plateau 0.10-0.50 s, which is
+where B6 independently measured the strap ringing.
+
+**It improves TRACKING, not invented travel, and that is the qualification that
+matters.** Per-rep fore-aft excursion, median: video 7.2 cm, shipping 12.4,
+fixed **14.4**. On the three marker-refereed captures alone, video 5.4, shipping
+14.4, fixed 13.8. So the path follows the video's shape and timing far better
+point-for-point while still sweeping ~2.5x the fore-aft range the bar really
+moved through. `h_rms` improves on 6 of 6; excursion on only 3 of 6.
+
+**Read the caveats before quoting it.** Dropping the first and last rep from
+SHIPPING too puts it at 7.05 rather than 8.21, so the like-for-like gain is
+7.05 -> 3.93. Zero reps are under 1 cm in either arm. The rest-window frame
+scores 19 of 30 reps — `rest_instants` rejects the final impact of each set — so the honest
+number is the frame-internal 10.66 -> 3.93, NOT 8.21 -> 3.93. Deadlift-only,
+six captures, and 0.70 median `beats_null` is still below a flat line. A large
+step, not an arrival. Nothing is proposed for the pipeline yet.
+
+*And one thing the failed first attempt taught:* a CONTINUOUS piecewise-linear
+detrend cost 8.21 -> 17.00 with ROM at 70-138 cm. Step 7 is load-bearing because
+of its per-rep INDEPENDENCE — two free parameters per rep, no continuity — not
+because of the closure. That had never been named.
+
+**The bind part 1 established, which the fix confirms by escaping it:** "Use the impact,
+the one externally true instant" and "close each rep with a line whose
+boundaries are the impacts" are not merely hard to combine — any correction
+localised at the boundary is invisible to what follows it. B7's ablation already
+showed the detrend cannot just be dropped (error goes to 3-5 m). So the
+remaining move is a detrend whose BOUNDARIES do not sit on the impacts, or a
+constraint that replaces closure entirely. Nothing has tried that. Five
+corrections have now failed: B7, B6, C19, C28b, C29. *Evidence:* TASKS.md C29,
+`analysis/44`. A smoother is the right
 class of tool; the default process model is the wrong instance of it. And a
 filter inherits C28's observability limit rather than escaping it — adding
 states does not create observability. It is also deadlift-only and always will

@@ -205,3 +205,59 @@ def test_impact_correction_actually_zeroes_the_observed_velocity_change(monkeypa
     # vertical is deliberately untouched — this is a horizontal-only correction
     assert np.allclose(corrected[:, 2], world[:, 2])
     assert out["bar_position"].shape == (n, 3)
+
+
+# ------------------------------------------------------------------- C29 --
+def test_a_velocity_step_at_a_rep_BOUNDARY_is_annihilated_by_the_detrend():
+    """Why a jump state at the impact cannot work, as algebra rather than as a
+    measurement.
+
+    `segment.rep_bounds` ends every rep AT a floor impact. So a velocity error
+    that steps at the impact is constant within each rep, its position error is
+    linear in t within each rep, and `correct.detrend_rep` removes a line. The
+    correction therefore lands exactly in the detrend's null space and changes
+    nothing — not approximately, exactly.
+
+    That is a structural incompatibility between the two ideas the project has
+    been trying to combine: "use the impact, which is the one externally true
+    instant" and "close each rep with a line, whose boundaries are the impacts".
+    Any correction localised at the boundary is invisible to what follows it.
+    """
+    from src import correct
+    n = 300
+    t = np.linspace(0.0, 3.0, n)
+    # a rep's true path plus a constant velocity offset => a linear position term
+    true_path = np.column_stack([0.02 * np.sin(np.pi * t / 3.0),
+                                 np.zeros(n),
+                                 0.5 * np.sin(np.pi * t / 3.0)])
+    step = np.array([0.3, -0.2, 0.0])           # constant velocity error
+    with_step = true_path + step * t[:, None]
+
+    a = correct.detrend_rep(true_path, 0, n, t)
+    b = correct.detrend_rep(with_step, 0, n, t)
+    assert np.allclose(a, b, atol=1e-9), (
+        "a constant velocity offset over a rep must vanish under a linear "
+        "per-rep detrend; if this fails the C29 result needs revisiting")
+
+
+def test_jump_correction_reduces_to_impact_correction_at_full_width():
+    """`width_s=None` must reproduce C28b exactly, or the sweep compares two
+    different things at its endpoints and the curve means nothing."""
+    from src import integrate, segment
+    n = 500
+    dt = np.full(n, 0.01)
+    t = np.cumsum(dt) - dt[0]
+    world = np.zeros((n, 3))
+    world[:, 0] = 0.2
+    vel, _ = integrate.integrate(world, dt)
+    import pytest as _pt
+    saved = segment.rest_instants
+    segment.rest_instants = lambda log, imp=None: [50, 400]
+    try:
+        res = {"log": {"t": t, "dt": dt}, "world_accel": world, "velocity": vel,
+               "bounds": [(0, n)], "impacts": [300], "path": "synthetic"}
+        full = oracle.jump_correction(res, width_s=None)
+        c28b = oracle.impact_correction(res)
+    finally:
+        segment.rest_instants = saved
+    assert np.allclose(full["bar_position"], c28b["bar_position"], atol=1e-12)
