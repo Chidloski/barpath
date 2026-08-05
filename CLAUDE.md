@@ -966,8 +966,43 @@ does. Per-rep polynomial detrending cannot bring deadlift near spec, whoever
 writes the estimator. *Evidence:* `analysis/38`, `python run.py --b3oracle`,
 TASKS.md B3, `tests/test_real_data.py`.
 
-**P6 — The floor impact is trustworthy, and unused.** Closed as a worry and
-opened as an opportunity, by B5.
+**P6 — The floor impact is trustworthy, INFORMATIVE, and misspent by every
+correction tried.** Closed as a worry by B5, opened as an opportunity, and
+sharpened by C28b on 2026-08-05.
+
+**C28b measured what the impact actually tells you about the horizontal, and
+the answer is: a lot.** At a rest instant the bar's true velocity is zero, so
+the reconstruction's velocity there IS its velocity error — readable without
+the video, from `segment.rest_instants`, which is placed on raw acceleration
+and gyro alone. The reconstruction claims **0.17-1.28 m/s of horizontal
+velocity at moments the bar is provably still**, and over 20 rest-to-rest
+intervals on all six deadlifts that observable predicts the per-rep horizontal
+error at **r = +0.772**, partial +0.472 controlling for interval length. The
+reverse does not hold — span predicts nothing once you know it (+0.184) — and
+the VERTICAL velocity error is a clean negative control at -0.254.
+
+**And using it still loses.** The minimal correction it licenses, a constant
+horizontal acceleration per interval sized to zero the observed velocity change
+and with zero free parameters, is worse on 4 of 6: median 8.21 -> 8.99 cm.
+
+**The two together are the finding, and it is the fourth instance of one
+pattern.** B7 anchored position at the impacts, B6 spliced velocity across them,
+C19 raised the detrend to a quadratic, C28b applied a constant per interval —
+all four lost, and all four impose a correction SMOOTH ACROSS THE REP where B6
+measured the error to be LOCALISED AT THE LANDING. C19 generalised half of this
+(the obstacle is not the detrend's order); C28b extends it past step 7 to every
+correction anyone has applied. **The bottleneck is the correction's shape in
+time, not the measurement.**
+
+*For anyone reaching for a Kalman filter:* a random-walk bias state distributes
+its correction smoothly by construction and would reproduce this exactly. What
+the evidence points at is a jump state AT the impact. A smoother is the right
+class of tool; the default process model is the wrong instance of it. And a
+filter inherits C28's observability limit rather than escaping it — adding
+states does not create observability. It is also deadlift-only and always will
+be: bench and squat have no raw-signal rest anchor and cannot be given one.
+*Evidence:* TASKS.md C28b, `oracle.rest_observables`, `oracle.impact_correction`.
+
 
 The worries were saturation and lost impulse, and neither survived measurement.
 Nothing in `data/raw/` clips — `deadlift_180x3`'s 21.78 g peak is a genuine

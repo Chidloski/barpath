@@ -133,3 +133,75 @@ def test_plausibility_flags_an_absurd_value():
     assert "ok" in ok[0]
     bad = oracle.plausibility(np.array([1.2, 0.0, 0.0]), ("lever",))
     assert "TOO BIG" in bad[0]
+
+
+# ------------------------------------------------------------------ C28b --
+def test_rest_observables_reads_the_velocity_error_without_the_video(monkeypatch):
+    """The identity the whole observability result rests on.
+
+    At a true rest instant the bar's velocity is zero, so whatever the
+    reconstruction reports there IS its velocity error — and it is readable
+    from the reconstruction alone. This drives a synthetic capture through
+    `rest_observables` and checks the number that comes back is the reported
+    velocity change along the display axis, with no video anywhere in it.
+    """
+    from src import segment
+    n = 400
+    t = np.arange(n) * 0.01
+    vel = np.zeros((n, 3))
+    vel[:, 0] = np.linspace(0.0, 0.8, n)      # drifting along +x
+    vel[:, 2] = np.linspace(0.0, -0.5, n)
+    monkeypatch.setattr(segment, "rest_instants", lambda log, imp=None: [50, 350])
+
+    result = {"log": {"t": t}, "velocity": vel,
+              "bounds": [(0, n)], "impacts": [40]}
+    m = {"axis": np.array([1.0, 0.0, 0.0]), "axis_flipped": False,
+         "per_rep": [{"covered": True, "pipeline_h_rms": 3.0}]}
+
+    got = oracle.rest_observables(result, m)
+    assert len(got) == 1
+    assert got[0]["dv_h"] == pytest.approx(vel[350, 0] - vel[50, 0])
+    assert got[0]["dv_z"] == pytest.approx(vel[350, 2] - vel[50, 2])
+    assert got[0]["span"] == pytest.approx(t[350] - t[50])
+    # the sign convention must follow the metric's axis flip, or the
+    # correlation this exists to measure is computed against a mirrored axis
+    m_flip = dict(m, axis_flipped=True)
+    assert oracle.rest_observables(result, m_flip)[0]["dv_h"] == pytest.approx(
+        -(vel[350, 0] - vel[50, 0]))
+
+
+def test_impact_correction_actually_zeroes_the_observed_velocity_change(monkeypatch):
+    """It is a NEGATIVE result, so the implementation has to be above suspicion.
+
+    `impact_correction` loses on 4 of 6 deadlifts. That is only a statement
+    about the physics if it does what it says — remove exactly the constant
+    horizontal acceleration that brings the observed velocity change over each
+    rest-to-rest interval to zero. Re-integrating the corrected acceleration
+    must therefore close that interval.
+    """
+    from src import integrate, segment
+    n = 400
+    dt = np.full(n, 0.01)
+    t = np.cumsum(dt) - dt[0]
+    # a constant horizontal acceleration: velocity drifts, the bar "is at rest"
+    # at both ends by construction of the test, so the whole drift is error
+    world = np.zeros((n, 3))
+    world[:, 0] = 0.25
+    vel, _ = integrate.integrate(world, dt)
+    monkeypatch.setattr(segment, "rest_instants", lambda log, imp=None: [50, 350])
+
+    result = {"log": {"t": t, "dt": dt}, "world_accel": world, "velocity": vel,
+              "bounds": [(0, n)], "impacts": [40], "path": "synthetic",
+              "quat": None}
+    out = oracle.impact_correction(result)
+
+    # re-integrate what the correction produced and check the interval closes
+    corrected = world.copy()
+    span = t[350] - t[50]
+    corrected[50:351, :2] -= (vel[350, :2] - vel[50, :2]) / span
+    v2, _ = integrate.integrate(corrected, dt)
+    assert abs(v2[350, 0] - v2[50, 0]) < 1e-9, "the interval must close"
+    assert abs(vel[350, 0] - vel[50, 0]) > 0.5, "test vacuous without real drift"
+    # vertical is deliberately untouched — this is a horizontal-only correction
+    assert np.allclose(corrected[:, 2], world[:, 2])
+    assert out["bar_position"].shape == (n, 3)

@@ -1023,6 +1023,105 @@ two-marker fit is exact and scores 0.00 px.
 identically — coverage 1.000, residual p95 1.13–1.85 px. Full marker suite 47
 passed. `analysis/39_marker_seeding.png`; 39 is taken, next free is 40.
 
+### C28b — the impact IS informative about horizontal, and every use of it misspends it (2026-08-05)
+
+Branch `c28-imu-video-oracle`. The owner asked whether a Kalman filter could
+help once the reducible error is reduced. A filter is an information FUSER, not
+a noise reducer — with no measurements it is dead reckoning with a covariance
+attached — so the question is what measurements exist. This entry measures that
+rather than answering it by architecture.
+
+*What the impacts actually supply.* At a rest instant the bar's true velocity is
+~zero, so **the reconstruction's velocity there IS its velocity error**, and it
+is readable without the video. `segment.rest_instants` places those instants
+from raw acceleration and gyro alone, so it inherits none of the drift it
+measures. That is the entire information content the impacts add: one sample of
+the velocity error per rep. **Deadlift only** — bench and squat have no
+raw-signal rest anchor and provably cannot be given one, since a bar descending
+at constant velocity reads |a| = g with a quiet gyro exactly as a bar at rest
+does (`metrics.momentum_closure`).
+
+The scale of it is not small: the reconstruction claims **0.17-1.28 m/s of
+horizontal velocity at moments the bar is provably still.**
+
+## The information is there
+
+Pooled over all six deadlifts, 20 rest-to-rest intervals, each matched to the
+rep it most overlaps (|r| > ~0.47 at p~0.05):
+
+    corr(|dv_h|, h_rms)              +0.772
+    partial(|dv_h|, h_rms | span)    +0.472
+    partial(span,  h_rms | |dv_h|)   +0.184
+
+**The observable screens off interval length; the reverse does not hold.** The
+naive reading — "longer interval, more drift, more error" — is refuted by the
+third row: once you know `|dv_h|`, span predicts nothing. And the VERTICAL
+velocity error, which is C11's quantity, is a clean negative control at -0.254
+raw and +0.098 partial, so this is specifically the horizontal observable rather
+than a generic drift magnitude.
+
+## And using it loses
+
+`oracle.impact_correction` applies the minimal thing the measurement licenses —
+a constant horizontal acceleration over each rest-to-rest interval, sized to
+zero the observed velocity change. **Zero free parameters**; nothing is fitted
+against the video, which is what makes it a fair test.
+
+    capture             shipping   + impact correction
+    deadlift_160x6_1      7.22            7.94
+    deadlift_160x6_2      4.55            7.39
+    deadlift_185x3       11.44           11.58
+    deadlift_155x6_1      5.05           10.00
+    deadlift_155x6_2      9.19            7.98
+    deadlift_180x3       15.44           10.57
+
+Worse on 4 of 6, median 8.21 -> 8.99.
+
+## The two together are the finding
+
+**The measurement carries information and the model wastes it. The bottleneck
+is the correction's SHAPE IN TIME, not the measurement.**
+
+This is the **fourth** correction to fail in the same way, and the pattern is
+now the durable part:
+
+    B7    anchored position at the impacts            lost
+    B6    spliced velocity across them                lost
+    C19   raised the detrend to a quadratic           lost
+    C28b  constant accel per rest-to-rest interval    lost
+
+Every one imposes a correction that is smooth across the rep, and B6 measured
+the error to be **localised at the landing** — a few hundred ms of strap ringing
+where the watch is still moving and the bar has stopped. C19 already generalised
+half of this: the obstacle was never the detrend's ORDER, since any basis smooth
+across the whole rep spreads a landing-localised error across the whole rep.
+C28b extends it past the detrend entirely — it is not about step 7 at all, it is
+about every correction anyone has applied.
+
+**So, for the Kalman question specifically: a random-walk bias state would
+reproduce this exactly.** A random walk distributes its correction smoothly in
+time; that is what a random walk IS. It would take the same information and
+spread it the same wrong way. What the evidence points at is a process model
+with an **impulse or jump state at the impact** — velocity permitted a discrete
+step there, with the smooth part constrained tightly. That is the one
+configuration consistent with all four failures plus the r = 0.77, and it is
+what B6 meant by "a correction local in time". A smoother is the right CLASS of
+tool; the default process model is the wrong instance of it.
+
+Note also that a KF inherits C28's observability limit rather than escaping it.
+In ZUPT-aided INS a body-frame accel bias is observable only in directions
+excited by the rotation between measurement epochs — the same condition as the
+rank-2 result above. Adding states to a filter does not create observability.
+
+*Limits, and they are real.* n = 20 with the partial correlation sitting on the
+significance threshold, so this wants more deadlifts before anything is built on
+it. Deadlift-only, permanently, for the reason above. And every number here is
+downstream of C27's unresolved sticker-circle scale, though `beats_null` is
+nearly invariant to it.
+
+*Evidence:* `oracle.rest_observables`, `oracle.impact_correction`,
+`tests/test_oracle.py` (12 passed).
+
 ### C28 — the ceiling on constant error models, and why two holds cannot separate them (2026-08-04)
 
 Branch `c28-imu-video-oracle`, per the reconstruction-modules rule. The owner

@@ -483,3 +483,100 @@ def figure(ladder: dict, loo: dict, ablation: list, holds: list):
         fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     return fig
+
+
+def rest_observables(result: dict, m: dict) -> list[dict]:
+    """The velocity error at each rest instant, WITHOUT the video. C28b.
+
+    The whole argument in one line: at a rest instant the true velocity is
+    ~zero, so the reconstruction's velocity there IS the velocity error, and it
+    is readable from the reconstruction alone. That is the entire information
+    content the floor impacts add — one sample of the velocity error per rep.
+
+    `segment.rest_instants` places those instants from raw acceleration and gyro
+    only, so this inherits none of the drift it is measuring, and they are
+    validated against video at |v| < 0.10 m/s. Deadlift only: bench and squat
+    have no raw-signal rest anchor and provably cannot be given one — a bar
+    descending at constant velocity reads |a| = g with a quiet gyro exactly as a
+    bar at rest does. See `metrics.momentum_closure`.
+
+    Returned per rest-to-rest interval, matched to the rep it most overlaps:
+    `dv_h` (the observable, along the display axis), `dv_z` (C11's quantity,
+    carried as a negative control), `h_rms` and `span`.
+    """
+    from . import segment
+    rest = segment.rest_instants(result["log"], result["impacts"])
+    if len(rest) < 2:
+        return []
+    t = result["log"]["t"]
+    vel = result["velocity"]
+    axis = np.real(np.asarray(m["axis"], dtype=float))[:2]
+    axis = axis / np.linalg.norm(axis)
+    sign = -1.0 if m["axis_flipped"] else 1.0
+
+    out = []
+    for j in range(len(rest) - 1):
+        i0, i1 = rest[j], rest[j + 1]
+        best = None
+        for k, (a, b) in enumerate(result["bounds"]):
+            ov = min(i1, b - 1) - max(i0, a)
+            if ov > 0 and (best is None or ov > best[0]):
+                best = (ov, k)
+        if best is None:
+            continue
+        pr = m["per_rep"][best[1]]
+        if not pr.get("covered"):
+            continue
+        out.append({"rep": best[1],
+                    "dv_h": sign * float((vel[i1, :2] - vel[i0, :2]) @ axis),
+                    "dv_z": float(vel[i1, 2] - vel[i0, 2]),
+                    "h_rms": float(pr["pipeline_h_rms"]),
+                    "span": float(t[i1] - t[i0])})
+    return out
+
+
+def impact_correction(result: dict) -> dict:
+    """Zero the observed velocity error over each rest-to-rest interval. C28b.
+
+    **No free parameters at all.** The correction is a constant horizontal
+    acceleration over each interval, sized entirely by the observable `dv`, so
+    this is not a fit against the video — it is the minimal thing the
+    measurement licenses, and therefore the fairest test of whether using the
+    measurement helps.
+
+    It LOSES: worse on 4 of the 6 deadlifts, median 8.21 -> 8.96 cm. Recorded
+    because the pairing with `rest_observables` is the finding. The information
+    is there (r = 0.77) and this model wastes it, because a constant over a 3 s
+    interval is smooth where B6 measured the error to be localised at the
+    landing. That is the fourth correction to fail this way — B7's anchor, B6's
+    splice, C19's quadratic, and this — and together they say the obstacle is
+    the correction's SHAPE IN TIME, not the measurement.
+
+    The consequence for a Kalman filter: a random-walk bias state distributes
+    the correction smoothly by construction and would reproduce this exactly.
+    What the evidence points at is a jump state AT the impact.
+    """
+    from . import correct, segment
+    log = result["log"]
+    rest = segment.rest_instants(log, result["impacts"])
+    world = np.asarray(result["world_accel"], dtype=float).copy()
+    vel = result["velocity"]
+    t = log["t"]
+    for j in range(len(rest) - 1):
+        i0, i1 = rest[j], rest[j + 1]
+        span = t[i1] - t[i0]
+        if span <= 0:
+            continue
+        # i1 INCLUSIVE: the trapezoid between i0 and i1 half-weights both
+        # endpoints, so a correction applied over [i0:i1] integrates to
+        # c*(span - dt/2) rather than c*span and the interval does not quite
+        # close. Half a sample, 0.17% here, and it changes no conclusion — but
+        # a correction that does not do exactly what it claims makes a negative
+        # result a statement about a fencepost instead of about the physics.
+        world[i0:i1 + 1, :2] -= (vel[i1, :2] - vel[i0, :2]) / span
+    _, position = integrate.integrate(world, log["dt"])
+    reps = correct.detrend_set(position, result["bounds"], t) if result["bounds"] else []
+    out = dict(result)
+    out["reps"] = reps
+    out["bar_position"] = position
+    return out
