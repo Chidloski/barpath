@@ -1023,6 +1023,96 @@ two-marker fit is exact and scores 0.00 px.
 identically — coverage 1.000, residual p95 1.13–1.85 px. Full marker suite 47
 passed. `analysis/39_marker_seeding.png`; 39 is taken, next free is 40.
 
+### C30 — the horizontal channel is not NOISY, it is EMPTY (2026-08-05)
+
+Branch `c29-jump-state`. The owner asked why the reconstruction still invents
+fore-aft travel after C29. The answer turned out not to be a magnitude problem
+at all. **Nobody had ever measured the acceleration error as a TIME SERIES** —
+every statement about P3 came from its integral or from a summary statistic.
+
+*Method, and it is feasible because C27 made it so.* Differentiate the marker
+path twice (Savitzky-Golay, 0.70 s window, order 3) to get the bar's true
+acceleration, and put the reconstruction's position through the IDENTICAL
+filter so both sides have the same bandwidth. Noise floor, measured where the
+bar is provably still: **0.00125 g**, about 15x below the signal. That only
+works because the conic tracker holds 0.28 px residual at 100% coverage.
+
+*Note the detrend cannot affect this at all.* Step 7 removes a linear function
+of t from position, whose second derivative is zero. **The acceleration error is
+identical before and after step 7**, which is worth stating plainly: no detrend,
+of any order or on any boundaries, can change what follows.
+
+## The measurement
+
+    capture            corr(recon, video) HORIZONTAL   ... best over ALL directions   VERTICAL
+    deadlift_160x6_1              -0.077                        -0.103 (at 152 deg)     0.990
+    deadlift_160x6_2              -0.156                        -0.233 (at 146 deg)     0.975
+    deadlift_185x3                -0.102                        -0.115 (at 168 deg)     0.971
+
+**The vertical is the positive control** — same footage, same clip, same filter,
+same differentiation, same code path — and it reproduces the video at r = 0.97
+to 0.99. The horizontal, optimised post-hoc over all 90 projection directions so
+that B4's unresolved axis cannot be blamed, reaches -0.10 to -0.23.
+
+**So the reconstruction's fore-aft acceleration is uncorrelated with the bar's.**
+Its magnitude is comparable or larger — sd 0.26/0.30/0.10 against the video's
+0.21/0.19/0.13 — so the pipeline draws fore-aft motion of roughly the right
+size that bears no relation to what the bar did.
+
+*And P3's stated mechanism is not it.* Regressing the error on `u(t) = R(t)^T
+axis` — the exact linear model "a body-frame bias projected through a rotating
+forearm" implies, with a known time-varying regressor — explains only **17-23%**
+of the variance and needs |b| = 0.42-1.25 g against P4's table measurement of
+0.0025 g. That is 170-500x too big: the fit is absorbing, not explaining.
+
+## Why horizontal and not vertical
+
+    quantity                                    sd, m/s^2
+    the bar's true HORIZONTAL acceleration      0.13 - 0.21
+    the bar's true VERTICAL acceleration        0.86 - 1.27      (6-7x bigger)
+    noise floor of this measurement             0.012
+    wrist lever R(t).d for |d| = 12 cm          ~1.9 - 3.3       (order of magnitude)
+
+**The bar's fore-aft acceleration is the smallest real thing in the system.** It
+is 6-7x smaller than its own vertical, so any wrist-versus-bar error term is
+6-7x more damaging to the horizontal — and THAT ratio is the robust part of this,
+because it needs nothing to be known about `d`.
+
+The wrist lever arm is the obvious candidate for the term itself: the bar is
+constrained to move nearly vertically while the forearm ROTATES about it, so the
+watch's fore-aft motion is the bar's plus `R(t).d`, and step 6 — which exists
+and would remove it — is OFF because `d` has never been measured.
+
+**Treat the ~2.5 m/s^2 as an order of magnitude and no more.** It is a median
+over random directions of `d`, and the vertical's r = 0.976 bounds the TRUE
+lever term well below it, since a term that large would corrupt the vertical
+too. What survives is that a plausible `d` puts this term at or above the
+horizontal signal while remaining a modest fraction of the vertical.
+
+## What this reframes
+
+P2 reads "horizontal is 5-15x outside spec", which sounds quantitative — a
+signal that needs cleaning up. **It is qualitative: there is no horizontal
+signal to clean.** That explains, at a stroke:
+
+- why `beats_null` is below 1 everywhere (a flat line beats uncorrelated motion
+  of the right magnitude, necessarily);
+- why five corrections in a row failed (B7, B6, C19, C28b, C29 were all
+  rearranging noise);
+- why C28's oracle capped at the null across every constant error model (there
+  was nothing to recover);
+- why C29 improved `h_rms` 44% without touching excursion (it improved the
+  low-frequency ALIGNMENT without adding any signal).
+
+**The implication for the project is that `d` is not worth "1-2 cm" as B2
+estimated.** B2 measured its effect on POSITION after the detrend. In
+ACCELERATION, before anything, it is plausibly the dominant term on the one axis
+the spec is about. A tape measure from watch centre to bar centre, in watch
+axes, is now the highest-value measurement available — ahead of the sticker
+circle.
+
+*Evidence:* `analysis/46_accel_error_shape.png`. 46 is taken, next free is 47.
+
 ### C29 — the jump state, and fixing the structure that annihilated it (2026-08-05)
 
 Branch `c29-jump-state`, cut from `c28-imu-video-oracle` (d329a2a) rather than

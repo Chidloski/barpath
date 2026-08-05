@@ -1655,3 +1655,36 @@ construction — horizontal-only, so ROM stays at 56-57 cm where B6's vertical
 splice pushed it to 82.6 against a 61 ceiling. And nothing about a detrend whose
 boundaries avoid the impacts, which is what this figure argues is the only move
 left.
+
+---
+
+## 46 — the horizontal channel is EMPTY, not noisy (C30, 2026-08-05)
+
+Branch `c29-jump-state`. The first measurement of the acceleration error as a
+time series. Differentiate the marker path twice (Savitzky-Golay, 0.70 s, order
+3) and put the reconstruction's position through the IDENTICAL filter, so both
+sides carry the same bandwidth. Noise floor where the bar is provably still:
+0.00125 g, ~15x below the signal — only possible because C27's conic tracker
+holds 0.28 px residual at 100% coverage.
+
+**Left is the positive control and it is why the right panel can be believed.**
+Vertical acceleration, video against reconstruction, r = 0.976. Same clip, same
+filter, same code path.
+
+**Middle: the same thing horizontally, r = -0.176.** Optimised post-hoc over all
+90 projection directions it reaches only -0.23, so B4's unresolved axis is not
+the explanation. The reconstruction's fore-aft acceleration is uncorrelated with
+the bar's while being the same size.
+
+**Right: why this axis and not the other.** The bar's true fore-aft acceleration
+is the smallest real quantity in the system — 6-7x below its own vertical. Any
+wrist-versus-bar term is therefore 6-7x more damaging horizontally, and that
+ratio holds without knowing `d`. The lever bar is an order-of-magnitude estimate
+for |d| = 12 cm over random directions; the vertical's r = 0.976 bounds the true
+term below it.
+
+**What it does not show.** It does not prove the lever arm is the term — only
+that a plausible one is the right size, and that P3's stated mechanism is not
+(17-23% of variance at a bias 170-500x the measured one). Deadlift only. And it
+says nothing about bench, where the horizontal error is already 0.6-3.7 cm and
+two captures beat the null 4x — this is a deadlift diagnosis.

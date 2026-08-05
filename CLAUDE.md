@@ -684,8 +684,47 @@ not the end of lifting.**
 `17` and `src/README.md` for the phase bug; `23` and `analysis/README.md` for
 the ROM bounds; `tests/test_segmentation.py` and `28` for C5.
 
-**P2 — Horizontal is 5–15× outside spec; vertical is out too, but the ruler
-that says so is itself broken on two captures of three.** Measured against
+**P2 — READ C30 FIRST (2026-08-05, branch `c29-jump-state`): the horizontal
+channel is not NOISY, it is EMPTY.** Everything below measures how big the
+horizontal error is. C30 measured the acceleration error as a TIME SERIES for
+the first time — differentiating the marker path twice and putting the
+reconstruction through the identical filter — and found:
+
+    capture            corr(recon, video)   best over ALL dirs   VERTICAL
+    deadlift_160x6_1         -0.077               -0.103           0.990
+    deadlift_160x6_2         -0.156               -0.233           0.975
+    deadlift_185x3           -0.102               -0.115           0.971
+
+The vertical is the positive control: same clip, same filter, same code, r =
+0.97-0.99. The horizontal, optimised post-hoc over all 90 directions so B4's
+unresolved axis cannot be blamed, reaches -0.10 to -0.23. **The reconstruction's
+fore-aft acceleration is uncorrelated with the bar's, at comparable magnitude.**
+
+P3's stated mechanism is not it either: regressing the error on `R(t)^T axis` —
+the exact model "body-frame bias through a rotating forearm" implies — explains
+17-23% and needs |b| = 0.42-1.25 g against P4's 0.0025 g.
+
+**Why this axis and not the other.** The bar's true horizontal acceleration is
+0.13-0.21 m/s^2, **6-7x smaller than its own vertical** (0.86-1.27). So any
+wrist-versus-bar term is 6-7x more damaging horizontally, and that ratio needs
+nothing known about `d`. The lever arm `R(t).d` is the obvious candidate — the
+bar is constrained to move nearly vertically while the forearm rotates about it
+— and **step 6, which would remove it, is OFF because `d` has never been
+measured**. Order of magnitude only: ~1.9-3.3 m/s^2 for |d| = 12 cm, and the
+vertical's r = 0.976 bounds the true term below that.
+
+**This reframes everything below from quantitative to qualitative.** It explains
+why `beats_null` is under 1 everywhere (a flat line necessarily beats
+uncorrelated motion), why five corrections failed (B7, B6, C19, C28b, C29 were
+rearranging noise), why C28's oracle capped at the null (nothing to recover),
+and why C29 cut `h_rms` 44% without touching excursion. **`d` is the highest
+value measurement available now** — a tape from watch centre to bar centre, in
+watch axes. B2 priced it at 1-2 cm by its effect on position after the detrend;
+in acceleration, before anything, it is plausibly the dominant term on the one
+axis the spec is about. *Evidence:* TASKS.md C30, `analysis/46`.
+
+**P2 (as measured before C30) — Horizontal is 5–15× outside spec; vertical is
+out too, but the ruler that says so is itself broken on two captures of three.** Measured against
 video by A3, per rep, on the three deadlifts: horizontal **5.05, 9.19 and
 15.44 cm rms** against a 1 cm spec, and vertical **5.24, 6.60 and 5.24 cm rms**
 against ±2–3 cm. (Re-measured 2026-07-30 against the 445 mm bumper; the
