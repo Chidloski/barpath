@@ -74,11 +74,25 @@ they do not share a mechanism.**
 
 `bench_spoto_90x5_1` counted six reps in a five-rep set. The cadence tolerance
 was 1.6 and admitting the first post-set movement needed 1.573, so a sloppy run
-of six outgrew the true run of five on length alone. The tolerance is 1.45 now,
-which is the middle of a 1.35–1.55 plateau bounded by real data at both ends.
+of six outgrew the true run of five on length alone. C5 set the tolerance to
+1.45, the middle of a 1.35–1.55 plateau bounded by real data at both ends.
 Worth noting what did NOT catch it: the two spurious windows are 2.1 and 2.6 s
 against real reps of 2.5–2.9 s, so duration is blind to them. Only their 45.7
 and 88.7 cm of vertical, against a 35 cm bench bound, gives them away.
+
+**That plateau closed to nothing on 2026-08-06 (C31a) and the RULE was replaced
+rather than the constant.** The four paused squats of that day are the first
+captures here with a deliberate dwell at the bottom of every rep, and two of
+them counted 3 of 4. The cause is this same function: a paused set's cadence
+lengthens rep by rep — `squat_pause_140x4_3`'s gaps are 5.43, 5.85, 8.53 s —
+so measured by the run's global spread it is indistinguishable from a set with
+a post-set movement tacked on. It needs tol >= 1.574 where `bench_spoto_90x5_1`
+needs tol <= 1.572: **disjoint, so no tolerance existed at all.** Comparing each
+gap to its NEIGHBOUR separates them (1.460 against 1.531), and breaking
+length ties on cadence evenness before lateness widens the plateau to 4.74%.
+All 30 labelled captures count correctly, and across all 34 CSVs in the two
+raw directories every window that was already correct is bit-identical. See
+`_longest_cadence`.
 
 `squat_160x1` counted its one rep correctly and put the window on the re-rack —
 18.0 cm of a ~65 cm squat. A single leaves the cluster ranking degenerate: every
@@ -511,7 +525,18 @@ def _lobes_before(lobes, anchors, t) -> list:
     return chosen
 
 
-def _longest_cadence(chosen, t, tol=1.45):
+def _drift(gaps: np.ndarray) -> float:
+    """Worst ratio between two ADJACENT gaps. 1.0 means a perfectly even set.
+
+    Symmetric, so a gap that suddenly halves scores the same as one that
+    doubles. An empty or single-gap run has no adjacency to score and is 1.0.
+    """
+    if len(gaps) < 2:
+        return 1.0
+    return float(np.maximum(gaps[1:] / gaps[:-1], gaps[:-1] / gaps[1:]).max())
+
+
+def _longest_cadence(chosen, t, tol=1.50):
     """Keep the longest run of candidates that share a cadence.
 
     Reps in a set come at a regular interval; the unrack does not belong to
@@ -519,34 +544,81 @@ def _longest_cadence(chosen, t, tol=1.45):
     are 2.16, 2.13 and 2.33 s apart while the unrack sits 15.9 s before the
     first — obvious in the gaps, invisible to shape and to size.
 
-    Ties go to the later run, because a set is always set up first and lifted
-    second. That is what resolves bench_92.5x2, where two reps and two setup
-    events each form a pair and no cadence argument can separate them.
+    **A run is admitted on LOCAL drift, not on its global spread (C31a,
+    2026-08-06), and ties are broken on cadence QUALITY before lateness.**
+    Both changes were forced by the same capture and neither is sufficient
+    alone; the history is below because it is the evidence for both.
 
-    `tol` was 1.6 until 2026-07-31 and that is what miscounted
-    `bench_spoto_90x5_1` as six reps. Its five real reps sit 2.78, 2.88, 2.86
-    and 2.94 s apart — a ratio of 1.058 — and the first post-set movement
-    follows 4.50 s after the last rep. Admitting that gap needs 4.50/2.86 =
-    1.573, which 1.6 allowed, growing a run of six that beat the true run of
-    five on length alone. Note the failure is NOT that the extra window looks
-    like a rep: at 2.1 and 2.6 s the spurious windows are the same duration as
-    the real ones, and only their 45.7 and 88.7 cm of vertical gives them away.
+    Until 2026-08-06 a run was admitted when `gaps.max() / gaps.min() <= tol`
+    — the spread of the whole run — and ties went to the later run on the
+    grounds that a set is always set up first and lifted second. That rule
+    **has no admissible tolerance any more.** The two paused squats of
+    2026-08-06 and `bench_spoto_90x5_1` constrain it from opposite sides and
+    the constraints are DISJOINT:
 
-    **The judgement `tol` encodes:** the gap between two reps of one set varies
-    less than the gap between the last rep and whatever the lifter does next.
-    Falsified by a set with a genuine long pause mid-set — a rest-pause or
-    cluster set, where the lifter re-breathes between singles — which would
-    have a real gap ratio above 1.45 and would be split. No such capture exists
-    in `data/raw/`, so this is a bound from touch-and-go and straight sets only.
+        bench_spoto_90x5_1        correct only for tol <= 1.572
+        squat_pause_140x4_3       correct only for tol >= 1.574
 
-    **The margin, measured over all 17 captures.** True rep runs span ratios of
-    1.018 to 1.310, the worst being `squat_140x4_3` at gaps of 5.00, 5.60 and
-    6.55 s. The false admission needs 1.573. Every value in **1.35–1.55** gives
-    17/17; 1.30 and below splits `squat_140x4_3` to 3 reps, 1.6 and above
-    restores the `bench_spoto_90x5_1` failure. 1.45 is the middle of that
-    plateau — 11% clear of the worst real set, 8% clear of the failure — so it
-    is a value bounded by real data on both sides rather than one that happens
-    to pass.
+    So this stopped being a constant that needed re-tuning and became a rule
+    that needed replacing, which is what `test_cadence_tolerance_is_a_plateau`
+    said to do if it ever failed at an interior value.
+
+    **Why the global spread fails.** A fatiguing set does not keep its cadence;
+    it lengthens, rep after rep, as the lifter takes longer to re-breathe and
+    re-brace. `squat_pause_140x4_3` is a paused squat and its four reps sit
+    5.43, 5.85 and 8.53 s apart — monotonically growing, ratio 1.573 end to
+    end, which is *larger* than the 1.573 that the post-set movement of
+    `bench_spoto_90x5_1` needs. Measured against the run's global spread the
+    two are indistinguishable. Measured against the NEIGHBOURING gap they are
+    not: the squat's worst adjacent step is 8.53/5.85 = **1.460**, while the
+    bench's post-set gap arrives as a step of 4.50/2.94 = **1.531**. Comparing
+    each gap to its neighbour tolerates drift that ACCUMULATES over a long set
+    while still refusing a gap that JUMPS.
+
+    **The judgement that encodes:** a lifter's cadence changes gradually within
+    a set and discontinuously when the set ends. Falsified by a true rest-pause
+    or cluster set, where the lifter deliberately racks and re-breathes mid-set
+    — that gap is a genuine jump and this rule will still split it. The paused
+    squats are not that; the pause is at the bottom of each rep, inside it.
+
+    **Why lateness alone then mis-ranks.** With local admission,
+    `bench_spoto_90x5_1` grows a POST-SET run of five — 39.96, 44.45, 48.23,
+    50.77, 53.95 s — that ties the true five on length. Its cadence is 44%
+    worse (worst adjacent step 1.488 against the true run's 1.036) and it wins
+    anyway, because "set up first, lift second" says nothing about what happens
+    AFTER the reps and something always does. That is the same half-argument
+    `_similar_cluster` already records for the singleton tie-break. Ranking on
+    (length, then evenness, then lateness) puts the true run first and widens
+    the usable plateau from 1.93% to 4.74%. Lateness is kept as the last key,
+    so `bench_92.5x2` — two reps and two setup events, each a clean pair with
+    no adjacency to score — is decided exactly as before, and its admissible
+    range is unchanged at [1.02, 1.97].
+
+    **The margin, measured over both raw directories** — the rep-COUNT gate on
+    the 30 captures whose filename carries a rep count, plus the stricter
+    requirement that across all 34 CSVs every window already correct stays
+    bit-identical:
+
+        rule                              admissible tol      width
+        global spread + lateness (old)    none — disjoint         —
+        global spread + evenness          none — disjoint         —
+        local drift   + lateness          [1.4598, 1.4882]     1.93%
+        local drift   + evenness (this)   [1.4598, 1.5306]     4.74%
+
+    The edges are two different captures on two different lifts:
+    `squat_pause_140x4_3` sets the floor at 1.460 and `bench_spoto_90x5_1` the
+    ceiling at 1.531. Every other capture is far from both — the nearest are
+    `squat_140x4_3` at >= 1.170 and `bench_92.5x2` at <= 1.970. 1.50 is the
+    round value nearest the midpoint of 1.495, 2.7% clear of the floor and
+    2.0% clear of the ceiling.
+
+    Read that margin honestly: it is real and bounded by data on both sides,
+    but it is thinner than the 8-11% the old constant enjoyed before the paused
+    squats existed. A capture that pauses harder than these will push the floor
+    up into the ceiling, and the answer then is a discriminator that is not a
+    gap ratio at all — the rejected low-velocity lobe that sits inside the long
+    gap on both paused squats, and inside neither of `bench_spoto_90x5_1`'s
+    post-set gaps, is the obvious unexplored candidate.
     """
     if len(chosen) < 3:
         return chosen
@@ -558,18 +630,22 @@ def _longest_cadence(chosen, t, tol=1.45):
         j = i + 1
         while j < len(chosen):
             gaps = np.diff(times[i:j + 1])
-            # Compare the gaps to EACH OTHER, not to their own median. Against
-            # the median, 6.6 s and 12.9 s both sit inside a +/-60% band and a
-            # run of three survives with gaps that differ by 2x — which is how
-            # bench_92.5x2 kept an extra rep.
-            if gaps.min() <= 0 or gaps.max() / gaps.min() > tol:
+            # Compare each gap to its NEIGHBOUR, not to the run's own spread
+            # and not to its median. Against the median, 6.6 s and 12.9 s both
+            # sit inside a +/-60% band and a run of three survives with gaps
+            # differing by 2x — which is how bench_92.5x2 kept an extra rep.
+            # Against the spread, a set whose cadence drifts monotonically is
+            # indistinguishable from one with a post-set gap tacked on.
+            if gaps.min() <= 0 or _drift(gaps) > tol:
                 break
             j += 1
-        runs_found.append((j - i, float(np.median(times[i:j])), i, j))
+        span = np.diff(times[i:j])
+        runs_found.append((j - i, -_drift(span), float(np.median(times[i:j])),
+                           i, j))
         i += 1
 
-    best = max(runs_found, key=lambda r: (r[0], r[1]))
-    return chosen[best[2]:best[3]]
+    best = max(runs_found, key=lambda r: (r[0], r[1], r[2]))
+    return chosen[best[3]:best[4]]
 
 
 def _grow(shapes, peaks, seed, similarity, peak_ratio):

@@ -32,9 +32,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src import calibrate, correct, integrate, io, orient, segment, truth  # noqa: E402
 
 RAW = Path(__file__).resolve().parents[1] / "data" / "raw"
+RAW_V2 = Path(__file__).resolve().parents[1] / "data_v2" / "raw"
 REP_COUNT = re.compile(r"^(bench|squat|deadlift)(?:_[a-z]+)*_[\d.]+x(\d+)")
 CAPTURES = ([p for p in sorted(RAW.glob("*.csv")) if REP_COUNT.match(p.name)]
             if RAW.is_dir() else [])
+
+# The cadence plateau is the one gate whose binding evidence lives in BOTH
+# datasets: `bench_spoto_90x5_1` sets its ceiling from `data/raw/` and
+# `squat_pause_140x4_3` its floor from `data_v2/raw/`. Measuring it on
+# `data/raw/` alone is what let the plateau close to nothing unnoticed — the
+# paused squats that closed it were invisible to the gate. Kept separate from
+# `CAPTURES` so the other tests in this file keep their original scope.
+ALL_CAPTURES = CAPTURES + ([p for p in sorted(RAW_V2.glob("*.csv"))
+                            if REP_COUNT.match(p.name)] if RAW_V2.is_dir() else [])
 
 needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
 
@@ -147,50 +157,124 @@ def test_squat_single_lands_on_the_rep_not_the_re_rack():
 
 # ------------------------------------------------------- the margins ------
 @needs_data
+def _count_at(tol: float, captures) -> int:
+    """How many captures segment to their labelled rep count at this `tol`."""
+    original = segment._longest_cadence
+    try:
+        segment._longest_cadence = functools.partial(original, tol=tol)
+        return sum(
+            len(segment.rep_bounds(log, vel[:, 2])) == int(
+                REP_COUNT.match(p.name).group(2))
+            for p in captures
+            for log, vel, _ in [prepared(p)])
+    finally:
+        segment._longest_cadence = original
+
+
+@needs_data
 def test_cadence_tolerance_is_a_plateau_not_a_point():
     """`_longest_cadence`'s tolerance must pass over a RANGE, not at a value.
 
-    This is the anti-fitted-constant gate, and it is the reason C5's bench fix
-    is a measurement rather than a tune. The tolerance decides whether a gap
-    belongs to the set's rhythm, and it is bounded by real data on both sides:
+    This is the anti-fitted-constant gate. The tolerance decides whether a gap
+    belongs to the set's rhythm, and it must be bounded by real data on both
+    sides. Measured over all 30 labelled captures in both datasets:
 
-    * Below 1.35, `squat_140x4_3` splits. Its four reps are genuinely 5.00,
-      5.60 and 6.55 s apart — a ratio of 1.310 — so a real set does vary its
-      cadence by nearly a third.
-    * At 1.60 and above, `bench_spoto_90x5_1` admits the 4.50 s post-set gap
-      (4.50/2.86 = 1.573) and counts six.
+    * Below 1.4598, `squat_pause_140x4_3` splits. Its four paused reps are
+      genuinely 5.43, 5.85 and 8.53 s apart — a fatiguing set lengthens its
+      cadence rep by rep, and the worst ADJACENT step is 8.53/5.85 = 1.460.
+    * Above 1.5306, `bench_spoto_90x5_1` admits the post-set gap that arrives
+      as a step of 4.50/2.94 = 1.531 and counts six.
 
-    Every value in 1.35-1.55 gives 17/17. The shipping 1.45 sits in the middle
-    of that plateau — 11% clear of the worst real set, 8% clear of the failure.
+    The shipping 1.50 sits near the middle of that plateau — 2.7% clear of the
+    worst real set, 2.0% clear of the failure. Read those margins honestly:
+    they are real and two-sided but far thinner than the 8-11% the old constant
+    enjoyed before the paused squats existed.
 
-    If this test ever fails at an interior value, the constant has become
+    C5's original edges were 1.35 and 1.60 on `data/raw/` alone, under a rule
+    that compared a run's global SPREAD. C31a replaced that rule because the
+    paused squats closed its plateau to nothing — see
+    `test_the_old_global_spread_rule_has_no_admissible_tolerance`, which is the
+    gate that stops anyone re-tuning their way back into it.
+
+    If this test fails at an interior value, the constant has become
     load-bearing at a point and the fix is a better discriminator, not a
     re-tune. If it fails at the edges, a new capture has moved the plateau and
     the docstring numbers in `segment._longest_cadence` need re-measuring.
     """
-    original = segment._longest_cadence
-    counts: dict[float, int] = {}
-    try:
-        for tol in (1.30, 1.35, 1.45, 1.55, 1.60):
-            segment._longest_cadence = functools.partial(original, tol=tol)
-            counts[tol] = sum(
-                len(segment.rep_bounds(log, vel[:, 2])) == int(
-                    REP_COUNT.match(p.name).group(2))
-                for p in CAPTURES
-                for log, vel, _ in [prepared(p)])
-    finally:
-        segment._longest_cadence = original
+    n = len(ALL_CAPTURES)
+    counts = {tol: _count_at(tol, ALL_CAPTURES)
+              for tol in (1.44, 1.47, 1.50, 1.52, 1.56)}
 
-    n = len(CAPTURES)
-    for tol in (1.35, 1.45, 1.55):
+    for tol in (1.47, 1.50, 1.52):
         assert counts[tol] == n, (
             f"tol={tol} gives {counts[tol]}/{n} — the plateau has shrunk, so "
-            f"1.45 is no longer comfortably inside it")
-    for tol in (1.30, 1.60):
+            f"1.50 is no longer comfortably inside it")
+    for tol in (1.44, 1.56):
         assert counts[tol] < n, (
             f"tol={tol} now also gives {counts[tol]}/{n}. The plateau has "
             f"widened, which is good news, but segment._longest_cadence's "
             f"docstring quotes these edges and is now wrong")
+
+
+@needs_data
+def test_the_old_global_spread_rule_has_no_admissible_tolerance():
+    """The rule C31a replaced cannot be rescued by ANY constant. C31a.
+
+    This is the evidence for replacing the rule rather than re-tuning it, and
+    it is a gate rather than a note because the tempting fix — nudge `tol` —
+    looks reasonable right up until you measure it.
+
+    Until 2026-08-06 a run was admitted when the ratio of its largest to its
+    smallest gap stayed under `tol`. Under that rule the two paused squats and
+    `bench_spoto_90x5_1` constrain the constant from opposite sides, and the
+    constraints are DISJOINT: the bench needs tol <= 1.572 and
+    `squat_pause_140x4_3` needs tol >= 1.574. A fatiguing set's cadence drifts
+    monotonically, so measured by global spread it looks exactly like a set
+    with a post-set movement tacked on.
+
+    Asserted as an emptiness result over a sweep, so it stays true whatever the
+    exact edges drift to. If a future capture makes some tolerance work again,
+    this fails — and that is worth knowing, not worth suppressing.
+    """
+    def spread_cadence(chosen, t, tol):
+        """`_longest_cadence` exactly as it stood before C31a."""
+        if len(chosen) < 3:
+            return chosen
+        times = [t[l[0]] for l in chosen]
+        found, i = [], 0
+        while i < len(chosen):
+            j = i + 1
+            while j < len(chosen):
+                gaps = np.diff(times[i:j + 1])
+                if gaps.min() <= 0 or gaps.max() / gaps.min() > tol:
+                    break
+                j += 1
+            found.append((j - i, float(np.median(times[i:j])), i, j))
+            i += 1
+        best = max(found, key=lambda r: (r[0], r[1]))
+        return chosen[best[2]:best[3]]
+
+    original = segment._longest_cadence
+    n, best = len(ALL_CAPTURES), (0, None)
+    try:
+        for tol in np.arange(1.05, 2.50, 0.01):
+            segment._longest_cadence = functools.partial(spread_cadence,
+                                                         tol=float(tol))
+            got = sum(
+                len(segment.rep_bounds(log, vel[:, 2])) == int(
+                    REP_COUNT.match(p.name).group(2))
+                for p in ALL_CAPTURES
+                for log, vel, _ in [prepared(p)])
+            best = max(best, (got, float(tol)))
+    finally:
+        segment._longest_cadence = original
+
+    assert best[0] < n, (
+        f"the pre-C31a global-spread rule now reaches {best[0]}/{n} at "
+        f"tol={best[1]:.2f}. It could not exceed {n - 1}/{n} when C31a "
+        f"replaced it, so either a capture changed or the rule deserves "
+        f"another look — segment._longest_cadence's docstring says it is "
+        f"impossible and would need correcting")
 
 
 @needs_data

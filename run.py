@@ -1086,6 +1086,152 @@ def draw_scorecard() -> int:
     return 0
 
 
+def draw_paused_squat() -> int:
+    """C31a — the paused-squat short-count in `_longest_cadence`.
+
+    Writes `analysis/47_squat_pause_segmentation.png`. Two of the four paused
+    squats of 2026-08-06 counted 3 of 4 under the shipping rule: a paused set's
+    cadence lengthens rep by rep, so the run's global gap spread cannot tell a
+    fatiguing set from a set with a post-set movement tacked on.
+
+    The tolerance panel is measured, not quoted. For each capture this sweeps
+    the cadence tolerance and records every value at which that capture
+    segments to its labelled rep count, under BOTH the pre-C31a rule (the run's
+    global spread) and the shipped one (worst step between adjacent gaps). The
+    old rule's two binding captures come out disjoint, which is the evidence
+    that the constant could not simply be re-tuned.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import plot, segment
+
+    def spread_cadence(chosen, t, tol):
+        """`segment._longest_cadence` exactly as it stood before C31a."""
+        if len(chosen) < 3:
+            return chosen
+        times = [t[l[0]] for l in chosen]
+        found, i = [], 0
+        while i < len(chosen):
+            j = i + 1
+            while j < len(chosen):
+                g = np.diff(times[i:j + 1])
+                if g.min() <= 0 or g.max() / g.min() > tol:
+                    break
+                j += 1
+            found.append((j - i, float(np.median(times[i:j])), i, j))
+            i += 1
+        b = max(found, key=lambda r: (r[0], r[1]))
+        return chosen[b[2]:b[3]]
+
+    def cluster_of(vb, t, lobes):
+        shapes = np.array([segment._shape(vb, t, i) for i, _, _, _ in lobes])
+        peaks = np.array([np.abs(vb[a:b]).max() for _, a, b, _ in lobes])
+        times = np.array([t[i] for i, _, _, _ in lobes])
+        areas = np.array([abs(a) for _, _, _, a in lobes])
+        best, bs = None, None
+        for s in range(len(lobes)):
+            keep = segment._grow(shapes, peaks, s, 0.7, 2.5)
+            if not keep.any():
+                continue
+            n = int(keep.sum())
+            sc = (n, float(np.median(times[keep])) if n > 1
+                  else float(areas[keep].sum()))
+            if bs is None or sc > bs:
+                best, bs = keep, sc
+        return [l for l, k in zip(lobes, best) if k] if best is not None else []
+
+    def windows(allb, chosen, t, n):
+        """`_similar_cluster`'s NMS then `_full_cycles`, i.e. the rest of step 5."""
+        if len(chosen) > 2:
+            span = np.median(np.diff([t[l[0]] for l in chosen]))
+            merged = [chosen[0]]
+            for l in chosen[1:]:
+                if t[l[0]] - t[merged[-1][0]] < 0.6 * span:
+                    if l[3] > merged[-1][3]:
+                        merged[-1] = l
+                else:
+                    merged.append(l)
+            chosen = merged
+        return [tuple(map(int, b))
+                for b in segment._full_cycles(allb, chosen, False, n)]
+
+    raw2 = ROOT / "data_v2" / "raw"
+    data: dict = {}
+    for path in sorted(raw2.glob("squat_pause_*.csv")):
+        stem = path.stem.split("_20260")[0]
+        result = pipeline.run(path)
+        log = result["log"]
+        t = log["t"]
+        vb = segment.bandpass(result["velocity"][:, 2], log["fs"])
+        lobes = segment._concentric_lobes(vb, t, 0.08)
+        allb = segment._all_lobes(vb, t, 0.08)
+        cl = cluster_of(vb, t, lobes)
+        old = windows(allb, spread_cadence(cl, t, 1.45), t, len(vb))
+        new = windows(allb, segment._longest_cadence(cl, t), t, len(vb))
+        data[stem] = {
+            "t": t, "vb": vb,
+            "lobes": [(int(a), int(b), int(pk), float(ar))
+                      for pk, a, b, ar in lobes],
+            "cluster": [float(t[l[0]]) for l in cl],
+            "old": old, "new": new,
+            "exp": pipeline.expected_reps(path),
+        }
+        print(f"{stem}: shipping rule {len(old)}/{data[stem]['exp']}, "
+              f"C31a rule {len(new)}/{data[stem]['exp']}")
+
+    if not data:
+        print("no paused squats in data_v2/raw/")
+        return 1
+
+    # --- the tolerance panel, over every labelled capture in both datasets --
+    cache: dict = {}
+    for root in (ROOT / "data" / "raw", ROOT / "data_v2" / "raw"):
+        for path in sorted(root.glob("*.csv")):
+            exp = pipeline.expected_reps(path)
+            if exp is None:
+                continue
+            result = pipeline.run(path)
+            log = result["log"]
+            t = log["t"]
+            vb = segment.bandpass(result["velocity"][:, 2], log["fs"])
+            lobes = segment._concentric_lobes(vb, t, 0.08)
+            if not lobes:
+                continue
+            # a lift with floor impacts never reaches the cadence rule at all
+            impact = len(segment.impact_anchors(log)) >= 3
+            cache[path.name] = {
+                "t": t, "allb": segment._all_lobes(vb, t, 0.08), "n": len(vb),
+                "cl": None if impact else cluster_of(vb, t, lobes),
+                "exp": exp, "impact": impact,
+            }
+
+    grid = np.arange(1.02, 2.60, 0.004)
+    tol: dict = {}
+    for rule_name, rule in (("old", spread_cadence),
+                            ("new", segment._longest_cadence)):
+        per: dict = {}
+        for value in grid:
+            for name, c in cache.items():
+                good = (c["impact"] or
+                        len(windows(c["allb"], rule(c["cl"], c["t"], float(value)),
+                                    c["t"], c["n"])) == c["exp"])
+                per.setdefault(name, []).append(good)
+        tol[rule_name] = {
+            name: (float(grid[np.argmax(v)]) if any(v) else None,
+                   float(grid[len(v) - 1 - np.argmax(v[::-1])]) if any(v) else None,
+                   bool(all(v)))
+            for name, v in per.items()}
+    data["_tol"] = tol
+    data["_grid"] = (float(grid[0]), float(grid[-1]))
+
+    fig = plot.plot_squat_pause_segmentation(data)
+    out = ROOT / "analysis" / "47_squat_pause_segmentation.png"
+    fig.savefig(out, dpi=125)
+    print(f"wrote {out}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -1117,6 +1263,8 @@ def main(argv: list[str]) -> int:
         return draw_vs_truth()
     if "--scorecard" in argv:
         return draw_scorecard()
+    if "--pausedsquat" in argv:
+        return draw_paused_squat()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:

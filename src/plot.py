@@ -38,6 +38,8 @@ import textwrap
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 STRETCH = 4.0
 
@@ -1348,4 +1350,176 @@ def plot_v2_deadlift_conic(data: dict):
         "the referee can be believed",
         fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.965))
+    return fig
+
+
+def plot_squat_pause_segmentation(data: dict):
+    """The paused-squat short-count, and why the cadence constant could not move.
+
+    C31a, 2026-08-06. Three panels of band-passed vertical velocity — the
+    signal `segment.rep_bounds` actually works on — for the two paused squats
+    that counted 3 of 4 and the one that counted 4 of 4, then a fourth panel
+    showing the tolerance each capture admits under each rule.
+
+    The figure exists to make one thing visible: the dropped rep is a REAL rep,
+    sitting in the cluster with its siblings, and it is discarded purely
+    because the gap before it is longer than the others. `squat_pause_140x4_3`
+    drops its LAST rep and `squat_pause_140x4_2` its FIRST, which is why the
+    fourth panel matters — the mechanism is the gap ratio, not a position in
+    the set.
+
+    Panel 4 is the negative result and the reason a re-tune was not the fix.
+    Under the shipping rule `bench_spoto_90x5_1` counts correctly only below
+    1.572 and `squat_pause_140x4_3` only above 1.576, so the two grey bars
+    never overlap and no constant satisfies both. The green bars do overlap,
+    over 1.460-1.528.
+
+    `data` comes from `run.draw_paused_squat`; see it for the shape.
+    """
+    CHOSE, DROP, REJ = "#2f7d4f", "#c0392b", "#9aa4ad"
+    D = data
+    names = [k for k in D if not k.startswith("_")]
+    fig = plt.figure(figsize=(15.5, 15.0))
+    gs = fig.add_gridspec(4, 1, height_ratios=[1, 1, 1, 1.35], hspace=0.58,
+                          left=0.138, right=0.982, top=0.898, bottom=0.075)
+
+    for row, name in enumerate(names):
+        c = D[name]; ax = fig.add_subplot(gs[row])
+        t, vb = c["t"], c["vb"]
+        old, new, exp = c["old"], c["new"], c["exp"]
+        lo = min(t[old[0][0]], t[new[0][0]]) - 6.5
+        hi = max(t[old[-1][1] - 1], t[new[-1][1] - 1]) + 6.5
+        m = (t >= lo) & (t <= hi)
+        span = vb[m].max() - vb[m].min()
+        ymin, ymax = vb[m].min() - 0.34 * span, vb[m].max() + 0.46 * span
+        ax.set_ylim(ymin, ymax); ax.set_xlim(lo, hi)
+        ax.axhline(0, color="#ccd2d8", lw=0.8, zorder=1)
+
+        for (a, b) in new:
+            recovered = not any(abs(t[a] - t[oa]) < 0.6 for oa, ob in old)
+            ax.axvspan(t[a], t[b - 1], zorder=2,
+                       facecolor=DROP if recovered else CHOSE,
+                       alpha=0.26 if recovered else 0.15,
+                       hatch="///" if recovered else None,
+                       edgecolor=DROP if recovered else "none", lw=0.0)
+            if recovered:
+                ax.text((t[a] + t[b - 1]) / 2, ymax - 0.04 * span,
+                        "REP DROPPED\nby the shipping rule", ha="center",
+                        va="top", fontsize=11, fontweight="bold", color=DROP,
+                        zorder=9)
+
+        cl = set(np.round(c["cluster"], 3))
+        for (a, b, pk, ar) in c["lobes"]:
+            inc = round(float(t[pk]), 3) in cl
+            if not inc:
+                ax.axvspan(t[a], t[b - 1], facecolor=REJ, alpha=0.17, zorder=2)
+            ax.plot(t[pk], vb[pk], "v", ms=9.5 if inc else 7,
+                    color=CHOSE if inc else REJ, mec="white", mew=0.9, zorder=8)
+
+        ax.plot(t[m], vb[m], color="#1f2d3a", lw=1.3, zorder=6)
+
+        ct = np.array(c["cluster"]); gaps = np.diff(ct)
+        ytxt = ymin + 0.13 * span
+        for i, g in enumerate(gaps):
+            ax.annotate("", xy=(ct[i], ytxt), xytext=(ct[i + 1], ytxt),
+                        arrowprops=dict(arrowstyle="<->", color="#34495e", lw=1.2),
+                        zorder=9)
+            ax.text((ct[i] + ct[i + 1]) / 2, ytxt, f" {g:.2f} s ", ha="center",
+                    va="center", fontsize=10.5, color="#1f2d3a", zorder=10,
+                    bbox=dict(fc="white", ec="none", pad=1.4))
+        steps = [max(gaps[i + 1] / gaps[i], gaps[i] / gaps[i + 1])
+                 for i in range(len(gaps) - 1)]
+        short = len(old) != exp
+        ax.set_title(
+            f"{name}     shipping rule {len(old)}/{exp}"
+            f"{'  ✗ SHORT' if short else '  ✓'}"
+            f"          C31a rule {len(new)}/{exp}  ✓",
+            fontsize=12.5, loc="left", pad=17,
+            color=DROP if short else "#1f2d3a", fontweight="bold")
+        ax.text(0, 1.015, f"gaps {', '.join(f'{g:.2f}' for g in gaps)} s"
+                f"          global spread max/min = {gaps.max()/gaps.min():.3f}"
+                f"          worst ADJACENT step = {max(steps):.3f}",
+                transform=ax.transAxes, fontsize=10.5, color="#4a5866")
+        ax.set_ylabel("band-passed\nvertical velocity (m/s)", fontsize=10)
+        ax.set_xlabel("time (s)", fontsize=10, labelpad=1)
+        ax.tick_params(labelsize=9)
+        for s in ("top", "right"): ax.spines[s].set_visible(False)
+
+    # ---------------- panel 4 --------------------------------------------
+    ax = fig.add_subplot(gs[3])
+    old_i, new_i = D["_tol"]["old"], D["_tol"]["new"]
+    X0, X1 = 1.36, 1.66
+    # captures that actually bind anywhere near the decision
+    def binds(k):
+        return any(X0 < e < X1 for src in (old_i, new_i)
+                   for e in src[k][:2] if e is not None)
+    show = sorted([k for k in old_i if binds(k)],
+                  key=lambda k: -(old_i[k][0] or 0))
+    ypos = np.arange(len(show))[::-1]
+    for y, k in zip(ypos, show):
+        for dy, src, col in ((0.20, old_i, "#8f9aa5"), (-0.20, new_i, CHOSE)):
+            lo_, hi_, _ = src[k]
+            if lo_ is None: continue
+            ax.plot([max(lo_, X0 - 0.02), min(hi_, X1 + 0.02)], [y + dy] * 2,
+                    lw=11, color=col, solid_capstyle="butt", alpha=0.93,
+                    zorder=4)
+            if lo_ > X0:
+                ax.plot([lo_], [y + dy], "|", color="white", ms=11, mew=2.2,
+                        zorder=5)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels([k.rsplit("_2026", 1)[0] for k in show], fontsize=10)
+
+    B = "bench_spoto_90x5_1_20260730_125107.csv"
+    S = "squat_pause_140x4_3_20260806_113817.csv"
+    ob_hi, os_lo = old_i[B][1], old_i[S][0]
+    nb_hi, ns_lo = new_i[B][1], new_i[S][0]
+    ax.axvspan(ns_lo, nb_hi, color=CHOSE, alpha=0.12, zorder=0)
+    ax.axvline(1.50, color="#1f2d3a", ls="--", lw=1.4, zorder=6)
+
+    ymax_ = len(show) - 0.30
+    ax.set_ylim(-1.05, ymax_ + 0.95)
+    ax.set_xlim(X0, X1)
+
+    # the gap where NEITHER binding capture is satisfied
+    ax.axvspan(ob_hi, os_lo, color=DROP, alpha=0.30, zorder=1)
+    ax.annotate(f"NO tolerance counts both\nbench ends {ob_hi:.3f}, squat starts {os_lo:.3f}",
+                xy=((ob_hi + os_lo) / 2, ymax_ + 0.10),
+                xytext=(X1 - 0.005, ymax_ + 0.72), ha="right", va="center",
+                fontsize=10.5, color=DROP, fontweight="bold",
+                arrowprops=dict(arrowstyle="-|>", color=DROP, lw=1.6,
+                                connectionstyle="arc3,rad=0.18"))
+    ax.annotate("", xy=(ns_lo, ymax_ + 0.22), xytext=(nb_hi, ymax_ + 0.22),
+                arrowprops=dict(arrowstyle="<->", color=CHOSE, lw=1.8))
+    ax.text((ns_lo + nb_hi) / 2, ymax_ + 0.46,
+            f"C31a plateau {ns_lo:.3f} \u2013 {nb_hi:.3f}  (4.74% wide)",
+            ha="center", va="center", fontsize=10.5, color=CHOSE,
+            fontweight="bold")
+    ax.text(1.50, -0.92, "ships 1.50", fontsize=10.5, ha="center", va="bottom",
+            fontweight="bold", color="#1f2d3a",
+            bbox=dict(fc="white", ec="none", pad=1.5))
+    ax.set_xlabel("cadence tolerance — bar spans every value at which that capture counts "
+                  "correctly", fontsize=10.5)
+    ax.set_title("Why the constant could not be re-tuned. Captures not shown admit every "
+                 "value in this range under both rules.",
+                 fontsize=12.5, loc="left", pad=40, fontweight="bold")
+    ax.tick_params(labelsize=9.5)
+    for s in ("top", "right"): ax.spines[s].set_visible(False)
+    ax.legend(handles=[Patch(fc="#8f9aa5", label="shipping rule — run's global spread, max/min"),
+                       Patch(fc=CHOSE, label="C31a rule — worst step between ADJACENT gaps")],
+              loc="upper left", fontsize=10, frameon=False)
+
+    fig.legend(handles=[
+        Patch(fc=CHOSE, alpha=0.35, label="rep window (both rules agree)"),
+        Patch(fc=DROP, alpha=0.40, hatch="///", label="rep the shipping rule DROPS"),
+        Patch(fc=REJ, alpha=0.25, label="lobe rejected before cadence"),
+        Line2D([], [], marker="v", ls="", color=CHOSE, mec="white",
+               label="concentric peak, in the cluster"),
+        Line2D([], [], marker="v", ls="", color=REJ, mec="white",
+               label="concentric peak, not in the cluster")],
+        loc="upper center", ncol=5, fontsize=10.5, frameon=False,
+        bbox_to_anchor=(0.5, 0.958))
+    fig.suptitle("analysis/47 — the paused squat short-count: `_longest_cadence` drops a real rep\n"
+                 "a paused set's cadence LENGTHENS rep by rep, so its global gap spread is "
+                 "indistinguishable from a post-set movement",
+                 fontsize=15, y=0.99)
     return fig

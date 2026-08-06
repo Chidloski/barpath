@@ -51,8 +51,17 @@ needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
 # EMPTY as of 2026-07-31 (C5): counting is 72/72. The cause was
 # `segment._longest_cadence`'s tolerance of 1.6, which admitted the 4.50 s gap
 # between the last rep and the re-rack (4.50/2.86 = 1.573) and grew a run of
-# six that beat the true run of five on length. It is 1.45 now, the middle of a
-# plateau that gives 17/17.
+# six that beat the true run of five on length. C5 set it to 1.45, the middle
+# of a plateau that gave 17/17.
+#
+# STILL EMPTY as of 2026-08-06 (C31a), but that constant is gone. The four
+# paused squats of 2026-08-06 closed C5's plateau to nothing — a paused set's
+# cadence lengthens rep by rep, so `squat_pause_140x4_3` needs tol >= 1.574
+# where `bench_spoto_90x5_1` needs tol <= 1.572, DISJOINT. `_longest_cadence`
+# now compares each gap to its NEIGHBOUR rather than to the run's global
+# spread, and breaks length ties on cadence evenness before lateness. Counting
+# is 30/30 labelled captures across both datasets, and every window that was
+# already correct is bit-identical.
 #
 # Kept rather than deleted, with `xfail_if_miscounted`, because the next
 # miscount wants recording the same way. But NOTE this mechanism is NOT strict:
@@ -311,7 +320,9 @@ SLACK_M = 0.02      # the bounds are anatomical, quoted to the nearest cm
 #   bench_spoto_90x5_1 — segmented a 5-rep set into 6 windows; reps 5 and 6
 #   came out 45.7 and 88.7 cm against a 35 cm bench bound. Cause: the cadence
 #   tolerance was 1.6 where admitting the post-set gap needs 1.573. Now 5
-#   windows at 27.6-30.0 cm.
+#   windows at 27.6-30.0 cm. (C31a rewrote the rule behind that tolerance on
+#   2026-08-06; this capture still gives the same 5 windows, bit-identically,
+#   and remains the capture that sets the plateau's CEILING.)
 #
 #   squat_160x1 — reconstructed 18.0 cm for a single at 160 kg at a correct
 #   count of 1 of 1, the first right-count-wrong-window failure any gate here
