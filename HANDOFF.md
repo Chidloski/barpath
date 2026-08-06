@@ -1,199 +1,137 @@
-# Handoff — 2026-08-03, end of the C21/C22/C23 session
+# Handoff — 2026-08-07, end of the C31/C31a/C31b/C32/C33 session
 
-Transient file. Everything durable is in `TASKS.md` (C21, C22, C23), `CLAUDE.md`
-(the two-referees section, P1) and `analysis/README.md` (39, 40). **Delete this
-when the work below is done.**
+Transient file. Everything durable is in `TASKS.md`, `CLAUDE.md`,
+`analysis/README.md` and **`analysis/C31b_STATE.md`**, which is the fullest
+single summary of where this stands. **Delete this when the work below is done.**
 
 **You are not alone in this repo.** Read
 `/Users/sam/Desktop/barpath/HEARTBEAT.md`, claim the paths you are about to
 write, release when you stop. Rules in `CLAUDE.md` under **Concurrency
-protocol**. And **work on `main` and do not open a pull request** — see
-**Branches, commits and pull requests**, added by C20.
+protocol**.
 
-Working tree is clean apart from `HEARTBEAT.md`, which is normal and permanent.
-Suite is **468 passed, 1 skipped, 11 xfailed, 4 xpassed**, ~17 minutes. The 4
-xpassed are expected: the benches that beat the null model.
+## Where the work is — READ THIS BEFORE ANYTHING ELSE
 
-**Three commits are on `main` and NOT pushed.** The owner pushes.
-`2bae05e` C23, `0a2d359` a figure correction, `ebbedc7` C21/C22.
+**Everything below is on branch `c29-jump-state`, which is PUSHED to origin and
+is NOT merged.** `main` is still at `ae14c40` (C27) and has none of it. That is
+deliberate — `segment.py`, `correct.py` and `pipeline.py` all changed, which is
+branch work under CLAUDE.md's reconstruction-modules rule, and **the owner lands
+it.** Do not merge on their behalf and do not push `main`.
 
-## What changed, in one paragraph
+Seven commits, oldest first: `a2494b4` `7bc4bcb` `bc66fb1` `18501a3` `70b2a63`
+`cba3e1b` `cc86651` `ff89c41` (eight, counting `ff89c41`).
 
-`markers.py` went from refereeing nothing to refereeing the four bench captures
-of 2026-08-03 — the first captures in this project scored by markers rather than
-by `truth.py`'s plate template, and the first time `metrics.vs_truth` has run on
-marker footage end to end. `seed_frame` now decides by **verification**
-(trial-track a shortlist, keep what actually follows the bar) instead of by
-per-frame appearance. Both squats from that session were deleted; their plate
-cannot be refereed at all.
+Working tree clean apart from `HEARTBEAT.md`, which is normal and permanent.
+Suite is **525 passed, 1 skipped, 8 xfailed, 7 xpassed**, ~23 minutes.
+The 7 xpassed are expected and are *good news*: all seven template-refereed
+benches now beat the flat-line null, where four used to.
 
-## Read this first: the corpus shrank, and the counting claim shrank with it
+## The one thing that changes how you read every number here
 
-`data_v2/raw` is **four bench captures**. The two squats were deleted on the
-owner's instruction — video and IMU log, gitignored and untracked, so they are
-gone. The corpus is **21 captures and 86 reps**, counted 86/86.
+**Step 6 is ON by default.** `pipeline.run(wrist_offset=)` defaults to `"auto"`
+and applies the tape-measured `d` from `correct.WRIST_OFFSET_M`. The owner
+ruled on it, and the reason is not the metric: this project reconstructs the
+**BAR** path and the sensor is on the **WRIST**, so omitting a measured
+geometric term answers a different question.
 
-That is a **smaller** claim than the 22/23 captures it replaces, not a better
-one: the capture that broke counting was removed rather than fixed. And **C22's
-finding is measured entirely on `squat_150x5` and cannot be re-run.** Its
-numbers are kept in `TASKS.md` as the record. Do not treat them as reproducible,
-and do not be surprised when nothing in `data_v2` matches them.
+**Every number recorded in the docs before 2026-08-06 was measured with step 6
+OFF.** Pass `wrist_offset=None` to reproduce any of them. Every figure in
+`analysis/` numbered below 48 shows a different quantity.
 
-## Read this second: the first independent confirmation in the project
+`d` (owner's tape, from the middle of the watch face to the bar centre, in watch
+axes): squat 5 cm toward the crown + 4 cm out of the case; bench and deadlift
+9 cm toward the crown + 3 cm into the case. `apply_offset`'s `d` is BAR→WATCH,
+the **negative** of that. B2 still stands: `d` cannot be *fitted* from video.
 
-Whole-clip marker travel against the IMU's per-rep ROM, same set, two
-instruments sharing no component:
+## What this session established
 
-    bench_92.5x4_1   27.8 cm vs 29.6   -6.1%
-    bench_92.5x4_2   28.9 cm vs 29.4   -1.6%
-    bench_92.5x4_3   29.5 cm vs 30.1   -1.8%
-    bench_95x2       29.0 cm vs 29.5   -1.6%
+- **C30's "the horizontal channel is EMPTY" is overturned.** It was an artefact
+  of step 6 being off. Deadlift accel correlation 0.12–0.23 → **0.43–0.64**.
+- **C31a fixed the paused-squat short-count.** `_longest_cadence` now admits on
+  LOCAL drift, not global spread. Counting is **30/30 captures, 124/124 reps**.
+  No constant could have counted both binding captures — they were disjoint.
+- **C28's ladder survives `d` being known.** Pinning `lever` improves
+  leave-one-out on 4 of 5 rungs, but the family is still dead: best LOO 4.25 cm
+  against a null of ~1.6.
+- **C32 cleared `bench_spoto_95x5_1`.** Its 0.68 warning is `truth.find_plate`
+  mis-detecting the rim, not the stickers. Scale swept 47% — dissent is
+  scale-invariant.
+- **C33 paid down 41 hours of doc debt** after the owner released C30b's stale
+  claim.
+- **The pause hypothesis is half right** (`analysis/49`). Core Motion really does
+  lean on the accelerometer for gravity when still — tilt/yaw rises when
+  quasi-static on 22 of 30. But it separates the two LIFTS, not the two STYLES:
+  a paused squat concentrates the correction mid-rep, a paused bench does not.
+- **C29's impact correction and `d` do NOT compose** (`analysis/51`): control
+  10.66 → C29 3.93 → both 3.89 cm. Both target the same instant.
 
-Three of four inside two percent. **`bench_92.5x4_1`'s -6.1% is unexplained**
-and is the loose thread here; the gate is deliberately left at +/-15% rather
-than tightened onto a residual nobody has run down.
+## Two claims of ours that are WRONG and are not yet fixed in the docs
 
-That agreement only appeared after a scale bug, and **the wrong SIGN is what
-exposed it** — travel read 9-13% low when the clip contains an un-rack and
-should read high. `truth.plate_diameter` keyed on the lift alone and returned
-the black notched plates' 425 mm for a session shot on 450 mm blue calibrated
-discs. `truth.CALIBRATED_SESSIONS` now carries the exception, keyed on the date
-in the filename. **If a future session uses another plate set, that table is the
-first thing to check.**
+**1. "The 8-sticker squat footage tracks at 100%."** It does not. Measured:
 
-## Pre-gym work, in order
+    squat_pause_145x4_1   100%   0.88 px   travel 59.4 cm   (good)
+    squat_pause_140x4_2   100%   0.69 px   travel 60.1 cm   (good)
+    squat_170x1          97.8%   1.11 px   travel 14.0 cm   MIS-TRACKED
+    squat_pause_140x4_3  96.7%   1.12 px   travel 24.7 cm   MIS-TRACKED
 
-### 1. The squat plate needs re-stickering — and it is the owner's job, not code
+14 cm of travel for a 65 cm squat is not the bar. Coverage and residual look
+healthy because the constellation is fitting *something* rigidly — the same
+shape of failure as C12. **This overstatement is committed and pushed**, in
+`analysis/50`'s caption, `analysis/README.md` and the docs C33 wrote. Fixing it
+is the first job for the next agent.
 
-`squat_140x5` and `squat_150x5` could not be tracked, and after a long
-investigation the cause is not in the tracker. That plate's three stickers sit
-at **94.9 / 111.4 / 153.7 degrees** rather than ~120. Two consequences:
-`_triangle_ok` scores the true constellation 0.000 and rejects it, and — the one
-that matters — the centroid the whole method rests on falls **18.4% of the
-radius** from the true plate centre, about 2.8 cm, against a 1 cm spec. Bench's
-plate is 129/102/129, i.e. 8.6%, which is the entire difference between the two
-lifts working and not.
+It also re-explains an earlier claim: `bench_sync` refused `squat_170x1` and
+`squat_pause_140x4_3`. That was reported as the guards working correctly. They
+were — but those are **exactly the two mis-tracked clips**, so the sync failed
+because the path was wrong, not because `bench_sync` is unsuited to squat.
 
-**Do not try to fix this in code.** Loosening `_triangle_ok` was measured and
-admits the constellation without making it track, and no tolerance repairs the
-centroid bias. Sticker the next squat plate at 120 degrees with a tape measure.
+**2. "The largest wrist rotation in a deadlift is the turnaround at the floor."**
+Written into `ff89c41` and `analysis/51`. The owner challenged it and was right.
+The arms hang near-vertical through a deadlift, so there is no reorientation.
+Measured: 53–67% of the swept angle per rep IS in the outer 20% of phase, and
+`|d/dt(R·d)|` peaks at phase 0.03 at 7.8× the rep median — but swept angle is
+**193–311°/rep against a net wrist swing of ~22°**, so ~90% of it is
+back-and-forth. It is **strap ringing**, which B6 already identified: the watch
+moving after the bar has stopped. The *watch* rotates; the wrist does not.
 
-**Superseded 2026-08-04 by C26, and the code half of that is now wrong.** It IS
-fixed in code, just not by a tolerance: `markers.fit_ellipse` fits the conic a
-circle actually projects to, which needs five points and asks nothing about how
-they are spaced. The instruction to the owner changes too — **eight** stickers
-at a common radius, spaced however is convenient, which is an easier tape
-measurement than three at 120 degrees. **Gated on real footage 2026-08-04 by
-C27** — three 8-sticker deadlifts, 99.2-100% coverage — which found four defects
-in the surrounding code while the conic maths itself held. See TASKS.md C26 and
-C27.
+**That carries a consequence nobody has followed up.** Step 6 assumes `d` is a
+rigid constant in body coordinates. During ringing the watch is not rigidly
+indexed to the wrist, so at exactly the instant `R(t)·d` moves most, step 6's
+premise is false. Applying it there may be actively wrong, not merely useless.
+This is the most interesting open thread in the session.
 
-### 2. `bench_92.5x4_1`'s -6.1%
+## Suggested next jobs, in order
 
-Cheap, self-contained, and the only anomaly left in the bench numbers. The other
-three agree to under 2% with the same code and the same plate.
+1. **Fix the two wrong claims above** in `analysis/50`'s caption,
+   `analysis/README.md`, `CLAUDE.md` and `TASKS.md`. Small, and it is the class
+   of error this project treats as most expensive.
+2. **Why do two of four squats mis-track?** Suspect `seed_frame` locking onto a
+   rigid non-bar constellation — the C21/C23 failure mode. Fixing it is what
+   turns squat into a refereed lift for the first time.
+3. **Then lift `metrics.vs_truth`'s squat refusal**, whose stated reason
+   describes the OLD template footage and is stale. It needs a validated squat
+   sync first; the paused squats' bottom dwell is a candidate landmark anchor
+   that would not inherit `bench_sync`'s untested transfer.
+4. **The referee split** — `d` helps uniformly under the template referee and is
+   mixed under markers, and C24 already had them ~20% apart on ROM. Neither has
+   been shown right, and P2's verdict depends on which is.
+5. **Test whether step 6 should be suppressed during strap ringing**, per the
+   consequence above.
 
-### 3. B4 — the axis sign, and B6/B3
+## Open questions for the owner
 
-Not touched this session, and unchanged from the previous handoff.
-`reps_disagreeing_on_sign` is 0 on every bench capture now measured, including
-the marker-refereed ones, and 4/6, 2/6, 1/3 on deadlift — the instability is a
-deadlift phenomenon on the evidence held. See P2. B6 needs a correction **local
-in time**; C19 established that raising the detrend's order does not help, so do
-not re-propose a higher-order detrend.
+- `truth.STICKER_PLATE_DIAMETER_M` has no 2026-08-06 entry, so bench falls
+  through to 0.425 m and squat to 0.450 m **by accident rather than decision**.
+  If one stickered 425 mm plate moved between the bars, squat is 5.9% out.
+- The sticker-circle diameter still wants a tape measure, into
+  `bar_path(sticker_diameter_m=)`. C32 tried to derive it and correctly refused
+  to ship the result.
 
-### 4. A holdout discipline, before adding more constants
+## Practicalities
 
-Unchanged and still not done. This session added `CALIBRATED_DIAMETER_M` and a
-0.05 rigidity normaliser; both are justified in their docstrings against
-measured populations rather than fitted, but the count of hand-set constants
-keeps rising.
-
-## Gym shot list
-
-**Corrected — item 3 of the old list was wrong.** "Camera stepped back converts
-squat to truth" was written before this session. Stepping back would not have
-helped: the squat footage was fine and the plate was the problem.
-
-1. **Measure the STICKER-CIRCLE diameter of the 8-sticker plate with a tape**,
-   centre-to-centre across, and put it in `truth`/`bar_path(sticker_diameter_m=)`.
-   Promoted to the top on 2026-08-04 by C27: the conic path is now gated on
-   three real deadlifts and the ONE thing left open is the absolute scale, which
-   still rides on `STICKER_RATIO = 0.858` borrowed from the old three-sticker
-   plate. Against it the video reads 4.6-9.3% below the reconstruction. A ratio
-   of ~0.92 would close it exactly — do not adopt that by fitting it. Thirty
-   seconds with a tape settles which instrument is right about per-rep ROM.
-
-2. **Put EIGHT stickers on the SQUAT plate, all the same distance in from the
-   rim, then re-shoot a squat.** Rewritten 2026-08-04 by C26; it used to say
-   three at 120 degrees. Spacing no longer matters — measure the radius, not the
-   angles. Squat is now the only lift with no external horizontal check at all;
-   the conic path itself is proven on deadlift as of C27, so this is a capture
-   problem rather than a code one.
-3. **A capture WITH the session running and 30+ s of wrist-down.** Unchanged.
-   C16 restored the workout session; every capture between C7 and C16 is
-   suspect.
-4. **A bench single.** C5's singleton rule is predicted to segment onto the
-   unrack (`bench_92.5x2`'s unrack moves the bar 0.433 m against 0.295 and 0.239
-   for its real reps), and a bench single **cannot be synced** by `bench_sync`
-   at all, since the whole-rep-period rule needs a cadence.
-5. **A deadlift on marker footage.** All three deadlift captures are refereed by
-   the plate template, which C12 showed is lost at lockout — 97-100% of
-   top-of-travel frames below `GOOD_SCORE`. Markers do not have that failure.
-   This is the single change that would most improve the numbers P2 is built on.
-   **DONE 2026-08-04 (C27) — three of them, 15 reps.** They track at 99.2-100%
-   coverage and gave P2 its first deadlift numbers measured through a referee
-   that does not fail at lockout. What remains from this item is the check C24
-   called unrunnable: whether a landing found on marker footage falls at the
-   same instant as one on template footage, against the deadlift sync's 13.5 ms.
-   Nothing blocks it now; it is simply undone.
-6. **Tape the deadlift lockout height, and the wrist-to-bar offset `d`.** `d`
-   unblocks step 6, implemented and off by default purely for want of the
-   number.
-7. **Measure the plates you actually film on**, and record which set was used.
-   `truth.PLATE_DIAMETER_M`, `CALIBRATED_SESSIONS` and now
-   `STICKER_PLATE_DIAMETER_M` all depend on it, and getting it wrong is worth 6%
-   of every distance. C27 added the third of those because the stickers went on
-   a 425 mm notched plate loaded OUTBOARD of the 445 mm bumper — so "which plate
-   is widest" and "which plate has the stickers" are different questions on a
-   deadlift, and only the first was being asked.
-
-## Things that will bite you
-
-- **`markers.bar_path` is ~25 s per clip now**, up from 15, because seeding
-  trial-tracks up to twelve hypotheses. That is why `track` takes a `dets_all`
-  cache — if you write anything that tracks repeatedly, pass it, or you will pay
-  `detect` over every frame every time.
-- **`static_points` suppresses detections that recur at a fixed pixel.** It
-  assumes a tripod; a hand-held camera breaks it outright. And a capture where
-  the bar is motionless for more than 70% of the clip will have its own stickers
-  suppressed — which is why suppression is applied to re-acquisition only and
-  not to ordinary association. Applying it everywhere cost `deadlift_190x1` 72%
-  of its frames.
-- **`_trial_merit` must never reward a low residual on its own.** A two-marker
-  fit is exact and reports 0.00 px; that is precisely what the pre-C23 seeder
-  did while tracking a bench, reporting "three markers matched, sub-pixel
-  residual". The merit leads on the three-marker fraction and multiplies by
-  apparent-size rigidity for that reason.
-- **`analysis/39` depicts pre-C23 behaviour and cannot be regenerated.** The
-  seeder it labels "shipped" now finds the plate.
-- **`circumradius` in `markers.py` is a MEAN radius from the centroid, not a
-  circumradius.** Correct for the tracker's purposes; wrong to draw a circle
-  with. Use `plot._circumcircle` for figures. Two figure versions were published
-  wrong before the owner caught it.
-- **`truth.SEEDS` is hand-placed**, one row per bench capture in `data/video`.
-  The `radius` in that row *is* the pixels-to-metres scale (~4% at +/-2 px on
-  ~48). `data_v2` captures do not use it.
-- **`vs_truth`'s horizontal rms does not test time alignment on any lift.**
-  Shift a deadlift by 3 s and horizontal moves 5.05 -> 4.62 while vertical
-  explodes to 19/20/32. It is a magnitude comparison. Phase evidence comes from
-  `analysis/17`, `analysis/30` and the containment gates.
-- **Auto-seeding bench with `truth.find_plate` is not a tuning problem.** Four
-  seeders were tried and all four preferred the bench-and-lifter silhouette. The
-  marker tracker sidesteps it by not using `find_plate` at all.
-- **The re-rack anchor is disproven**, not merely unused: on deadlift, where
-  truth is known, it misses by +615, +660, +510 ms.
-- **Check a referee where it is used, not on average.** Milestones 1-6, C8's
-  peak-height threshold, C10's clip composition, C12's lockout NCC, and this
-  session's three admission gates that were all at zero margin on the footage
-  they were tuned against. It keeps happening.
+- Tracked-path cache for all 13 `data_v2` clips (slow to rebuild, ~1–2 min each)
+  was in the previous session's scratch and **will not survive**. Re-tracking is
+  the main cost of any video work.
+- 8 GB of RAM: do not run many concurrent full-res clip decodes. Disk got tight
+  during this session.
+- Drivers added: `--pausedsquat` (47), `--dpaths` (48), `--pauseattitude` (49),
+  `--pipelinenow` (50), `--jumpd` (51). Next free analysis number is **52**.
