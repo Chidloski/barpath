@@ -1232,6 +1232,63 @@ def draw_paused_squat() -> int:
     return 0
 
 
+def draw_bar_path_with_d() -> int:
+    """C31 — the bar path with step 6 on, now that `d` has been measured.
+
+    Writes `analysis/48_bar_path_with_d.png`.
+
+    `d` comes from `correct.WRIST_OFFSET_M`, the owner's tape of 2026-08-06.
+    It is NOT fitted — B2 established that fitting it against the video is
+    ill-conditioned and returns |d| = 129 cm under leave-one-out.
+
+    Three captures, chosen to show the disagreement rather than the win: a
+    deadlift, the bench where `d` clearly helped (`bench_95x2`, 1.46 -> 0.80 cm)
+    and the paused bench where it clearly hurt (`bench_spoto_95x5_1`,
+    1.17 -> 3.54). Each is scored twice against ONE tracked video path, so the
+    only thing differing between the two curves is `wrist_offset`.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    from src import correct, metrics, pipeline, plot, truth
+
+    picks = ["deadlift_160x6_1", "bench_95x2", "bench_spoto_95x5_1"]
+    raw = ROOT / "data_v2" / "raw"
+
+    data = {}
+    for stem in picks:
+        hits = sorted(raw.glob(f"{stem}_*.csv"))
+        if not hits:
+            print(f"  {stem}: no capture found, skipping")
+            continue
+        csv = hits[0]
+        video = pipeline.find_video(csv)
+        if video is None:
+            print(f"  {stem}: no video, skipping")
+            continue
+        # Track ONCE and score twice. resolve_path accepts the dict straight
+        # back, so the two arms cannot differ by a re-track.
+        path = metrics.resolve_path(video)
+        d = correct.WRIST_OFFSET_M[truth.lift_of(csv)]
+        arms = {}
+        for tag, off in (("off", None), ("on", d)):
+            res = pipeline.run(csv, wrist_offset=off)
+            arms[tag] = metrics.vs_truth(res, path)
+        arms["d"] = d
+        data[stem] = arms
+        print(f"  {stem}: h rms {arms['off']['pipeline_h_rms']:.2f} -> "
+              f"{arms['on']['pipeline_h_rms']:.2f} cm")
+
+    if not data:
+        print("nothing to draw")
+        return 1
+
+    fig = plot.plot_bar_path_with_d(data)
+    out = ROOT / "analysis" / "48_bar_path_with_d.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -1265,6 +1322,8 @@ def main(argv: list[str]) -> int:
         return draw_scorecard()
     if "--pausedsquat" in argv:
         return draw_paused_squat()
+    if "--dpaths" in argv:
+        return draw_bar_path_with_d()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:

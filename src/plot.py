@@ -1523,3 +1523,80 @@ def plot_squat_pause_segmentation(data: dict):
                  "indistinguishable from a post-set movement",
                  fontsize=15, y=0.99)
     return fig
+
+
+def plot_bar_path_with_d(data: dict):
+    """C31 — the bar path with step 6 (the wrist lever `R(t).d`) off and on.
+
+    `data` maps stem -> {"off": vs_truth dict, "on": vs_truth dict, "d": (3,)}.
+    Both dicts must come from the SAME tracked video path, so the grey truth
+    curve is one curve and not two; only `pipeline.run`'s `wrist_offset`
+    differs between them.
+
+    Why this figure exists. `d` was unmeasurable for the life of this project —
+    B2 proved it could not be FITTED from the video (leave-one-out returned
+    |d| = 129 cm) — and the owner tape-measured it on 2026-08-06. Step 6 is the
+    only stage that was OFF because a number was missing rather than because it
+    had been rejected, so "what does the path look like with it on" had never
+    been drawn.
+
+    Read the three captures as a disagreement, not a result. `d` helps the
+    acceleration on 6 of 6 benches and the POSITION on only 3 of 6, so the
+    panels are chosen to show both directions: one deadlift, one bench where it
+    clearly helped and one where it clearly hurt. A figure showing only the
+    wins would be the exact failure this project keeps repeating.
+    """
+    stems = list(data)
+    fig, axes = plt.subplots(1, len(stems), figsize=(4.2 * len(stems), 6.4),
+                             squeeze=False)
+    flat = axes.ravel()
+
+    for ax, stem in zip(flat, stems):
+        off, on = data[stem]["off"], data[stem]["on"]
+        goff = [r for r in off["per_rep"] if r.get("covered")]
+        gon = [r for r in on["per_rep"] if r.get("covered")]
+
+        for i, r in enumerate(goff):
+            vid = r["curve_video"] * 100
+            ax.plot(vid[:, 0], vid[:, 1], color="0.55", lw=2.4,
+                    label="video (truth)" if i == 0 else None, zorder=2)
+        for i, r in enumerate(goff):
+            p = r["curve_pipeline"] * 100
+            ax.plot(p[:, 0], p[:, 1], color="#c2410c", lw=1.2, alpha=0.85,
+                    ls="--", label="step 6 OFF (ships)" if i == 0 else None,
+                    zorder=3)
+        for i, r in enumerate(gon):
+            p = r["curve_pipeline"] * 100
+            ax.plot(p[:, 0], p[:, 1], color="#1d4ed8", lw=1.4, alpha=0.9,
+                    label="step 6 ON (measured d)" if i == 0 else None,
+                    zorder=4)
+
+        ax.set_aspect(1.0 / STRETCH)
+        ho, hn = off["pipeline_h_rms"], on["pipeline_h_rms"]
+        bo, bn = off["beats_null"], on["beats_null"]
+        verdict = "BETTER" if hn < ho else "WORSE"
+        colour = "#166534" if hn < ho else "#b91c1c"
+        d = data[stem]["d"]
+        ax.set_title(
+            f"{stem}\n"
+            f"h rms  {ho:.2f} -> {hn:.2f} cm   {verdict}\n"
+            f"beats_null  {bo:.2f} -> {bn:.2f}\n"
+            f"d = ({d[0]:+.2f}, {d[1]:+.2f}, {d[2]:+.2f}) m,  |d| = "
+            f"{float(np.linalg.norm(d)) * 100:.1f} cm",
+            fontsize=8.5, color=colour)
+        ax.set_xlabel("fore-aft (cm)", fontsize=8)
+        ax.set_ylabel("vertical (cm)", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=7, frameon=False, loc="best")
+
+    fig.suptitle(
+        "analysis/48 — the bar path with the wrist lever R(t).d removed, "
+        "against the video\n"
+        "d is a TAPE MEASUREMENT (owner, 2026-08-06), not a fit. Reps "
+        "start-aligned, fore-aft stretched 4x as step 9 draws it.\n"
+        "It helps the deadlift and one bench and HURTS the paused bench — the "
+        "shipping default stays OFF for exactly that reason.",
+        fontsize=11, y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.90))
+    return fig

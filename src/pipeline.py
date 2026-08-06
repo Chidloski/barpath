@@ -103,11 +103,28 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None,
         video: str | Path | None = None) -> dict:
     """Run every stage that can run. Never raises on an unimplemented stage.
 
-    `wrist_offset` is `d` from step 6, in body coordinates, and it is off by
-    default because nobody has measured it. B2 established that it cannot be
-    fitted from the video either — the objective is flat and the fit absorbs
-    P3 instead. A tape measure from watch centre to bar centre would switch it
-    on; a guess makes things slightly worse.
+    `wrist_offset` is `d` from step 6, in body coordinates. **It is measured
+    now — `correct.WRIST_OFFSET_M`, owner's tape, 2026-08-06 — and it is still
+    off by default.** Those are two separate questions and this used to conflate
+    them: the reason for the default was that nobody had measured `d`, and that
+    reason is gone, but the evidence does not yet say switching it on is a net
+    win.
+
+    What C31b measured, on the nine marker-refereed captures. `d` improves
+    per-rep horizontal rms on 5 of the 6 whose display axis step 8 can actually
+    find, and makes it 39-202% WORSE on the 3 it cannot — and on those three the
+    axis turns 23-50 degrees when `d` is applied, so the two numbers are not
+    read along the same line and neither deserves to decide a default. Bench
+    vertical improves on 6 of 6 either way. Turning this on across the board
+    would therefore ship a regression on a third of the corpus for a step-8
+    reason, so it waits on step 8, not on more tape.
+
+    B2's finding is not superseded and should not be re-tried: `d` cannot be
+    FITTED from the video, the objective is flat and the fit absorbs P3.
+    C31b reproduced that from the other direction — position rms is monotone in
+    |d| out to three times the tape on every capture, so there is no interior
+    optimum for an optimiser to find. Pass the measured constant; do not solve
+    for it.
 
     `video` turns on A3's metrics. Both are computed outside the nine steps
     because they judge the pipeline rather than being part of it, and both are
@@ -174,8 +191,9 @@ def run(path: str | Path, wrist_offset: np.ndarray | None = None,
     # 6 --- wrist-to-bar offset ---------------------------------------------
     if wrist_offset is None:
         result["notes"].append(
-            "step 6 off: wrist offset d unmeasured. Worth ~1-2 cm typical, "
-            "4-6 cm worst case (B2). Needs a tape measure, not a fit")
+            "step 6 off: d IS measured (correct.WRIST_OFFSET_M) but the default "
+            "has not moved — it helps 5 of 6 captures whose display axis step 8 "
+            "can find and hurts 3 of 3 it cannot (C31b). Pass it explicitly")
         bar = position
     else:
         bar = correct.apply_offset(position, quat, wrist_offset)

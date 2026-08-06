@@ -267,7 +267,7 @@ def split_bias(log: dict, quat: np.ndarray, world: np.ndarray,
 
 
 def rebuild(base: dict, p: dict, world_bias: bool = True,
-            bias_frame: str = "world") -> dict:
+            bias_frame: str = "world", lever0: np.ndarray | None = None) -> dict:
     """A `pipeline.run`-shaped dict with the error model applied.
 
     Steps 4, 6 and 7 are re-run. Step 5 is NOT: `bounds` is carried over from
@@ -278,6 +278,21 @@ def rebuild(base: dict, p: dict, world_bias: bool = True,
     a switch rather than a constant because C28 found it is a NEGATIVE term.
     It is not one of the fitted parameters — it has none — so it belongs here
     as an ablation and not in the ladder's parameter vector.
+
+    `lever0` is a wrist offset `d` that is KNOWN rather than fitted — C31b,
+    2026-08-06, after the owner tape-measured it into `correct.WRIST_OFFSET_M`.
+    It is deliberately separate from the `lever` TERM rather than replacing it,
+    because the two ask different questions and both are worth asking:
+
+    * `lever0` alone, with `lever` out of the term tuple, is the ladder run on a
+      signal that no longer contains a contaminant we now know is real. Every
+      C28 number was measured with step 6 OFF, so every one of them was fitted
+      against `d`'s residue as well as against the defect it names.
+    * `lever0` AND a fitted `lever` makes the fitted term a RESIDUAL on the
+      tape — "how far from the measurement does the optimiser still want to
+      go?" — which is a sharper plausibility check than C28's, because it is
+      scored against a measured vector rather than against a range of plausible
+      wrist lengths. They add, so the fit can still reach anywhere.
     """
     log = base["log"]
     world = apply_model(log, base["quat"], p)
@@ -296,8 +311,13 @@ def rebuild(base: dict, p: dict, world_bias: bool = True,
             world = world - (sp["tilt"] + r.apply(sp["body"]))
     velocity, position = integrate.integrate(world, log["dt"])
 
+    d = np.zeros(3)
+    if lever0 is not None:
+        d = d + np.asarray(lever0, dtype=float)
     if "lever" in p:
-        position = correct.apply_offset(position, base["quat"], p["lever"])
+        d = d + np.asarray(p["lever"], dtype=float)
+    if np.any(d):
+        position = correct.apply_offset(position, base["quat"], d)
 
     bounds = base["bounds"]
     reps = correct.detrend_set(position, bounds, log["t"]) if bounds else []
@@ -312,7 +332,8 @@ def rebuild(base: dict, p: dict, world_bias: bool = True,
 
 
 def objective(theta: np.ndarray, terms: tuple, base: dict, video: dict,
-              world_bias: bool = True, bias_frame: str = "world") -> float:
+              world_bias: bool = True, bias_frame: str = "world",
+              lever0: np.ndarray | None = None) -> float:
     """Median per-rep horizontal rms in cm. Inf where the model is unusable.
 
     Horizontal ALONE, deliberately. It is the axis with the spec that matters,
@@ -321,7 +342,7 @@ def objective(theta: np.ndarray, terms: tuple, base: dict, video: dict,
     already close and report a better total for a worse answer.
     """
     try:
-        res = rebuild(base, unpack(theta, terms), world_bias, bias_frame)
+        res = rebuild(base, unpack(theta, terms), world_bias, bias_frame, lever0)
         if not res["reps"]:
             return np.inf
         m = metrics.vs_truth(res, video)
@@ -333,20 +354,24 @@ def objective(theta: np.ndarray, terms: tuple, base: dict, video: dict,
 
 def fit(base: dict, video: dict, terms: tuple, restarts: int = 3,
         seed: int = 0, world_bias: bool = True,
-        bias_frame: str = "world") -> dict:
+        bias_frame: str = "world", lever0: np.ndarray | None = None) -> dict:
     """Fit one model to one capture. Nelder-Mead from several starts.
 
     Derivative-free on purpose: the objective runs a double integration, a
     per-rep detrend and a PCA, and the detrend's rep-closure makes it only
     piecewise smooth in the parameters. A gradient method reports convergence
     on that surface without having found anything.
+
+    `lever0` is a known, un-fitted wrist offset — see `rebuild`.
     """
     if not terms:
-        m = metrics.vs_truth(rebuild(base, {}, world_bias, bias_frame), video)
+        m = metrics.vs_truth(rebuild(base, {}, world_bias, bias_frame, lever0),
+                             video)
         return {"terms": terms, "theta": np.zeros(0),
                 "h_rms": float(m["pipeline_h_rms"]),
                 "null": float(m["null_h_rms"]),
-                "beats_null": float(m["beats_null"])}
+                "beats_null": float(m["beats_null"]),
+                "v_rms": float(m["pipeline_v_rms"])}
 
     n = n_params(terms)
     rng = np.random.default_rng(seed)
@@ -356,14 +381,14 @@ def fit(base: dict, video: dict, terms: tuple, restarts: int = 3,
     for k in range(restarts):
         x0 = np.zeros(n) if k == 0 else rng.normal(0.0, 0.5, n) * scales
         r = minimize(objective, x0,
-                     args=(terms, base, video, world_bias, bias_frame),
+                     args=(terms, base, video, world_bias, bias_frame, lever0),
                      method="Nelder-Mead",
                      options={"maxiter": 400 * n, "xatol": 1e-6,
                               "fatol": 1e-4, "adaptive": True})
         if best is None or r.fun < best.fun:
             best = r
 
-    res = rebuild(base, unpack(best.x, terms), world_bias, bias_frame)
+    res = rebuild(base, unpack(best.x, terms), world_bias, bias_frame, lever0)
     m = metrics.vs_truth(res, video)
     return {"terms": terms, "theta": best.x, "h_rms": float(best.fun),
             "null": float(m["null_h_rms"]),
@@ -806,7 +831,8 @@ def rest_windows(result: dict) -> list[tuple]:
 
 
 def jump_rest_windows(result: dict, width_s: float | None = 0.0,
-                      axes: tuple = (0, 1)) -> dict:
+                      axes: tuple = (0, 1),
+                      wrist_offset: np.ndarray | None = None) -> dict:
     """Correct at the impact, detrend per rest-to-rest window. C29's real fix.
 
     Identical machinery to the shipping step 7 — `correct.detrend_set`,
@@ -819,6 +845,12 @@ def jump_rest_windows(result: dict, width_s: float | None = 0.0,
     which is what keeps it a fair comparison — but it is NOT the same quantity
     as the shipping number, because the reps being scored are different spans of
     the same lifting. Read the control row before the treatment rows.
+
+    `wrist_offset` is step 6, and it has to be an argument rather than something
+    the caller can do beforehand. This function re-integrates `world_accel` from
+    scratch, so a `d` applied by `pipeline.run` upstream is in `bar_position`
+    and is silently discarded here. C31b measured the arms with and without it;
+    passing `None` reproduces C29 exactly.
     """
     from . import correct, segment
     log = result["log"]
@@ -849,6 +881,8 @@ def jump_rest_windows(result: dict, width_s: float | None = 0.0,
         world[a:b + 1, ax] -= (dv[ax] / span)
 
     _, position = integrate.integrate(world, log["dt"])
+    if wrist_offset is not None:
+        position = correct.apply_offset(position, result["quat"], wrist_offset)
     bounds = rest_windows(result)
     out = dict(result)
     out["bounds"] = bounds

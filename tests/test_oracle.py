@@ -261,3 +261,100 @@ def test_jump_correction_reduces_to_impact_correction_at_full_width():
     finally:
         segment.rest_instants = saved
     assert np.allclose(full["bar_position"], c28b["bar_position"], atol=1e-12)
+
+
+# ------------------------------------------------- C31b, the measured lever --
+def test_lever0_and_a_fitted_lever_ADD_rather_than_replace():
+    """`rebuild(lever0=d)` plus a fitted `lever` must equal one offset of d + p.
+
+    The point of keeping them separate is that the fitted term becomes a
+    RESIDUAL on the tape — "how far past the measurement does the optimiser
+    still want to go?" — which is only a meaningful question if the two compose
+    additively. If they ever stopped composing, that reading would be wrong and
+    every plausibility line in the pinned ladder would be measuring the wrong
+    quantity.
+    """
+    from src import correct
+
+    n = 300
+    dt = np.full(n, 0.01)
+    t = np.cumsum(dt) - dt[0]
+    log = {"t": t, "dt": dt, "accel": np.zeros((n, 3)),
+           "quat": np.tile([1.0, 0.0, 0.0, 0.0], (n, 1))}
+    quat = Rotation.from_rotvec(
+        np.column_stack([np.zeros(n), 0.4 * np.sin(t), np.zeros(n)])
+    ).as_quat(scalar_first=True)
+    base = {"path": "synthetic", "log": log, "quat": quat,
+            "bounds": [(0, n)], "impacts": []}
+
+    d0 = np.array([-0.09, 0.0, 0.03])
+    p = np.array([0.01, -0.02, 0.004])
+    both = oracle.rebuild(base, {"lever": p}, world_bias=False, lever0=d0)
+    summed = oracle.rebuild(base, {"lever": d0 + p}, world_bias=False)
+    assert np.allclose(both["bar_position"], summed["bar_position"], atol=1e-12)
+
+
+def test_lever0_is_exactly_step_six():
+    """A known `d` through the oracle must equal `correct.apply_offset`.
+
+    Cheap, and it pins the thing that would be silently wrong if `rebuild` ever
+    applied the offset before integrating instead of after: the answer would
+    still be plausible and would no longer be step 6.
+    """
+    from src import correct
+
+    n = 200
+    dt = np.full(n, 0.01)
+    t = np.cumsum(dt) - dt[0]
+    log = {"t": t, "dt": dt, "accel": np.zeros((n, 3)),
+           "quat": np.tile([1.0, 0.0, 0.0, 0.0], (n, 1))}
+    quat = Rotation.from_rotvec(
+        np.column_stack([0.3 * np.sin(t), np.zeros(n), np.zeros(n)])
+    ).as_quat(scalar_first=True)
+    base = {"path": "synthetic", "log": log, "quat": quat,
+            "bounds": [(0, n)], "impacts": []}
+
+    d0 = np.array([-0.09, 0.0, 0.03])
+    off = oracle.rebuild(base, {}, world_bias=False)
+    on = oracle.rebuild(base, {}, world_bias=False, lever0=d0)
+    assert np.allclose(
+        on["bar_position"],
+        correct.apply_offset(off["bar_position"], quat, d0), atol=1e-12)
+
+
+def test_jump_rest_windows_applies_the_wrist_offset_it_is_given():
+    """`jump_rest_windows` re-integrates from `world_accel`, so a `d` applied by
+    `pipeline.run` upstream is DISCARDED by it.
+
+    That silent discard is the bug this argument exists to prevent: C29's arms
+    would have been measured with step 6 off however the caller set it up, and
+    the comparison would have read "d does nothing here" for a plumbing reason.
+    """
+    from src import correct, integrate, segment
+
+    n = 500
+    dt = np.full(n, 0.01)
+    t = np.cumsum(dt) - dt[0]
+    world = np.zeros((n, 3))
+    world[:, 0] = 0.2
+    vel, _ = integrate.integrate(world, dt)
+    quat = Rotation.from_rotvec(
+        np.column_stack([np.zeros(n), 0.5 * np.sin(t), np.zeros(n)])
+    ).as_quat(scalar_first=True)
+    res = {"log": {"t": t, "dt": dt}, "world_accel": world, "velocity": vel,
+           "bounds": [(0, n)], "impacts": [300], "path": "synthetic",
+           "quat": quat}
+
+    saved = segment.rest_instants
+    segment.rest_instants = lambda log, imp=None: [50, 400]
+    try:
+        d0 = np.array([-0.09, 0.0, 0.03])
+        off = oracle.jump_rest_windows(res, width_s=0.20)
+        on = oracle.jump_rest_windows(res, width_s=0.20, wrist_offset=d0)
+    finally:
+        segment.rest_instants = saved
+
+    assert not np.allclose(off["bar_position"], on["bar_position"])
+    assert np.allclose(
+        on["bar_position"],
+        correct.apply_offset(off["bar_position"], quat, d0), atol=1e-12)
