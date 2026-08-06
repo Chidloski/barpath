@@ -989,10 +989,29 @@ def test_horizontal_meets_the_spec(video, csv, reps):
 # fore-aft motion at all. >1 means the reconstruction carries information; <1
 # means a flat line would score better. Measured 2026-07-31 (C10) on every
 # capture with video, and unchanged at C11.
+# **Re-recorded in part on 2026-08-06 (C31), because step 6 went ON by default
+# and that changes the quantity being scored — the BAR path rather than the
+# WATCH path. The values below are C10's except where marked.**
+#
+# Applying the measured `d` cost the two best captures in the corpus:
+#
+#     bench_90x4_2   4.80 -> 3.45      bench_90x4_3   4.03 -> 2.25
+#
+# Those are the only two captures where the horizontal reconstruction had ever
+# demonstrably carried information, so this is a real price and it is recorded
+# rather than absorbed. Both still beat the flat line comfortably, and every
+# other capture stayed inside the 20% headroom below, which is why only these
+# two moved. The owner's ruling stands on a correctness argument, not a metric
+# one: the deliverable is the bar path and the sensor is on the wrist. See
+# `pipeline.run`, and note both benches are filmed from the side OPPOSITE the
+# watch, so their referee tracks the far end of the bar (C31).
+#
+# To compare against any pre-2026-08-06 number in the docs, pass
+# `wrist_offset=None` — otherwise the two are different quantities.
 BEATS_NULL = {
     "bench_90x4_1_20260727": 1.10,
-    "bench_90x4_2_20260727": 4.80,
-    "bench_90x4_3_20260727": 4.03,
+    "bench_90x4_2_20260727": 3.45,      # C31, was 4.80 at C10 (step 6 off)
+    "bench_90x4_3_20260727": 2.25,      # C31, was 4.03 at C10 (step 6 off)
     "bench_92.5x2_20260727": 1.14,
     "bench_spoto_90x5_1_20260730": 0.72,
     "bench_spoto_90x5_2_20260730": 0.80,
@@ -1467,21 +1486,35 @@ def test_wrist_lever_arm_is_centimetres_not_decimetres():
 
 @needs_data
 @pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
-def test_step_six_runs_and_is_off_by_default(path):
-    """apply_offset must work when given d, and must not be applied without it.
+def test_step_six_runs_and_is_ON_by_default(path):
+    """apply_offset must be applied by default, and must be defeatable.
 
-    Off by default is a decision, not an oversight: d is unmeasured, B2 showed
-    it cannot be fitted from the video, and a guessed d costs up to 0.8 cm.
+    **This test was inverted on 2026-08-06 (C31) and the inversion is the
+    point.** It used to assert step 6 was OFF by default, and that was right
+    while `d` was unmeasured — B2 had shown it cannot be fitted from the video,
+    so a guessed `d` cost up to 0.8 cm and bought nothing. The owner then
+    tape-measured it (`correct.WRIST_OFFSET_M`) and ruled that it should always
+    be applied, on the ground that this project reconstructs the BAR path and
+    the sensor is on the WRIST: omitting a measured geometric term does not make
+    the answer safer, it answers a different question.
+
+    So what is gated here now is (a) the default really applies the measured
+    vector for this capture's lift, (b) `None` still gets the old watch-path
+    behaviour back, because every number recorded in the docs before 2026-08-06
+    was measured that way and they are not comparable otherwise.
     """
-    from src import pipeline
+    from src import correct, pipeline, truth
 
     plain = pipeline.run(path)
     assert not any("apply_offset" in b for b in plain["blocked"])
-    assert any("step 6 off" in n for n in plain["notes"])
+    assert plain["wrist_offset"] is not None, "step 6 must be on by default"
+    np.testing.assert_allclose(plain["wrist_offset"],
+                               correct.WRIST_OFFSET_M[truth.lift_of(path)])
 
-    offset = pipeline.run(path, wrist_offset=np.array([0.0, -0.14, 0.0]))
-    assert not offset["blocked"] or all("step 6" not in b for b in offset["blocked"])
-    assert not np.allclose(offset["bar_position"], plain["bar_position"])
+    off = pipeline.run(path, wrist_offset=None)
+    assert off["wrist_offset"] is None
+    assert any("step 6 OFF" in n for n in off["notes"])
+    assert not np.allclose(off["bar_position"], plain["bar_position"])
 
 
 # --------------------------------------------------- the noise-floor log --

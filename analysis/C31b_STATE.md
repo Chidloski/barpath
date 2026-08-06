@@ -112,30 +112,97 @@ new coat of paint. Repro:
 
 ## NOT DONE — in priority order, with what is already known
 
-**A. The C28 oracle ladder with `lever` PINNED at the measured `d`.** This is
-the highest-value item left. C28 fitted `lever` as three FREE parameters and
-found the whole family capped at the null with nothing transferring under
-leave-one-out (1.23 cm with 15 params; every model 3.3-4.6 under LOO). Fixing
-`lever` at the tape value removes three degrees of freedom that were absorbing
-P3, so the LOO question is genuinely re-opened. `src/oracle.py` has the ladder;
-`TERMS` and `fit` are the entry points.
+**A. DONE 2026-08-06 (C31). The C28 ladder with `lever` pinned at the tape `d`:
+pinning improves TRANSFER on 4 of 5 fitted rungs, and C28's negative result
+still stands.** Decision rule was fixed in writing first (scratch
+`DECISION_RULE_C31.md`), three data_v2 deadlifts, median then per-capture:
+
+    rung                     arm     nfree  ceiling               LOO (held-out)
+    baseline                 free      0    7.22 [7.22 4.55 11.44]  7.22
+    baseline                 PINNED    0    6.65 [6.65 4.39 10.61]  6.65
+    bias                     free      3    2.06                    6.50 [6.50 2.47  6.53]
+    bias                     PINNED    3    2.14                    5.72 [5.72 2.78 15.14]
+    bias+tilt                free      6    2.02                    6.61 [6.61 2.47 24.85]
+    bias+tilt                PINNED    6    1.62                    5.60 [5.60 2.88  5.86]
+    bias+tilt+scale          free      9    1.80                    6.36 [6.36 2.54 25.22]
+    bias+tilt+scale          PINNED    9    1.42                    5.71 [5.71 2.55 15.00]
+    bias+tilt+scale+lever    free     12    1.29                    6.59 [6.59 2.67 14.20]
+    bias+tilt+scale+lever    PINNED    9    1.42                    5.71 [5.71 2.55 15.00]
+    ...+gravref              free     15    1.92                    4.25 [4.25 2.76  6.69]
+    ...+gravref              PINNED   12    2.16                    4.34 [4.34 2.90 11.45]
+
+RULE 1 (ceiling) — pinning removes 3 dof so the ceiling could only worsen, and
+on two rungs it IMPROVED anyway (2.02 -> 1.62, 1.80 -> 1.42). On the rung that
+contained `lever`, pinning cost 0.13 cm of ceiling and saved 3 parameters.
+
+RULE 2 (transfer, the actual test) — **PASSES as a comparison: pinned beats free
+on 4 of the 5 fitted rungs** (6.50->5.72, 6.61->5.60, 6.36->5.71, 6.59->5.71;
+only +gravref went the other way, 4.25->4.34). So the three `lever` degrees of
+freedom WERE absorbing something real.
+
+**But the family is still dead, and that is the finding.** The best LOO anywhere
+is 4.25 cm, against a d-only baseline of 6.65 with NOTHING fitted and a
+flat-line null of ~1.6. Every model, pinned or free, still loses badly to
+drawing no fore-aft motion at all. Held-out `deadlift_185x3` is destroyed by
+most rungs (11-25 cm). **C28's conclusion survives `d` being known: the error is
+not a constant in any frame, and knowing the lever arm does not rescue it — it
+only makes the failure slightly less bad.**
+
+RULE 3 (corroboration) — **fails to corroborate, and re-confirms B2 instead.**
+Fitting `lever` ON TOP of the tape gives residuals of 47.9 / 17.7 / 2.4 cm,
+totals 44.0 / 17.8 / 11.8 cm at 108 / 74 / 4 degrees from the tape. Only one
+capture stays near it. That is B2's ill-conditioning exactly. The corroboration
+that DOES hold is the direction sweep against C30's ACCELERATION correlation
+(optimum within one grid cell of the tape on all three) — the position-domain
+objective cannot identify `d` because double integration and the detrend destroy
+the conditioning, which is C30's point restated. Repro:
+`/Users/sam/.claude/jobs/366a3089/tmp/ladder.py` and `residual.py`.
 
 **B. C29's rest-window jump correction WITH `d`.** C29 took deadlift h_rms
 10.66 -> 3.93 (frame-internal; NOT 8.21 -> 3.93, see CLAUDE.md's caveats) with
 step 6 OFF. Do the two compose, or correct the same thing twice? Two captures
 crossed `beats_null = 1.0` under C29 for the first time in the project.
 
-**C. Explain the bench dissent.** `d` helps acceleration on 6 of 6 and position
-on 3 of 6. Hypothesis not yet tested: `d` is right in DIRECTION and wrong in
-effective MAGNITUDE, because the bar is gripped and wrist extension under load
-changes the lever arm — which `apply_offset`'s own docstring names as the thing
-it cannot model. Sweeping |d| at the measured direction tests it cheaply.
-**Confounder to clear first:** `markers.validate` warns that
-`bench_spoto_95x5_1` puts the sticker circle at 0.68 of the plate radius
-against the 0.858 `STICKER_RATIO` scales by, so that capture's absolute scale
-is unconfirmed. The capture where `d` "hurt" most is the one whose ruler is
-least trusted. Do not conclude anything about paused bench until that is
-settled — a tape on the sticker circle settles it.
+**C. Explain the bench dissent — and the two referees now DISAGREE about it.**
+C32 nominated the PAUSE: both `data_v2` captures where `d` hurt are paused
+benches, and C10's table ranked the three 2026-07-30 paused benches as the
+three worst of seven against the null (0.72 / 0.80 / 0.92).
+
+**Then switching step 6 on falsified the simple version of that.** All three of
+those paused benches now BEAT the null, and so do all seven template-refereed
+benches — three captures crossed 1.0 that never had before, and the only three
+still losing are the deadlifts. So `d` fixed the paused benches under the
+TEMPLATE referee while hurting the paused benches under the MARKER referee.
+
+The surviving split is therefore by **referee**, not by pause:
+
+    data/video, truth.py template    d helps uniformly (7 of 7 beat null now)
+    data_v2, markers.py conic        d mixed (3 better, 3 worse)
+
+Nobody has shown which referee is right, and they are not interchangeable —
+C24 already found them disagreeing ~20% on ROM. **This is the highest-value
+open question now.** Note the pause still rhymes with C31a's paused-SQUAT
+segmentation failure, so it is not dead as a theme, just not the whole story.
+
+Two confounds checked; one dead, one open.
+- **DEAD — the scale.** C32 swept `bench_spoto_95x5_1`'s referee scale over a
+  47% span (ratio 0.681 to 1.000) and `d` made it worse at EVERY point,
+  `beats_null` never above 0.92. The dissent is scale-invariant. The
+  0.68-of-plate-radius warning is `truth.find_plate` mis-detecting the rim on
+  all six data_v2 benches, not the stickers; the capture tracks at 100% with
+  0.158 px residual over the top of travel and is fit to referee.
+- **OPEN — the camera side.** The regressing benches are filmed from the side
+  opposite the watch, so the referee tracks the far end of the bar (C31).
+
+Also still untested: whether `d` is right in DIRECTION and wrong in effective
+MAGNITUDE because wrist extension under load changes the lever arm — but C31b
+measured position rms to be monotone in |d| out to 3x the tape, so there is no
+interior optimum, which argues against it.
+
+**Open question for the owner (C32):** `truth.STICKER_PLATE_DIAMETER_M` has no
+2026-08-06 entry, so bench falls through to 0.425 m and squat to 0.450 m by
+accident rather than by decision. If one stickered 425 mm plate was moved
+between the bars, squat is 5.9% out. One question, not a code change.
 
 **D. `metrics.vs_truth`'s hardcoded squat refusal is now stale for `data_v2`.**
 Its stated reason describes the OLD template footage. Exploratory bypass
