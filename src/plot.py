@@ -1662,3 +1662,117 @@ def plot_pause_attitude(data: dict):
         fontsize=11, y=0.99)
     fig.tight_layout(rect=(0, 0, 1, 0.88))
     return fig
+
+
+def plot_pipeline_now(panels: list):
+    """C31 — what the branch pipeline actually produces, on all three lifts.
+
+    Each entry of `panels` is a dict with `stem`, `paths` (list of (M,2) arrays,
+    along-axis and up, in metres), optional `video` (same shape), and `caption`.
+
+    This is the product view: step 9's output, reps overlaid and start-aligned,
+    fore-aft stretched 4x exactly as the display would. It exists because the
+    numbers in this repo are abstractions until you see the shape they describe
+    — and because the branch changed what the pipeline computes (step 6 is on),
+    so every figure drawn before 2026-08-06 shows a different quantity.
+
+    Squat panels carry no video because `metrics.vs_truth` still refuses squat.
+    That refusal is now STALE rather than wrong-headed — its stated reason is
+    about the old template footage, and the 8-sticker plate tracks at 100%
+    coverage — but nobody has replaced it with a validated squat sync, so the
+    honest thing is to draw the reconstruction alone and say so.
+    """
+    n = len(panels)
+    cols = 3
+    rows = -(-n // cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(4.4 * cols, 6.6 * rows),
+                             squeeze=False)
+    flat = axes.ravel()
+
+    for ax, p in zip(flat, panels):
+        vid = p.get("video")
+        if vid is not None:
+            for i, v in enumerate(vid):
+                ax.plot(v[:, 0] * 100, v[:, 1] * 100, color="0.55", lw=2.4,
+                        label="video (truth)" if i == 0 else None, zorder=2)
+        for i, q in enumerate(p["paths"]):
+            ax.plot(q[:, 0] * 100, q[:, 1] * 100, lw=1.6, alpha=0.9,
+                    color="#1d4ed8" if vid is not None else None,
+                    label=("reconstruction" if vid is not None else f"rep {i+1}")
+                    if i == 0 or vid is None else None, zorder=3)
+        ax.set_aspect(1.0 / STRETCH)
+        ax.set_title(p["caption"], fontsize=8.5)
+        ax.set_xlabel("fore-aft (cm)", fontsize=8)
+        ax.set_ylabel("vertical (cm)", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=6.5, frameon=False, loc="best")
+    for ax in flat[n:]:
+        ax.axis("off")
+
+    fig.suptitle(
+        "analysis/50 — what the branch pipeline produces, all three lifts, "
+        "step 6 ON\n"
+        "Reps overlaid and start-aligned, fore-aft stretched 4x as the display "
+        "would draw it. Grey is the video where a referee exists.\n"
+        "Squat has no referee: vs_truth still refuses it, though the 8-sticker "
+        "footage now tracks at 100%.",
+        fontsize=11, y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return fig
+
+
+def plot_jump_with_d(rows: dict, arms: list):
+    """C31 — do C29's jump correction and step 6's `d` compose, or overlap?
+
+    `rows` maps capture stem -> arm -> (h_rms, beats_null, v_rms, n). `arms` is
+    the ordered list of arm names.
+
+    All four arms use the SAME rest-to-rest windows, so every bar is scored on
+    the same spans and the comparison is internal. The control is C29's own
+    honest baseline — rest windows with no correction — NOT the shipping
+    number, which is measured on different windows entirely.
+    """
+    stems = list(rows)
+    colours = {"control": "0.6", "C29": "#166534", "d": "#c2410c",
+               "both": "#1d4ed8"}
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.6))
+    x = np.arange(len(stems))
+    w = 0.8 / len(arms)
+
+    for j, arm in enumerate(arms):
+        h = [rows[s][arm][0] for s in stems]
+        b = [rows[s][arm][1] for s in stems]
+        off = (j - (len(arms) - 1) / 2) * w
+        axes[0].bar(x + off, h, w, label=arm, color=colours.get(arm))
+        axes[1].bar(x + off, b, w, label=arm, color=colours.get(arm))
+
+    axes[0].set_ylabel("per-rep horizontal rms (cm)", fontsize=9)
+    axes[0].set_title("C29's jump correction does the work.\n"
+                      "`d` on top of it buys nothing.", fontsize=10)
+    axes[1].axhline(1.0, color="0.2", ls="--", lw=1.2)
+    axes[1].set_ylabel("beats_null  (>1 = better than a flat line)", fontsize=9)
+    # C29 reported deadlift_155x6_1 AND deadlift_180x3 crossing 1.0. Re-run
+    # here, only 155x6_1 does (1.21); 180x3 reaches 0.89. Stated rather than
+    # rounded up — C29's control and treatment medians reproduce exactly, so
+    # this is a per-capture difference, not a broken reproduction.
+    axes[1].set_title("ONE capture crosses 1.0 under C29 (155x6_1, 1.21).\n"
+                      "C29 reported 180x3 crossing too; here it reaches 0.89",
+                      fontsize=10)
+    for ax in axes:
+        ax.set_xticks(x)
+        ax.set_xticklabels([s[:20] for s in stems], rotation=20, ha="right",
+                           fontsize=7)
+        ax.legend(fontsize=8, frameon=False)
+        ax.grid(alpha=0.25, axis="y")
+
+    fig.suptitle(
+        "analysis/51 — do the impact-localised correction and the wrist lever "
+        "COMPOSE? No: they correct the same thing.\n"
+        "Median h rms: control 10.66 -> C29 3.93 -> +d 3.89 cm. `d` alone "
+        "reaches only 9.82. Three captures better with `d`, three worse.\n"
+        "Physically unsurprising — the largest wrist rotation in a deadlift IS "
+        "the turnaround at the floor, which is where C29 corrects.",
+        fontsize=11, y=0.99)
+    fig.tight_layout(rect=(0, 0, 1, 0.86))
+    return fig

@@ -1382,6 +1382,136 @@ def draw_pause_attitude() -> int:
     return 0
 
 
+def draw_pipeline_now() -> int:
+    """C31 — what the branch pipeline produces, on all three lifts.
+
+    Writes `analysis/50_pipeline_now.png`. The product view rather than a
+    diagnostic: step 9's output, reps overlaid, fore-aft stretched 4x, with the
+    video over the top wherever a referee exists.
+
+    Six captures chosen to span what the corpus can and cannot check: two
+    deadlifts (one refereed by the conic marker path, one by the plate
+    template), two benches (one where step 6 clearly helped, one where it
+    clearly hurt) and two squats, which have no referee at all because
+    `metrics.vs_truth` still refuses squat.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import metrics, pipeline, plot, truth
+
+    picks = [
+        ("data_v2", "deadlift_160x6_1"), ("data", "deadlift_155x6_1"),
+        ("data_v2", "bench_95x2"), ("data_v2", "bench_spoto_95x5_1"),
+        ("data_v2", "squat_pause_145x4_1"), ("data_v2", "squat_170x1"),
+    ]
+    panels = []
+    for dataset, stem in picks:
+        hits = sorted((ROOT / dataset / "raw").glob(f"{stem}_*.csv"))
+        if not hits:
+            print(f"  {stem}: not found, skipping")
+            continue
+        csv = hits[0]
+        res = pipeline.run(csv)
+        rom = np.median(res["rep_rom_m"]) * 100 if res["rep_rom_m"] else float("nan")
+        exp = pipeline.expected_reps(csv)
+        head = (f"{stem}   {len(res['reps'])}/{exp} reps   "
+                f"median ROM {rom:.0f} cm")
+
+        video, paths = None, res["planar"]
+        try:
+            m = metrics.vs_truth(res, pipeline.find_video(csv))
+        except (ValueError, FileNotFoundError):
+            # vs_truth's squat refusal is STALE rather than wrong-headed: its
+            # stated reason describes the OLD template footage, and the
+            # 8-sticker plate tracks at 100%. Do not paraphrase the exception
+            # into the caption — it would print a reason that is no longer true.
+            cap = (f"{head}\nNO REFEREE — vs_truth still refuses squat "
+                   f"(reason is stale; this footage tracks)")
+        else:
+            good = [r for r in m["per_rep"] if r.get("covered")]
+            video = [r["curve_video"] for r in good]
+            paths = [r["curve_pipeline"] for r in good]
+            verdict = "beats" if m["beats_null"] > 1 else "LOSES TO"
+            cap = (f"{head}\nh {m['pipeline_h_rms']:.2f} cm rms, "
+                   f"v {m['pipeline_v_rms']:.2f}   "
+                   f"{verdict} flat line ({m['beats_null']:.2f}x)")
+        panels.append({"stem": stem, "paths": paths, "video": video,
+                       "caption": cap})
+        print(f"  {stem}: {len(res['reps'])}/{exp} reps"
+              + ("" if video is None else f", scored"))
+
+    if not panels:
+        print("nothing to draw")
+        return 1
+    fig = plot.plot_pipeline_now(panels)
+    out = ROOT / "analysis" / "50_pipeline_now.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_jump_with_d() -> int:
+    """C31 — does C29's jump correction compose with step 6's `d`?
+
+    Writes `analysis/51_jump_with_d.png`.
+
+    P6 was measured entirely before `d` existed: C29's rest-window jump
+    correction took deadlift horizontal rms from 10.66 to 3.93 cm with step 6
+    OFF, on the axis `d` most affects. Four arms on all six deadlifts, sharing
+    the same rest-to-rest windows so the comparison is internal:
+
+        control  rest windows, no correction, no d   <- C29's honest baseline
+        C29      rest windows + 0.20 s jump, no d
+        d        rest windows, no correction, with d
+        both     rest windows + 0.20 s jump, with d
+
+    Reproduces C29's own control and treatment (10.66 -> 3.93, beats_null
+    0.21 -> 0.69) to two decimals, which is what licenses reading the new rows.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import correct, metrics, oracle, pipeline, plot, truth
+
+    ARMS = [("control", -1, False), ("C29", 0.20, False),
+            ("d", -1, True), ("both", 0.20, True)]
+    csvs = (sorted((ROOT / "data" / "raw").glob("deadlift_*.csv"))
+            + sorted((ROOT / "data_v2" / "raw").glob("deadlift_*.csv")))
+    rows = {}
+    for csv in csvs:
+        video = pipeline.find_video(csv)
+        if video is None:
+            continue
+        path = metrics.resolve_path(video)
+        d = correct.WRIST_OFFSET_M[truth.lift_of(csv)]
+        row = {}
+        for tag, width, use_d in ARMS:
+            base = pipeline.run(csv, wrist_offset=None)
+            res = oracle.jump_rest_windows(
+                base, width_s=width, wrist_offset=(d if use_d else None))
+            m = metrics.vs_truth(res, path)
+            row[tag] = (m["pipeline_h_rms"], m["beats_null"],
+                        m["pipeline_v_rms"], m["n_compared"])
+        rows[csv.stem[:24]] = row
+        print(f"  {csv.stem[:24]}: "
+              + "  ".join(f"{t} {row[t][0]:.2f}" for t, _, _ in ARMS))
+
+    if not rows:
+        print("nothing to draw")
+        return 1
+    for tag, _, _ in ARMS:
+        med = np.median([r[tag][0] for r in rows.values()])
+        mb = np.median([r[tag][1] for r in rows.values()])
+        print(f"  {tag:8s} median h_rms {med:5.2f} cm   beats_null {mb:.2f}")
+
+    fig = plot.plot_jump_with_d(rows, [a[0] for a in ARMS])
+    out = ROOT / "analysis" / "51_jump_with_d.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -1419,6 +1549,10 @@ def main(argv: list[str]) -> int:
         return draw_bar_path_with_d()
     if "--pauseattitude" in argv:
         return draw_pause_attitude()
+    if "--pipelinenow" in argv:
+        return draw_pipeline_now()
+    if "--jumpd" in argv:
+        return draw_jump_with_d()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:

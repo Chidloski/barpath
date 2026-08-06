@@ -1838,7 +1838,70 @@ pause**, and nothing in this project had looked at them. Gated in
 `tests/test_real_data.py` — both halves, so the refuted half is not
 re-proposed.
 
+## 50 — what the branch pipeline produces, all three lifts
+
+`python run.py --pipelinenow`. Branch `c29-jump-state`. The product view rather
+than a diagnostic: step 9's output, reps overlaid and start-aligned, fore-aft
+stretched 4x as the display would draw it, with the video over the top wherever
+a referee exists. **Every figure in this directory numbered below 48 shows a
+different quantity**, because step 6 was off when they were drawn.
+
+Six captures, chosen to span what the corpus can and cannot check, and the
+spread across them is the point:
+
+    bench_95x2           2/2 reps   h 0.80 cm   BEATS the flat line 5.39x
+    bench_spoto_95x5_1   5/5 reps   h 3.54 cm   loses 0.88x
+    deadlift_155x6_1     6/6 reps   h 4.57 cm   loses 0.78x
+    deadlift_160x6_1     6/6 reps   h 6.65 cm   loses 0.25x
+    squat_pause_145x4_1  4/4 reps   no referee
+    squat_170x1          1/1 reps   no referee
+
+`bench_95x2` is what the project is trying to build: the reconstruction sits on
+the video for the whole rep, inside the 1 cm spec. `deadlift_160x6_1` is the
+distance still to go — it sweeps 35 cm of fore-aft where the bar moved a few,
+and the shape is not the bar's. Both are the same code on the same day.
+
+**Counting and extent are clean on all six** — 24 of 24 reps, every ROM inside
+`truth.VERTICAL_ROM_M`. What fails is the horizontal, and only the horizontal.
+
+The two squat panels are drawn without a referee because `metrics.vs_truth`
+still refuses squat. That refusal is now **stale rather than wrong-headed**: its
+stated reason is about the old template footage, and the 8-sticker plate tracks
+at 100% coverage with 0.883 px median residual. Replacing it needs a validated
+squat sync, which nobody has built. Until then the squat panels show a
+reconstruction nothing has checked, and should be read that way.
+
+## 51 — do the impact correction and the wrist lever COMPOSE?
+
+`python run.py --jumpd`. Branch `c29-jump-state`. **No.** They correct the same
+thing.
+
+P6 was measured entirely before `d` existed: C29's rest-window jump correction
+took deadlift horizontal rms from 10.66 to 3.93 cm with step 6 OFF, on the axis
+`d` most affects. Four arms on all six deadlifts, sharing the same rest-to-rest
+windows so the comparison is internal:
+
+    arm       median h rms   median beats_null
+    control       10.66            0.21          <- C29's honest baseline
+    C29            3.93            0.69
+    d              9.82            0.22
+    both           3.89            0.68
+
+The control and C29 rows **reproduce C29's own numbers exactly**, which is what
+licenses reading the new ones. `d` alone buys 8%; C29 alone buys 63%; together,
+nothing beyond C29 — three captures better with `d` added, three worse.
+
+Physically unsurprising once stated: **the largest wrist rotation in a deadlift
+IS the turnaround at the floor**, which is exactly where C29 corrects. The
+lever-arm error and the impact error are largely the same error seen twice.
+
+*Two corrections to the record, both against earlier claims of ours.* C29
+reported `deadlift_155x6_1` and `deadlift_180x3` crossing `beats_null = 1.0`;
+re-run here only `155x6_1` does, at 1.21, with `180x3` reaching 0.89. And this
+does **not** argue against step 6's default — C29's correction is not in the
+pipeline, and against the shipping detrend `d` still improves all three
+marker-refereed deadlifts.
+
 ---
 
-*Numbering: 47, 48 and 49 are taken. 50 was claimed by C32 and released unused,
-so the next free number is 50.*
+*Numbering: 47 through 51 are taken. The next free number is 52.*
