@@ -1866,9 +1866,13 @@ and the shape is not the bar's. Both are the same code on the same day.
 
 The two squat panels are drawn without a referee because `metrics.vs_truth`
 still refuses squat. That refusal is now **stale rather than wrong-headed**: its
-stated reason is about the old template footage, and the 8-sticker plate tracks
-at 100% coverage with 0.883 px median residual. Replacing it needs a validated
-squat sync, which nobody has built. Until then the squat panels show a
+stated reason is about the old template footage. But the replacement claim
+first made here — that the 8-sticker plate tracks at 100% — was measured on ONE
+capture and generalised, and is corrected (C31, 2026-08-07): two of the four
+squat clips track cleanly and two do not, `squat_170x1` and
+`squat_pause_140x4_3` reporting 14.0 and 24.7 cm of travel against 65-70 cm
+squats. Replacing the refusal needs a validated squat sync, which nobody has
+built, AND half the footage fixed. Until then the squat panels show a
 reconstruction nothing has checked, and should be read that way.
 
 ## 51 — do the impact correction and the wrist lever COMPOSE?
@@ -1891,9 +1895,29 @@ The control and C29 rows **reproduce C29's own numbers exactly**, which is what
 licenses reading the new ones. `d` alone buys 8%; C29 alone buys 63%; together,
 nothing beyond C29 — three captures better with `d` added, three worse.
 
-Physically unsurprising once stated: **the largest wrist rotation in a deadlift
-IS the turnaround at the floor**, which is exactly where C29 corrects. The
-lever-arm error and the impact error are largely the same error seen twice.
+Why, and the first version of this paragraph got the mechanism wrong. It said
+"the largest wrist rotation in a deadlift IS the turnaround at the floor". The
+owner challenged it: the arms hang near-vertical through a deadlift, so nothing
+reorients and the only available motion is a twist. Correct, and measured
+rather than argued (C31, 2026-08-07):
+
+    swept angle per rep                          193-311 deg
+    net wrist swing per rep (C30b)               ~22 deg
+    share of swept angle in the outer 20% of phase   53-67%
+    peak of |d/dt(R.d)|                          phase 0.03, 7.8x rep median
+
+So the lever term really does move most at the floor — but ~90% of the angular
+motion is BACK-AND-FORTH, not reorientation. There is no turnaround. It is
+**strap ringing**, which B6 already identified: the watch still moving after the
+bar has stopped. The *watch* rotates; the wrist does not. The conclusion stands
+— `d` and C29 overlap because both act at the impact — but the stated mechanism
+was wrong twice over.
+
+**And the corrected mechanism carries something the wrong one did not.** Step 6
+assumes `d` is a rigid constant in BODY coordinates. During ringing the watch is
+not rigidly indexed to the wrist, so at exactly the instant `R(t).d` moves most,
+step 6's premise is false. Applying it there may be actively wrong rather than
+merely useless. Nobody has followed that up.
 
 *Two corrections to the record, both against earlier claims of ours.* C29
 reported `deadlift_155x6_1` and `deadlift_180x3` crossing `beats_null = 1.0`;

@@ -2976,11 +2976,14 @@ Not code, and the highest value per effort available:
   sessions.** `data_v2/raw/` now holds thirteen paired captures — four benches
   (2026-08-03), three 8-sticker deadlifts (2026-08-04), two spoto benches and
   four squats (2026-08-06). The squat ask at the end of this item was answered
-  last and best: **the 8-sticker squat plate tracks at 100% coverage and
-  0.883 px median residual**, the first squat footage in the project that
-  tracks. What remains is code, not capture — `metrics.vs_truth` still refuses
-  squat by a hardcoded check whose stated reason describes the old template
-  footage. The original text follows.
+  last and best, though only PARTLY: **two of the four 8-sticker squat clips
+  track cleanly** (100% coverage, 0.69-0.88 px, travel 59-60 cm) and **two do
+  not** — `squat_170x1` and `squat_pause_140x4_3` report 14.0 and 24.7 cm of
+  travel against 65-70 cm squats. C31 first wrote "the plate tracks at 100%",
+  having measured one capture and generalised; corrected 2026-08-07. So what
+  remains is BOTH code and capture: `metrics.vs_truth` still refuses squat by a
+  hardcoded check whose stated reason describes the old template footage, AND
+  half the squat footage is not yet usable. The original text follows.
 - **Put the watch on and re-shoot with the markers.** ~~Now the highest-value item
   in this list, and it displaces the two below.~~ The 2026-08-01 session solved
   the referee and produced nothing to referee: five marker captures, zero IMU

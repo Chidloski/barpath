@@ -1423,9 +1423,10 @@ def draw_pipeline_now() -> int:
             m = metrics.vs_truth(res, pipeline.find_video(csv))
         except (ValueError, FileNotFoundError):
             # vs_truth's squat refusal is STALE rather than wrong-headed: its
-            # stated reason describes the OLD template footage, and the
-            # 8-sticker plate tracks at 100%. Do not paraphrase the exception
-            # into the caption — it would print a reason that is no longer true.
+            # stated reason describes the OLD template footage. Do not paraphrase
+            # the exception into the caption — it would print a reason that is no
+            # longer true. But do not overcorrect either: only two of the four
+            # 8-sticker squat clips track cleanly (C31, 2026-08-07).
             cap = (f"{head}\nNO REFEREE — vs_truth still refuses squat "
                    f"(reason is stale; this footage tracks)")
         else:

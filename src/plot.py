@@ -1678,9 +1678,11 @@ def plot_pipeline_now(panels: list):
 
     Squat panels carry no video because `metrics.vs_truth` still refuses squat.
     That refusal is now STALE rather than wrong-headed — its stated reason is
-    about the old template footage, and the 8-sticker plate tracks at 100%
-    coverage — but nobody has replaced it with a validated squat sync, so the
-    honest thing is to draw the reconstruction alone and say so.
+    about the old template footage. Note the replacement claim needs care too:
+    only TWO of the four 8-sticker squat clips track cleanly; `squat_170x1` and
+    `squat_pause_140x4_3` report 14.0 and 24.7 cm of travel against 65-70 cm
+    squats (C31, corrected 2026-08-07). And nobody has built a validated squat
+    sync. So the honest thing is to draw the reconstruction alone and say so.
     """
     n = len(panels)
     cols = 3
@@ -1715,8 +1717,8 @@ def plot_pipeline_now(panels: list):
         "step 6 ON\n"
         "Reps overlaid and start-aligned, fore-aft stretched 4x as the display "
         "would draw it. Grey is the video where a referee exists.\n"
-        "Squat has no referee: vs_truth still refuses it, though the 8-sticker "
-        "footage now tracks at 100%.",
+        "Squat has no referee: vs_truth still refuses it, and only two of the "
+        "four 8-sticker squat clips track cleanly.",
         fontsize=11, y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     return fig
@@ -1771,8 +1773,9 @@ def plot_jump_with_d(rows: dict, arms: list):
         "COMPOSE? No: they correct the same thing.\n"
         "Median h rms: control 10.66 -> C29 3.93 -> +d 3.89 cm. `d` alone "
         "reaches only 9.82. Three captures better with `d`, three worse.\n"
-        "Physically unsurprising — the largest wrist rotation in a deadlift IS "
-        "the turnaround at the floor, which is where C29 corrects.",
+        "Both act at the FLOOR IMPACT: |d/dt(R.d)| peaks there at 7.8x the rep "
+        "median. Not a turnaround — the arms hang near-vertical and nothing "
+        "reorients — but STRAP RINGING, the watch moving after the bar stops.",
         fontsize=11, y=0.99)
     fig.tight_layout(rect=(0, 0, 1, 0.86))
     return fig

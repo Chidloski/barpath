@@ -926,8 +926,20 @@ unresolved. See `analysis/48` and `python run.py --dpaths`.
 
 **Squat is no longer the lift with no external horizontal check (C31,
 2026-08-06), and `metrics.vs_truth`'s refusal of it is now STALE.** The
-8-sticker squat plate tracks at **100% coverage, 0.883 px median residual** —
-the first squat footage in this project that tracks at all. But `vs_truth` still
+8-sticker squat plate tracks — **but only on TWO of the four clips, and the
+first version of this paragraph said all four (C31, corrected 2026-08-07).**
+
+    squat_pause_145x4_1   100%   0.88 px   travel 59.4 cm   good
+    squat_pause_140x4_2   100%   0.69 px   travel 60.1 cm   good
+    squat_170x1          97.8%   1.11 px   travel 14.0 cm   MIS-TRACKED
+    squat_pause_140x4_3  96.7%   1.12 px   travel 24.7 cm   MIS-TRACKED
+
+14 cm of travel for a 65 cm squat is not the bar. Note the failure shape, which
+is this project's recurring one: **coverage and residual look HEALTHY on the bad
+clips** because the constellation is fitting *something* rigidly, frame after
+frame. The error was measuring `squat_pause_145x4_1` and generalising to the
+session. So squat has a PARTIAL external check — the first in this project —
+rather than the whole one claimed here. But `vs_truth` still
 refuses squat by a hardcoded check whose stated reason (median NCC ~0.40, plate
 clipping the frame, two of four captures not tracking) describes the OLD
 template footage in `data/video/` and does not describe `data_v2/`. **The
@@ -1775,9 +1787,12 @@ check, and its footage got worse rather than better: two of the four 2026-07-30
 captures do not track at all; `metrics.vs_truth` refuses it; that wants a wider
 shot, not code." It got the wider shot, and it is FALSE as of 2026-08-06
 (C31).** The four `data_v2` squats are filmed from a tripod on an 8-sticker
-plate and the **plate tracks at 100% coverage with 0.883 px median residual** —
-the first squat footage in this project that tracks. It was the shot, exactly as
-predicted, and the prediction is the part worth keeping.
+plate and **two of the four clips track cleanly** (100% coverage, 0.69-0.88 px,
+travel 59-60 cm against a ~65-70 cm squat) while **two do not** — `squat_170x1`
+and `squat_pause_140x4_3` report 14.0 and 24.7 cm of travel, which is not the
+bar. It was the shot, largely as predicted, and the prediction is the part worth
+keeping; the over-claim that all four track was C31's and is corrected here
+(2026-08-07).
 
 What remains true is narrower and is now a code problem rather than a footage
 one: **`metrics.vs_truth` still refuses squat, by a hardcoded check whose stated
