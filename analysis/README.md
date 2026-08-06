@@ -4,6 +4,15 @@ Graphs from running the current pipeline on the first real watch captures, plus
 an off-pipeline reconstruction experiment. Generating scripts live in the
 session scratchpad (not the repo). Data in `data/raw/`.
 
+> **READ BEFORE QUOTING ANY NUMBER FROM FIGURES 01–47 (C33, 2026-08-06).**
+> **Step 6 — the wrist lever `R(t)·d` — was OFF for the entire history of this
+> directory and is now ON by default** (C31, `70b2a63`;
+> `pipeline.run(wrist_offset="auto")`). Every figure numbered below 48 shows the
+> reconstructed **watch** path, not the bar path the pipeline now produces, and
+> every horizontal and vertical figure in them changes under `d`. Regenerating
+> one without passing `wrist_offset=None` will not reproduce its caption. Figure
+> 48 is the first that shows both arms. See CLAUDE.md's step-6 banner.
+
 ## Room mimics (2026-07-26, no barbell)
 - `01_room_captures_accel_vel_pos.png` — vertical accel / velocity / position for
   the room deadlift + squat. Reps present but buried in drift.
@@ -1688,3 +1697,96 @@ that a plausible one is the right size, and that P3's stated mechanism is not
 (17-23% of variance at a bias 170-500x the measured one). Deadlift only. And it
 says nothing about bench, where the horizontal error is already 0.6-3.7 cm and
 two captures beat the null 4x — this is a deadlift diagnosis.
+
+**CORRECTION, C30b (2026-08-05).** Figure 46 is a DEADLIFT result and its title
+overgeneralises. Run on bench, the same test gives |r| = 0.79-0.94 on the
+horizontal against deadlift's 0.10-0.23 — the channel is not empty. The wrist
+lever arm named in the right-hand panel is also not the discriminator: wrist
+swing per rep is 17.3 deg on bench against 21.8 on deadlift, nearly the same.
+What separates the lifts is the floor impact, 15-22 g against 2-6 g. See
+TASKS.md C30b.
+
+**SECOND CORRECTION, C31 (2026-08-06) — the title is wrong and so is C30b's
+correction of it, in different ways.** The owner tape-measured `d` the next day.
+Re-run with step 6 ON, the deadlift best-direction horizontal correlation goes
+**0.118-0.232 -> 0.432-0.641** while bench moves only 0.798-0.919 -> 0.814-0.937
+and the vertical control is unmoved at 0.967-0.994. So:
+
+- C30's **title** ("EMPTY") is wrong — the channel was masked, not empty.
+- C30's **right-hand panel** is right after all. The lever arm it names as the
+  candidate IS the dominant term on deadlift, which is what C30b denied.
+- C30b's symmetry argument is the part that failed: it inferred equal DAMAGE
+  from equal absolute contamination (3.6 vs 4.5 cm of sweep), and damage is
+  contamination against what survives it. The `|d| = 12 cm` in that panel is
+  9.5 cm by the tape, so its lever bar is ~20% oversized.
+
+The floor impact remains a live suspect for the residual, which is now 0.43-0.64
+against bench's 0.81-0.94 rather than 0.12 against 0.92. See figure 48 and
+TASKS.md C31.
+
+---
+
+## 47 — the paused squat's cadence drifts, and no constant could see it (C31a, 2026-08-06)
+
+`python run.py --pausedsquat`. Branch `c29-jump-state`. Four panels: band-passed
+vertical velocity — the signal `segment.rep_bounds` actually works on — for the
+two paused squats that counted 3 of 4 and the one that counted 4 of 4, then the
+tolerance each capture admits under each rule.
+
+**The first three panels exist to make one thing visible: the dropped rep is a
+REAL rep.** It sits in `_similar_cluster`'s winning cluster with its siblings at
+0.75-0.97 shape correlation and reconstructs 65.4 / 69.7 cm, and it is discarded
+purely because the gap before it is longer than the others.
+`squat_pause_140x4_3` drops its LAST rep and `squat_pause_140x4_2` its FIRST —
+which is why panel 4 matters: the mechanism is the gap ratio, not a position in
+the set.
+
+**Panel 4 is the negative result and the reason a re-tune was not the fix.**
+Under the old global-spread rule `bench_spoto_90x5_1` counts correctly only
+below 1.572 and `squat_pause_140x4_3` only above 1.576, so the two grey bars
+**never overlap and no constant satisfies both**. The green bars — local drift
+admission with an evenness tie-break — do overlap, over 1.460-1.528. Ships at
+1.50.
+
+**What it does not show.** Whether the new margin holds: 2.4% either side,
+against the 8-11% the old constant enjoyed, and the plateau's two edges are two
+different captures on two different lifts. A capture that pauses harder will
+push the floor into the ceiling. It also does not show the discriminator C31a
+noticed and did not pursue — both paused squats have a rejected low-velocity
+lobe INSIDE the long gap where `bench_spoto_90x5_1`'s post-set gaps have none,
+which would separate the two cases without any tolerance at all.
+
+---
+
+## 48 — the bar path with `d` measured, step 6 off and on (C31, 2026-08-06)
+
+`python run.py --dpaths`. Branch `c29-jump-state`. The first figure in this
+directory drawn with step 6 ON. Three captures, each scored **twice against ONE
+tracked video path**, so the only thing differing between the two curves is
+`wrist_offset` — no re-track, no re-sync.
+
+`d` comes from `correct.WRIST_OFFSET_M`, the owner's tape of 2026-08-06. It is
+not fitted; B2 established that fitting it against the video is ill-conditioned
+and returns |d| = 129 cm under leave-one-out, and C31 re-confirmed that by
+fitting `lever` on top of the tape and landing 108/74/4 degrees away from it.
+
+**Read the three panels as a disagreement, not a result**, which is why they
+were chosen: a deadlift, the bench where `d` clearly helped (`bench_95x2`,
+1.46 -> 0.80 cm) and the paused bench where it clearly hurt
+(`bench_spoto_95x5_1`, 1.17 -> 3.54). `d` helps the ACCELERATION correlation on
+6 of 6 benches and the POSITION rms on only 3 of 6. A figure showing only the
+wins would be the exact failure this project keeps repeating.
+
+**Stale label, recorded not fixed (C33):** the orange series is captioned
+"step 6 OFF (ships)" in `plot.plot_bar_path_with_d`. Step 6 has shipped ON since
+`70b2a63`, so that legend now names the *old* default. `src/plot.py` was held by
+another agent when this was spotted.
+
+**What it does not show.** Why the two referees disagree about `d` — it helps
+uniformly under `truth.py`'s template and is mixed under `markers.py` — which is
+the highest-value open question in the project. See CLAUDE.md P2.
+
+---
+
+*Numbering: 47 and 48 are taken. 49 was in flight with another agent as this was
+written; 50 was claimed by C32 and released unused.*

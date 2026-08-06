@@ -45,8 +45,17 @@ that long.
 
 **The owner did it on 2026-08-06, and `WRIST_OFFSET_M` below is the tape.**
 That paragraph used to end "until then it stays None"; the reason it stayed
-None is gone. The DEFAULT has not moved, and that is a separate question with
-a separate answer — see the constant's docstring and `pipeline.run`.
+None is gone. **And the DEFAULT has moved with it: step 6 is ON**
+(`pipeline.run(wrist_offset="auto")`, 70b2a63) — pass None for the old
+behaviour. *This paragraph said "the DEFAULT has not moved" for about an hour,
+between C31b recording the constant and the owner's call to ship it; C33
+corrected it on 2026-08-06.* See the constant's comment block and `pipeline.run`
+for what it costs as well as what it buys.
+
+Note the first paragraph above is **not** superseded by the tape. `d` still
+cannot be recovered from the video; it can only be measured with a ruler. C31
+re-confirmed that from the other side by fitting `lever` on top of the tape and
+landing 108/74/4 degrees away from it.
 
 **How big is it really? Smaller than this project has been claiming.** B2
 measured it. The rotation premise above is right — the watch turns 18-22
@@ -204,13 +213,25 @@ from scipy.spatial.transform import Rotation
 # lifter's back and the wrists are under it palm-forward, so the display faces
 # roughly the same way the bar sits rather than away from it.
 #
-# **THIS IS NOT THE SHIPPING DEFAULT, and read why before turning it on.**
-# `pipeline.run(wrist_offset=)` is still None. On the nine marker-refereed
-# captures (C31b, 2026-08-06) applying it improves per-rep horizontal rms on
+# **THIS IS THE SHIPPING DEFAULT AS OF 70b2a63.** `pipeline.run(wrist_offset=)`
+# defaults to "auto", which looks this table up by lift and applies it; pass
+# None for the old behaviour. The owner's call, and the reason is geometric
+# rather than metric: this project reconstructs the BAR path from a sensor on
+# the WRIST, and R(t).d is the only term between them, so omitting a measured
+# term does not make the answer more conservative — it makes it an answer to a
+# different question.
+#
+# *This block read "THIS IS NOT THE SHIPPING DEFAULT ... is still None" until
+# 2026-08-06 (C33 corrected it). C31b left the default off on the metric alone
+# and was overruled on the geometry an hour later; the metric argument it made
+# is kept below because it is still the honest account of what `d` costs.*
+#
+# What it costs, measured rather than argued. On the nine marker-refereed
+# captures (C31b, 2026-08-06) applying `d` improves per-rep horizontal rms on
 # 5 of the 6 whose DISPLAY AXIS step 8 can find and makes it 39-202% worse on
 # the 3 it cannot — and on those three the axis turns 23-50 degrees when `d` is
 # applied, so the before and after are not measured along the same line. The
-# blocker is step 8, not step 6, and not more tape.
+# blocker there is step 8, not step 6, and not more tape.
 #
 # What it is good for, measured rather than argued:
 #   * bench VERTICAL rms improves on 6 of 6, by ~20-25%

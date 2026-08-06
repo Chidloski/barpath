@@ -174,10 +174,53 @@ Nine steps, one module each, numbered to match.
 3. `orient.py` — rotate acceleration into the world frame.
 4. `integrate.py` — cumulative trapezoidal, twice.
 5. `segment.py` — stationary detection, then rep boundaries by vertical position.
-6. `correct.py` — subtract the wrist-to-bar offset R(t)·d.
+6. `correct.py` — subtract the wrist-to-bar offset R(t)·d. **ON as of
+   2026-08-06 — read the banner immediately below before quoting any number
+   from this file.**
 7. `correct.py` — per-rep linear detrend so each rep closes.
 8. `project.py` — PCA on horizontal displacement picks the display axis.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
+
+**STEP 6 IS ON BY DEFAULT (C31, 70b2a63, 2026-08-06), AND THAT INVALIDATES
+EVERY HORIZONTAL AND VERTICAL NUMBER RECORDED IN THIS FILE, IN `TASKS.md` AND
+IN `analysis/README.md`.** `pipeline.run(wrist_offset=)` defaults to `"auto"`,
+which looks `d` up by lift from `correct.WRIST_OFFSET_M` — the owner's tape,
+below — and applies it. Everything written here before that date was measured
+with step 6 OFF, i.e. against the reconstructed *watch* path. **To reproduce an
+old number you must pass `wrist_offset=None`, or you are comparing two
+different quantities.** Where a post-`d` figure exists it is recorded beside
+the old one; where it does not, this file says so rather than implying the old
+one still holds. Do not assume a number survived the change because nobody
+crossed it out.
+
+*Why it is on, and the reason is not the metric (owner's call).* This project
+reconstructs the **bar** path and the sensor is on the **wrist**; `R(t)·d` is
+the only term between the two. Omitting a measured geometric term does not
+produce a more cautious answer, it produces an answer to a different question.
+The metric was ambivalent — see the mixed table in P2 — and the geometry is not.
+
+**`d` is measured, and B2 is superseded as to availability but NOT as to
+fitting.** The owner tape-measured it on 2026-08-06, watch-face centre to bar
+centre in watch body axes:
+
+    squat            5 cm toward the crown, 4 cm UP OUT of the case    |d| = 6.4 cm
+    bench, deadlift  9 cm toward the crown, 3 cm DOWN INTO the case    |d| = 9.5 cm
+
+`apply_offset` computes `p_bar = p_watch − R(t)·d`, so **its `d` points
+BAR→WATCH and is the negative of what the tape reads from the watch**; a sign
+error here is invisible, since it produces a plausible curve of the right size
+pointing the wrong way. The constant's docstring carries the derivation.
+
+It was corroborated, not fitted. Sweeping `d`'s direction over a 300-point
+sphere grid (neighbours ~12°) at the measured magnitude and scoring by C30's
+acceleration correlation, the tape value sits within **0.02–0.03** of the best
+achievable value on all three `data_v2` deadlifts — within ONE grid cell,
+identically on all three. On bench the optimum is 50–64° away but worth only
+0.02–0.06 on a baseline already at 0.81–0.94, so **bench does not identify
+`d`'s direction at all**; the tape is corroborated on deadlift and merely not
+contradicted on bench. B2 stands: `d` still cannot be FITTED from video, and
+anyone tempted to refine it on bench should read B2 first. *Evidence:*
+`correct.WRIST_OFFSET_M`, TASKS.md C31, `analysis/48`.
 
 `metrics.py` is not one of the steps. It judges them: `dispersion` for
 rep-to-rep spread, `vs_truth` for absolute error against the video. Read its
@@ -202,6 +245,25 @@ lockout and reports 0.2 cm of travel on one bench set. See `src/README.md` and
 behaved: its fit residual also degrades with height, 0.16 to 0.81 px, but stays
 inside tolerance instead of crossing it — worst case 0.33 cm against the 1 cm
 spec, measured by `markers.top_of_travel_residual` and gated per capture (C17).
+
+**THE CAMERA GEOMETRY, and it is a confound in every bench and squat number
+here (owner, 2026-08-06; recorded by C31 in bc66fb1).** Nothing in this repo
+had written it down: **squat and bench are filmed from the lifter's RIGHT,
+deadlift from the LEFT, and the watch is on the LEFT wrist.**
+
+So **on bench and squat the referee tracks the plate on the OPPOSITE END OF THE
+BAR from the sensor.** Bar tilt or an uneven press moves the right plate and
+the left wrist differently, and that difference is scored as pipeline error.
+**Deadlift is the only lift in the corpus where camera and watch are on the
+same side** — so on top of its landmark-matched sync (9–19 ms) it is also the
+only geometrically clean comparison available.
+
+What it does *not* do, checked rather than assumed: it cannot touch `d`, which
+lives in the watch body frame, and it cannot corrupt the fore-aft sign, because
+`vs_truth` picks one sign per set from the correlation and reports
+`reps_disagreeing_on_sign`. Untested and testable: a bar tilting through a
+press should show up as a bench-only, load-dependent residual that no
+wrist-frame correction can reach.
 
 **The scoring path takes either referee as of C17 (2026-08-02).**
 `metrics.resolve_path` picks the tracker from where the clip lives — anything
@@ -549,10 +611,19 @@ removed in `7004c32` because no video exists for them; measurements made
 before that commit say 13 captures, and measurements between it and 2026-07-30
 say 10 and 44 reps. Both are correct as of when they were taken.
 
-**A second dataset opened on 2026-08-03 and grew on 2026-08-04**: `data_v2/raw/`
-holds **four bench captures (14 reps) and three 8-sticker deadlifts (15 reps)**, each with a marker clip beside it in `data_v2/video/` —
-the first IMU logs ever paired with marker footage, and the first captures in
-this project refereed by `markers.py`. All four carry the `phase` column with a
+**A second dataset opened on 2026-08-03 and has grown twice since**: `data_v2/raw/`
+holds **thirteen captures (52 reps)**, each with a marker clip beside it in
+`data_v2/video/` — the first IMU logs ever paired with marker footage, and the
+first captures in this project refereed by `markers.py`:
+
+    2026-08-03   four benches                     14 reps
+    2026-08-04   three 8-sticker deadlifts        15 reps
+    2026-08-06   two spoto benches, four squats   23 reps
+
+*The 2026-08-06 six ran clean through the IMU pipeline and their per-rep
+vertical ROM is inside `truth.VERTICAL_ROM_M` (C31). Two of the four paused
+squats short-counted on arrival and C31a fixed it in the segmenter — see P1.*
+The four benches carry the `phase` column with a
 ~3.0 s closing hold, count 14 of 14, sit inside `truth.VERTICAL_ROM_M`
 (28.4–30.7 cm), and replicate C6's attitude bound independently (0.010–0.058°
 opening, 0.062–0.146° closing, against 0.39–1.05° of gyro-only drift).
@@ -569,15 +640,24 @@ video and log, four gitignored files, unrecoverable — because that plate's
 stickers are placed too unevenly to referee (C23). They had supplied a rep
 count of 9 of 10 and squat's first replication of the attitude bound; both are
 gone with them, and C22's fatigue finding is measured on data that no longer
-exists. **The corpus is 24 captures and 101 reps** — 21 and 86 plus the three 8-sticker
-deadlifts of 2026-08-04 (6, 6 and 3 reps), which count 15 of 15 and are the
-first captures in this project refereed by the conic marker path (C27).
+exists. **The corpus is 30 labelled captures and 124 reps** — 17 in `data/raw/`
+(72 reps) and 13 in `data_v2/raw/` (52), plus four unlabelled diagnostic logs in
+`data/raw/` that no count gate sees. It reached 24 and 101 with the three
+8-sticker deadlifts of 2026-08-04 (6, 6 and 3 reps, the first captures in this
+project refereed by the conic marker path, C27), and 30 and 124 with the six of
+2026-08-06. **Every one of the 30 counts correctly (C31a, a2494b4)** — see P1.
+
+*Numbers taken before those dates read differently and were all correct when
+taken: 13 captures before `7004c32`, then 10 and 44 reps, then 17 and 72, then
+21 and 86, then 24 and 101.*
 
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
 
-**P1 — Counting and extent are clean at 72/72; phase is now verified on
-deadlift and bench, and open only on squat.** Rewritten 2026-07-31 by C5, and
+**P1 — Counting and extent are clean at 124/124; phase is now verified on
+deadlift and bench, and open only on squat.** *(The heading read 72/72 until
+2026-08-06; it is 124 reps over 30 labelled captures now — C31a, a2494b4.)*
+Rewritten 2026-07-31 by C5, and
 again the same day by C9, which answered the phase question this heading used
 to call untouched. Bench: 15 of 15 windows in phase. See *Window extent* below.
 
@@ -591,15 +671,76 @@ three new benches.
 
 C5 fixed it on 2026-07-31 and counting was **72/72** on `data/raw` —
 `_longest_cadence`'s tolerance was 1.6, admitting a post-set gap and growing a
-run of six that beat the true five on length alone. It is 1.45 now, mid-plateau
-of a 1.35–1.55 band bounded by real data on both sides. **The live limitation: a
-rest-pause or cluster set has a real mid-set gap above 1.45 and would be split.**
-No such capture exists.
+run of six that beat the true five on length alone. C5 set it to 1.45,
+mid-plateau of a 1.35–1.55 band, and this paragraph then warned that "a
+rest-pause or cluster set has a real mid-set gap above 1.45 and would be split.
+No such capture exists."
 
-**Counting is 24 of 24 captures, 101 of 101 reps** (C27 added three deadlifts at
-6/6, 6/6 and 3/3, every floor impact found) — the two captures that broke
-it were deleted (see above), so this is a smaller claim than 22/23 rather than
-a better one.
+**One arrived on 2026-08-06, the plateau turned out to have closed to NOTHING,
+and the fix is a new RULE rather than a new constant (C31a, a2494b4).** Two of
+the four paused squats counted 3 of 4 — `squat_pause_140x4_2` dropped its FIRST
+rep, `_3` its LAST — and both are real reps, sitting in `_similar_cluster`'s
+winning cluster with their siblings at 0.75–0.97 shape correlation and
+reconstructing 65.4 and 69.7 cm. This was C5's function and C5's mechanism in
+the *opposite* direction: the tolerance was too TIGHT for a real set, not too
+loose for a post-set gap. It is **not** C22's chain-versus-cluster failure —
+the cluster is correct on both captures and holds all four reps.
+
+A paused squat's cadence LENGTHENS rep by rep as the lifter takes longer to
+re-breathe and re-brace:
+
+    squat_pause_140x4_3   gaps 5.43, 5.85, 8.53 s   spread 1.573
+    squat_pause_140x4_2   gaps 4.88, 5.53, 7.27 s   spread 1.490
+    squat_pause_145x4_1   gaps 6.08, 6.32, 6.53 s   spread 1.074  (counts 4/4)
+
+Measured by the run's GLOBAL max/min spread — what the old rule tested — a
+drifting set is indistinguishable from a set with a post-set movement tacked on,
+and **the two constraints are DISJOINT**: `bench_spoto_90x5_1` is correct only
+for tol ≤ 1.572, `squat_pause_140x4_3` only for tol ≥ 1.576. **No constant could
+count both, so a re-tune was never available** — which is the durable part, and
+the reason the fix is structural.
+
+`_longest_cadence` now admits a run on **LOCAL drift** — each gap against its
+NEIGHBOUR rather than against the run's extremes — and breaks length ties on
+cadence **EVENNESS** before lateness. Both halves are needed:
+
+    rule                              admissible tol      width
+    global spread + lateness (old)    none - disjoint         -
+    global spread + evenness          none - disjoint         -
+    local drift   + lateness          [1.4598, 1.4882]     1.93%
+    local drift   + evenness (ships)  [1.4598, 1.5306]     4.74%
+
+Evenness is needed because under local admission `bench_spoto_90x5_1` grows a
+post-set run of five that ties the true five on length and wins on lateness
+alone, despite cadence 44% worse (1.488 against 1.036). Lateness is kept as the
+last key, so `bench_92.5x2` — the capture it exists for — is decided exactly as
+before. **The tolerance is 1.50**, the round value nearest the midpoint 1.495;
+the 1.45 and the 1.35–1.55 plateau this file used to quote are superseded.
+
+**Read the new margin honestly: 2.4% either side, against the 8–11% the old
+constant enjoyed before these captures existed.** It is two-sided and measured
+on two different captures on two different lifts, but it is thin, and a capture
+that pauses harder will push the floor into the ceiling. A count-only gate would
+have hidden all of this — at tol 1.573 `bench_spoto_90x5_1` still counts 5, but
+they are the WRONG 5 (ROM 88.7 and 62.9 cm on a bench press). This repo's
+recurring shape once more: the count is right and the windows are not.
+`tests/test_segmentation.py` gained `ALL_CAPTURES` so the plateau gate finally
+sees `data_v2/` — being blind to it is how the plateau closed unnoticed — plus a
+test asserting the old rule's emptiness so nobody re-tunes their way back in.
+*Evidence:* `analysis/47`, `python run.py --pausedsquat`, TASKS.md C31a.
+
+**Counting is 30 of 30 labelled captures, 124 of 124 reps** — the 24/101 above
+plus the six of 2026-08-06, and across all 34 CSVs every window that was already
+correct is **bit-identical** under C31a's rule. C27 had added three deadlifts at
+6/6, 6/6 and 3/3 with every floor impact found. The two captures that ever broke
+it were deleted (see above), so this remains a smaller claim than 22/23 rather
+than a strictly better one.
+
+*Unexplored, and recorded by C31a rather than chased: a discriminator that is
+not a gap ratio at all is available.* Both paused squats have a rejected
+low-velocity lobe INSIDE the long gap (at 43.20 s and 44.61 s) and
+`bench_spoto_90x5_1`'s post-set gaps have none — which would separate the two
+cases without any tolerance.
 
 **What the deleted squat taught, kept because the mechanism will recur (C22).**
 `squat_150x5` segmented 4 of 5, and the cause was **not** the cadence tolerance
@@ -684,10 +825,189 @@ not the end of lifting.**
 `17` and `src/README.md` for the phase bug; `23` and `analysis/README.md` for
 the ROM bounds; `tests/test_segmentation.py` and `28` for C5.
 
-**P2 — READ C30 FIRST (2026-08-05, branch `c29-jump-state`): the horizontal
-channel is not NOISY, it is EMPTY.** Everything below measures how big the
-horizontal error is. C30 measured the acceleration error as a TIME SERIES for
-the first time — differentiating the marker path twice and putting the
+**P2 — READ THIS FIRST (C31, 2026-08-06). EVERY NUMBER BELOW WAS MEASURED WITH
+STEP 6 OFF, AND STEP 6 IS NOW ON.** See the banner in the Pipeline section. The
+whole of P2 — every `h rms`, every `beats_null`, every excursion figure, and the
+tables C10, C12, C24, C25, C27, C29 and C30 contributed — describes the
+reconstructed **watch** path. To reproduce any of them, pass
+`wrist_offset=None`. Where a post-`d` figure exists it is given below beside the
+old one; where none is given, none has been measured, and the old figure should
+be read as history rather than as the pipeline's current output.
+
+**And C30's headline is OVERTURNED — the deadlift horizontal channel was never
+empty, it was masked by the uncorrected wrist lever (C31, 7bc4bcb).** Re-running
+C30's own acceleration-error correlation with step 6 ON:
+
+    lift        best-dir horizontal corr, d OFF -> d ON
+    deadlift        0.118-0.232  ->  0.432-0.641
+    bench           0.798-0.919  ->  0.814-0.937   (6 of 6 improve)
+    vertical        0.967-0.994, unmoved either way (the control)
+
+The vertical control not moving is what says this is a real recovery on the
+horizontal rather than a global rescaling. **The term that did it is the one
+C30 itself named as prime suspect while lacking `d`.** *Note C30's measurement
+code was never committed — `ceba50a` holds only the docs and the PNG — so C31
+reimplemented it from the method in that commit message; it reproduces C30's own
+baseline to within 0.03. Commit the code that makes a headline.*
+
+**AND IT DOES NOT CASH OUT IN POSITION. That gap is the finding, not a
+footnote.** `metrics.vs_truth`, step 6 off → on, on the nine marker-refereed
+captures:
+
+    capture              h_rms        beats_null    v_rms
+    deadlift_160x6_1     7.22->6.65   0.23->0.25    4.57->4.57
+    deadlift_160x6_2     4.55->4.39   0.34->0.35    4.51->4.62
+    deadlift_185x3      11.44->10.61  0.14->0.15    2.79->2.78
+    bench_92.5x4_1       3.08->1.23   0.71->1.78    3.25->2.46
+    bench_92.5x4_2       1.12->1.18   2.44->2.32    3.44->2.62
+    bench_92.5x4_3       1.39->1.92   1.65->1.19    3.52->2.69
+    bench_95x2           1.46->0.80   2.96->5.39    2.90->2.11
+    bench_spoto_95x5_1   1.17->3.54   2.65->0.88    3.72->2.91   (new capture)
+    bench_spoto_95x5_2   2.76->4.45   1.16->0.72    3.83->3.02   (new capture)
+
+Deadlift horizontal improves on 3 of 3 but only ~5–8%, and `beats_null` stays at
+0.14–0.35. Bench horizontal is a coin flip. **Bench VERTICAL is the one clean
+consistent effect: better on 6 of 6, by ~20–25%.** Correlation is shape
+agreement and blind to gain; rms after double integration is not.
+
+**Under the TEMPLATE referee it is unambiguously good, and that is the strongest
+single piece of evidence for the default.** Three captures crossed
+`beats_null = 1.0` and **all seven template-refereed benches now beat the flat
+line**, where C10's table below had **three of the seven losing** — and they are
+exactly the three that crossed: the 2026-07-30 paused benches at 0.72, 0.80 and
+0.92. *(C31's commit message says "four of them"; C10's own table shows three
+benches under 1.0, and six of ten only when the three deadlifts are counted in.
+Three is what the table supports.)* The three deadlifts still lose and stay
+`xfail`.
+
+**The cost, recorded rather than absorbed:** `bench_90x4_2` and `_3`, the only
+two captures in the life of this project where the horizontal reconstruction
+demonstrably carried information, fall **4.80 → 3.45** and **4.03 → 2.25**
+against the null. Both still beat it comfortably. Those two were re-recorded in
+`tests/test_real_data.py` with the old values kept beside them; every other
+capture stayed inside the existing 20% headroom. *The post-`d` `beats_null` for
+the other five template benches has not been written down anywhere — only that
+all seven now exceed 1.0. Do not infer values for them from this table.*
+
+**AN UNRESOLVED TENSION, and it must not be smoothed over.** C32 nominated the
+PAUSE as the explanation for the bench dissent, because both `data_v2` captures
+where `d` hurt are paused benches. Switching step 6 on falsified the simple
+version of that: **`d` fixed all three paused benches under the TEMPLATE referee
+while still hurting the paused benches under the MARKER referee.**
+
+    data/video,  truth.py template    d helps uniformly (7 of 7 beat null now)
+    data_v2,     markers.py conic     d mixed (3 better, 3 worse)
+
+**The surviving split is by REFEREE, not by pause** — and neither referee has
+been shown right. C24 already had them disagreeing ~20% on ROM. This is the
+highest-value open question in the project now. Two confounds were checked:
+
+- **DEAD — the scale.** C32 swept `bench_spoto_95x5_1`'s referee scale over a
+  47% span (ratio 0.681 to 1.000); `d` is worse at **every** point and
+  `beats_null` with `d` on never exceeds 0.92. The dissent is scale-invariant,
+  so it is not the ruler. That capture's 0.68-of-plate-radius warning is
+  `truth.find_plate` mis-detecting the rim on all six `data_v2` benches, not the
+  stickers, and the capture is fit to referee — 100% coverage, 0.260 px median
+  residual, 0.158 px over the top 15% of travel, five of five video chest
+  touches one per IMU window at 0.543–0.651 through them. `bench_spoto_95x5_2`
+  reports 0.692 on the same plate, so nothing singles `_1` out. *Evidence:*
+  TASKS.md C32, 18501a3.
+- **OPEN — the camera side.** The regressing benches are filmed from the side
+  opposite the watch, so the referee tracks the far end of the bar. See the
+  camera-geometry note in the two-referees section.
+
+Also untested: whether `d` is right in DIRECTION and wrong in effective
+MAGNITUDE, because wrist extension under load changes the lever arm. Against it,
+C31b measured position rms to be **monotone in |d| out to 3× the tape**, so
+there is no interior optimum for that to hide in. The acceleration correlation
+*does* have one, at 0.5–0.75× the tape on all six benches and nowhere on
+deadlift — consistent with wrist extension shortening the effective lever, and
+unresolved. See `analysis/48` and `python run.py --dpaths`.
+
+**Squat is no longer the lift with no external horizontal check (C31,
+2026-08-06), and `metrics.vs_truth`'s refusal of it is now STALE.** The
+8-sticker squat plate tracks at **100% coverage, 0.883 px median residual** —
+the first squat footage in this project that tracks at all. But `vs_truth` still
+refuses squat by a hardcoded check whose stated reason (median NCC ~0.40, plate
+clipping the frame, two of four captures not tracking) describes the OLD
+template footage in `data/video/` and does not describe `data_v2/`. **The
+refusal is unjustified for `data_v2` and nobody has lifted it.** An exploratory
+bypass — routing squat through `bench_sync` by patching `truth.lift_of` in a
+scratch script — gave, with `d`:
+
+    squat_pause_140x4_2   h 2.57 -> 2.00   beats_null 1.31 -> 1.68
+    squat_pause_145x4_1   h 3.90 -> 2.95   beats_null 0.88 -> 1.16
+
+while the guards correctly REFUSED `squat_170x1` and `squat_pause_140x4_3`.
+**Those two numbers are INDICATIVE ONLY.** `bench_sync` is unvalidated on squat,
+squat has no phase anchor (see P1), and video ROM reads 57.5–58.1 cm against the
+IMU's 66.1–69.1. Doing this properly is open work, not a result.
+
+*The C30b entry below is kept in full, and one of its two arguments has since
+been falsified — see the bracketed note inside it.*
+
+**P2 (C30b, 2026-08-05): C30's headline was WRONG, and the
+correction is more useful than the claim was.** C30 measured the acceleration
+error as a time series on three deadlifts, found the reconstruction's fore-aft
+uncorrelated with the bar's, and concluded "the horizontal channel is empty".
+**The owner pushed back — the deadlift is not like the other lifts — and was
+right.** The same test on bench:
+
+    lift        corr(recon, video) HORIZONTAL   best over all dirs   VERTICAL
+    bench            +0.68 .. -0.91                0.79 - 0.94        0.99
+    deadlift         -0.08 .. -0.16                0.10 - 0.23        0.97-0.99
+
+**The horizontal channel is not empty. On bench it carries strong signal.** Both
+referees agree — the four marker-refereed benches give |r| = 0.68-0.86 and the
+seven template-refereed ones up to 0.94 — so it is not a tracker artefact, and
+it cannot be the sync either, since deadlift's sync is the BETTER one
+(landmark-matched at 9-19 ms) and correlates worse.
+
+**And the mechanism C30 proposed is also wrong.** C30 blamed the wrist lever arm
+`R(t).d`. But the wrist swing per rep is **17.3 deg on bench against 21.8 on
+deadlift** — nearly the same, sweeping 3.6 vs 4.5 cm for |d| = 12 cm. If the
+lever were the dominant contaminant, bench would be almost as broken. It is not.
+
+> **THIS PARAGRAPH IS FALSIFIED (C31, 2026-08-06), and the way it failed is
+> worth more than the claim.** The owner measured `d` the next day; applying it
+> took the deadlift horizontal correlation from 0.118–0.232 to 0.432–0.641 while
+> moving bench only 0.798–0.919 → 0.814–0.937. **The lever arm WAS the dominant
+> contaminant on deadlift**, exactly as C30 said, and C30b's symmetry argument
+> was the thing that was wrong. Where it went wrong is instructive: it computed
+> the lever's ABSOLUTE contamination (swing angle × |d|, ~3.6 vs 4.5 cm) and
+> inferred equal DAMAGE. Damage is contamination measured against what is left
+> after it, and the two lifts differ there — bench's correlation was already
+> 0.80–0.92 with the lever uncorrected, deadlift's was 0.12–0.23. Why the same
+> absolute term is near-fatal on one lift and not the other is **not explained**
+> and is open. *Do not read the sentence below as still standing on this
+> argument.*
+
+**What actually separates them is the FLOOR IMPACT.** Peak |a| is 15.3-21.8 g on
+deadlift against 2.1-6.4 g on bench; peak gyro 595-1034 deg/s against 229-428.
+That is the one thing deadlift has and bench does not, and it is the same event
+C11, B6 and P6 already localise the VERTICAL momentum deficit to. Nobody had
+connected it to the horizontal channel.
+
+*The impact remains a live suspect, but it is no longer supported by the
+argument above; it now stands on its own evidence (C11, B6, P6, C28b, C29) and
+must share the field with the lever arm rather than replacing it. And C31's
+result narrows what is left to explain: with `d` applied, deadlift's remaining
+horizontal correlation gap is 0.43–0.64 against bench's 0.81–0.94, so there IS
+still a deadlift-specific deficit — just a much smaller one than C30 measured.*
+
+So P2 is a DEADLIFT problem, not a horizontal-axis problem, and the impact is
+one of two prime suspects on both axes. *Evidence:* TASKS.md C30b and C31,
+`analysis/46`, `analysis/48`.
+
+*What C30 did establish, and it stands:* on deadlift the fore-aft acceleration
+is uncorrelated with the bar's even optimising the projection direction post
+hoc; step 7 cannot touch any of it, since removing a linear function of t leaves
+the second derivative unchanged; and the flat-line null wins precisely because
+predicting the mean is optimal when you have no information. The original C30
+text follows.
+
+**C30 (2026-08-05, branch `c29-jump-state`) — the deadlift horizontal, measured
+as a time series for the first time — differentiating the marker path twice and putting the
 reconstruction through the identical filter — and found:
 
     capture            corr(recon, video)   best over ALL dirs   VERTICAL
@@ -722,6 +1042,29 @@ value measurement available now** — a tape from watch centre to bar centre, in
 watch axes. B2 priced it at 1-2 cm by its effect on position after the detrend;
 in acceleration, before anything, it is plausibly the dominant term on the one
 axis the spec is about. *Evidence:* TASKS.md C30, `analysis/46`.
+
+> **C30's call was RIGHT and the owner acted on it the next day (C31,
+> 2026-08-06).** `d` was tape-measured, step 6 is on, and the acceleration
+> correlation this section reports as -0.10 to -0.23 is **0.432-0.641** with it
+> applied. So the paragraph above is the best prediction anyone made in this
+> problem — including against C30b, which argued the day before that the lever
+> could not be the discriminator.
+>
+> **But read the reframing carefully, because it does NOT all survive.** "Five
+> corrections were rearranging noise" and "C28's oracle capped at the null
+> because there was nothing to recover" were inferences from an empty channel,
+> and the channel is not empty. What was actually re-measured: C31 re-ran C28's
+> ladder with `lever` PINNED at the tape and **C28's negative result still
+> stands** (see P3), and C28b's/C29's impact results have NOT been re-run with
+> `d` — that is open work, listed in `analysis/C31b_STATE.md` item B. Treat the
+> "qualitative" reframing as retracted where it rests on emptiness and intact
+> where it rests on its own measurement.
+>
+> And the last sentence is now measurable rather than plausible: `d` recovers
+> most of the deadlift acceleration correlation and **almost none of the
+> position rms** (7.22/4.55/11.44 → 6.65/4.39/10.61, `beats_null` 0.14–0.35
+> throughout). Correlation is blind to gain; rms after double integration is
+> not. See the C31 block at the top of P2.
 
 **P2 (as measured before C30) — Horizontal is 5–15× outside spec; vertical is
 out too, but the ruler that says so is itself broken on two captures of three.** Measured against
@@ -772,6 +1115,39 @@ by fitting it; the sticker-circle diameter with a tape settles it, into
 `bar_path(sticker_diameter_m=)`. `beats_null` barely moves under it, so the
 horizontal verdict does not depend on the open question. *Evidence:*
 `analysis/42`, `python run.py --dlconic`, TASKS.md C27.
+
+**C32 tried to close that without a tape on 2026-08-06 and FAILED
+instructively — the ratio is still open and the answer is still a tape.**
+Re-measuring the rim with no matched filter (per-ray intensity edge outward
+from the tracked centre, median over 720 rays and 25 frames) gives 0.936–0.947
+on the five eight-sticker captures against 0.907–0.926 on the old three-sticker
+ones, which looked like a 9% error in `STICKER_RATIO` until it was run on the
+constant's OWN source footage: **this is the radial-gradient search `markers.py`
+already tried and rejected**, whose recorded failure is 0.928/0.938/0.929 on
+those clips with the overlay showing it sitting on the bumper's inner step, and
+today it returns 0.919/0.922/0.926 there. It reproduces its own rejection, so
+it carries a positive bias of unknown size and cannot set a scale. What survives
+is only the DIFFERENCE between plates — the eight-sticker circle sits perhaps
+1.5–3% closer to the rim than the old one, C27's direction but nowhere near
+enough to confirm C27's size. **Nothing was re-tuned, deliberately:**
+`STICKER_RATIO` and `truth.sticker_plate_diameter` cancel one another on the
+older captures, so moving one alone silently rescales all of them.
+
+Two negative controls recorded with it, because both look like confirmation and
+are not. Scaling the referee up improves `pipeline_v_rms` on every bench capture
+*including the three-sticker ones*, so that is the known IMU-vs-video vertical
+disagreement (C24) and says nothing about the sticker circle. And the
+2026-08-03 benches are light blue calibrated discs, so a dark-plate edge test
+barely applies to them. Also verified in passing: `bar_path` still reproduces
+`STICKER_RATIO`'s calibration on its own source footage after four rewrites of
+the seeder — 0.861/0.877/0.898 today against the recorded 0.862/0.878/0.834.
+*Evidence:* TASKS.md C32.
+
+**A second scale question, OPEN and one question to the owner rather than a
+code change (C32).** `truth.STICKER_PLATE_DIAMETER_M` has no 2026-08-06 entry,
+so bench falls through to 0.425 m and squat to 0.450 m **by accident rather
+than by decision**. If one stickered 425 mm plate was moved between the two
+bars, squat is 5.9% out. Noted in `truth.py`; nobody has asked.
 
 **READ THIS SECOND — 2026-07-31 (C12). The deadlift PLATE-TEMPLATE referee is
 lost at lockout, and every deadlift number below that predates C27 is measured
@@ -934,6 +1310,55 @@ constant in ANY frame**, and no estimator for one was going to pay off. This
 also reproduces B2 independently: `lever` fits at a plausible 10.6/10.0/21.7 cm
 here, unlike B2's 21/64/60, and still loses under LOO.
 
+**C31 re-ran the whole ladder on 2026-08-06 with `lever` PINNED at the tape `d`,
+and C28's conclusion SURVIVES `d` being known (70b2a63).** This was a real test,
+not a formality: C28 fitted `lever` as three free parameters, so those three
+degrees of freedom could have been absorbing P3 and making the family look worse
+than it is. Decision rule fixed in writing first. Three `data_v2` deadlifts,
+median ceiling and leave-one-out:
+
+    rung                     arm     nfree  ceiling   LOO
+    baseline                 free      0     7.22    7.22
+    baseline                 PINNED    0     6.65    6.65
+    bias                     free      3     2.06    6.50
+    bias                     PINNED    3     2.14    5.72
+    bias+tilt                free      6     2.02    6.61
+    bias+tilt                PINNED    6     1.62    5.60
+    bias+tilt+scale          free      9     1.80    6.36
+    bias+tilt+scale          PINNED    9     1.42    5.71
+    bias+tilt+scale+lever    free     12     1.29    6.59
+    bias+tilt+scale+lever    PINNED    9     1.42    5.71
+    ...+gravref              free     15     1.92    4.25
+    ...+gravref              PINNED   12     2.16    4.34
+
+*(These are on C27's three deadlifts and are not directly comparable to the
+four-row table above, which is C28's own summary of the same experiment.)*
+
+**Pinning PASSES the transfer test: leave-one-out improves on 4 of the 5 fitted
+rungs** (6.50→5.72, 6.61→5.60, 6.36→5.71, 6.59→5.71; only `+gravref` went the
+other way, 4.25→4.34). So the three `lever` degrees of freedom really were
+absorbing something real, and C28's ladder was handicapped by not knowing `d`.
+Pinning also removes 3 dof, so the *ceiling* could only worsen — and on two
+rungs it improved anyway (2.02→1.62, 1.80→1.42).
+
+**And the family is still dead, which is the finding.** The best LOO anywhere is
+**4.25 cm**, against a `d`-only baseline of **6.65 with nothing fitted at all**
+and a flat-line null of **~1.6**. Every model, pinned or free, still loses badly
+to drawing no fore-aft motion. Held-out `deadlift_185x3` is destroyed by most
+rungs (11–25 cm). **Knowing the lever arm makes the failure less bad; it does
+not fix it. P3's error is not a constant in any frame, and that conclusion did
+not depend on `d` being unknown.**
+
+**B2 is re-confirmed rather than corroborated.** Fitting `lever` ON TOP of the
+tape gives residuals of **47.9 / 17.7 / 2.4 cm** — totals 44.0 / 17.8 / 11.8 cm
+at **108 / 74 / 4 degrees** from the tape. Only one capture stays near it: B2's
+ill-conditioning, intact. What *does* corroborate the tape is the direction
+sweep against C30's ACCELERATION correlation (optimum within one grid cell on
+all three deadlifts). **The position-domain objective cannot identify `d`; the
+acceleration-domain one can.** That is C30's point restated — double integration
+and the detrend destroy the conditioning. Full tables in
+`analysis/C31b_STATE.md`. *Evidence:* TASKS.md C31, `src/oracle.py`.
+
 Two findings inside that negative result, both in TASKS.md C28. `calibrate.accel_bias`
 subtracts a body-frame quantity in the WORLD frame, which helps deadlift on 5 of
 6 and hurts bench on 10 of 11 — a mixture, exactly as C6's `anchor_tilt`
@@ -1008,6 +1433,14 @@ TASKS.md B3, `tests/test_real_data.py`.
 **P6 — The floor impact is trustworthy, INFORMATIVE, and misspent by every
 correction tried.** Closed as a worry by B5, opened as an opportunity, and
 sharpened by C28b on 2026-08-05.
+
+**EVERY NUMBER IN P6, INCLUDING C28b's r = 0.772 AND C29's 10.66 → 3.93, WAS
+MEASURED WITH STEP 6 OFF (C33, 2026-08-06).** `d` was not known when any of it
+was run, and it is the term that recovers most of the deadlift horizontal
+ACCELERATION channel (see P2). **Nobody has re-run C28b or C29 with `d` applied,
+so it is not known whether the two compose or correct the same thing twice** —
+that is the highest-priority open item in `analysis/C31b_STATE.md` (item B).
+Until it is done, read this section as measured on the watch path.
 
 **C28b measured what the impact actually tells you about the horizontal, and
 the answer is: a lot.** At a rest instant the bar's true velocity is zero, so
@@ -1337,6 +1770,19 @@ whose accuracy was measured on **deadlift** — where it recovers a known offset
 to 18 ms — and then assumed to hold on bench, which no bench capture can
 currently test. It is a referee; it is not the referee deadlift is.
 
-Squat is now the only lift with no external horizontal check, and its footage
-got worse rather than better: two of the four 2026-07-30 captures do not track
-at all. `metrics.vs_truth` refuses it. That wants a wider shot, not code.
+**This used to end "squat is now the only lift with no external horizontal
+check, and its footage got worse rather than better: two of the four 2026-07-30
+captures do not track at all; `metrics.vs_truth` refuses it; that wants a wider
+shot, not code." It got the wider shot, and it is FALSE as of 2026-08-06
+(C31).** The four `data_v2` squats are filmed from a tripod on an 8-sticker
+plate and the **plate tracks at 100% coverage with 0.883 px median residual** —
+the first squat footage in this project that tracks. It was the shot, exactly as
+predicted, and the prediction is the part worth keeping.
+
+What remains true is narrower and is now a code problem rather than a footage
+one: **`metrics.vs_truth` still refuses squat, by a hardcoded check whose stated
+reason describes the old `data/video/` template footage and not `data_v2/`.**
+The refusal is stale and unjustified for the new dataset, and lifting it
+properly is open work — squat still has no phase anchor (P1) and `bench_sync` is
+unvalidated on it. Indicative bypass numbers are at the top of P2; they are not
+results.
