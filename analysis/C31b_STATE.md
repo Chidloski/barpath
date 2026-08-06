@@ -68,6 +68,48 @@ independently.
 **5. The 8-sticker squat plate TRACKS** — 100% coverage, 0.883 px median
 residual. First squat footage in the project that does.
 
+## THE CAMERA GEOMETRY (owner, 2026-08-06) — new, and it is a confound
+
+**Squat and bench are filmed from the lifter's RIGHT. Deadlift is filmed from
+the LEFT. The watch is on the LEFT wrist.** Nothing in the repo recorded this.
+
+What it does NOT do: it cannot touch `d`, which lives in the watch body frame,
+and it cannot corrupt the fore-aft sign, because `vs_truth` picks one sign per
+set from the correlation and reports `reps_disagreeing_on_sign`.
+
+What it DOES do: **on bench and squat the referee tracks the plate on the
+OPPOSITE END OF THE BAR from the sensor.** Any bar tilt or uneven press moves
+the right plate and the left wrist differently, and that difference is scored
+as pipeline error. Deadlift is the only lift in the corpus where camera and
+watch are on the same side — so on top of its landmark-matched sync, it is also
+the only geometrically clean comparison here. Untested, and testable: a bar
+tilting through a press should show up as a bench-only, load-dependent residual
+that no wrist-frame correction can reach.
+
+**How sharply the tape `d` is identified, by lift.** Sweeping d's direction over
+a 300-point sphere grid (neighbours ~12 degrees apart) at the measured
+magnitude, scoring by C30's acceleration correlation:
+
+    capture              lit    best    gain   angle(lit, best)
+    deadlift_160x6_1    0.641  0.664   0.023        16.3 deg
+    deadlift_160x6_2    0.579  0.594   0.015        16.3
+    deadlift_185x3      0.432  0.465   0.033        16.3
+    bench_92.5x4_1      0.888  0.911   0.022        50.6
+    bench_92.5x4_2      0.917  0.939   0.022        52.9
+    bench_92.5x4_3      0.814  0.875   0.061        60.3
+    bench_95x2          0.935  0.960   0.025        50.6
+    bench_spoto_95x5_1  0.910  0.934   0.025        60.3
+    bench_spoto_95x5_2  0.937  0.960   0.023        64.3
+
+On deadlift the tape sits at the optimum within ONE grid cell, identically on
+all three captures, and d is doing the heavy lifting (0.12 -> 0.64). On bench
+the optimum is 50-64 degrees away but worth only 0.02-0.06 on a baseline already
+at 0.81-0.94: **the objective is flat, so bench does not identify d's direction
+at all.** The tape is corroborated on deadlift and merely not contradicted on
+bench. Do not "improve" d by fitting it on bench — that is B2's mistake with a
+new coat of paint. Repro:
+`/Users/sam/.claude/jobs/366a3089/tmp/dsweep_bench.py`.
+
 ## NOT DONE — in priority order, with what is already known
 
 **A. The C28 oracle ladder with `lever` PINNED at the measured `d`.** This is
