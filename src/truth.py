@@ -143,6 +143,18 @@ CALIBRATED_DIAMETER_M = 0.450
 # the bar still starts at 22.25 cm off the ground — that is set by the bumper,
 # which is the plate carrying the load, and is unaffected by which plate the
 # stickers went on.
+#
+# **The 2026-08-06 session has no entry and nobody has decided whether it needs
+# one (C32, 2026-08-06).** It carries the same eight-sticker layout as
+# 2026-08-04, so the question this table exists to answer — is the stickered
+# plate the widest plate — is live again and is currently being answered by
+# fall-through rather than by evidence. Bench falls through to 0.425 and squat
+# to 0.450; if the owner moved one stickered 425 mm notched plate between the
+# two bars and loaded it outboard, as on 2026-08-04, the squat entry is 5.9%
+# out on every marker distance. Not resolved here, and not resolvable from the
+# footage: it is one question to the owner, or one tape across the sticker
+# circle into `markers.bar_path(sticker_diameter_m=)`, which makes the whole
+# table irrelevant for that capture.
 STICKER_PLATE_DIAMETER_M = {"20260804": 0.425}
 
 
