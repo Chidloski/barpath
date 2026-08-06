@@ -1289,6 +1289,99 @@ def draw_bar_path_with_d() -> int:
     return 0
 
 
+def draw_pause_attitude() -> int:
+    """C31 — does a PAUSE let Core Motion re-reference gravity mid-rep?
+
+    Writes `analysis/49_pause_attitude_correction.png`.
+
+    The owner's hypothesis, 2026-08-06: during a pause the watch is quasi-static,
+    so the accelerometer becomes a trustworthy gravity reference and Core Motion
+    corrects accumulated tilt error DURING the rep. That would land a step
+    mid-rep at the same phase every rep, which is P3's signature and is exactly
+    what step 7's boundary-anchored linear detrend cannot remove.
+
+    The observable needs no video and no sync: the per-sample FUSION CORRECTION,
+    Core Motion's attitude increment minus the gyro's (midpoint rule, so the
+    left-endpoint discretisation error that contaminates a naive version is
+    gone). Decomposed in the world frame into TILT and YAW, because gravity can
+    correct tilt and is geometrically incapable of correcting yaw about gravity,
+    while numerical error has no such preference.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+    from src import io, pipeline, plot
+
+    NB = 20
+
+    def split(log):
+        q, dt, w = log["quat"], log["dt"], log["gyro"]
+        R = Rotation.from_quat(q, scalar_first=True)
+        wm = 0.5 * (w[:-1] + w[1:])
+        inc = Rotation.from_rotvec(wm * dt[:-1, None]).inv() * (R[:-1].inv() * R[1:])
+        world = R[:-1].apply(inc.as_rotvec())
+        tilt = np.degrees(np.linalg.norm(world[:, :2], axis=1)) / dt[:-1]
+        yaw = np.degrees(np.abs(world[:, 2])) / dt[:-1]
+        return tilt, yaw
+
+    csvs = sorted(list((ROOT / "data" / "raw").glob("*.csv"))
+                  + list((ROOT / "data_v2" / "raw").glob("*.csv")))
+    ty, prof = {}, {}
+    for c in csvs:
+        if pipeline.expected_reps(c) is None:
+            continue
+        log = io.load_log(c)
+        tilt, yaw = split(log)
+        a = np.linalg.norm(log["accel"], axis=1)[:-1]
+        wm = np.degrees(np.linalg.norm(log["gyro"], axis=1))[:-1]
+        q = (wm < 20.0) & (a < 1.5)
+        ty[c.stem] = {
+            "ratio_qs": float(np.median(tilt[q]) / max(np.median(yaw[q]), 1e-9)),
+            "ratio_dyn": float(np.median(tilt[~q]) / max(np.median(yaw[~q]), 1e-9)),
+        }
+        if "deadlift" in c.name:
+            continue
+        r = pipeline.run(c)
+        lift = "bench" if "bench" in c.name else "squat"
+        style = "paused" if ("spoto" in c.name or "pause" in c.name) else "continuous"
+        rows = []
+        for i0, i1 in r["bounds"]:
+            i1 = min(i1, len(tilt))
+            if i1 - i0 < NB:
+                continue
+            ph = np.linspace(0, 1, i1 - i0)
+            rows.append([np.median(tilt[i0:i1][(ph >= k / NB) & (ph < (k + 1) / NB)])
+                         for k in range(NB)])
+        if rows:
+            prof.setdefault(lift, {}).setdefault(style, []).append(
+                np.nanmedian(np.array(rows, dtype=float), axis=0))
+
+    for lift in prof:
+        for style in prof[lift]:
+            prof[lift][style] = np.median(np.array(prof[lift][style]), axis=0)
+        p, cont = prof[lift]["paused"], prof[lift]["continuous"]
+        pk = float(np.max(p) / np.min(p))
+        ck = float(np.max(cont) / np.min(cont))
+        if pk > ck * 1.4:
+            prof[lift]["verdict"] = (f"paused CONCENTRATES it mid-rep: peak/min "
+                                     f"{pk:.2f} vs {ck:.2f}, peak at phase "
+                                     f"{(np.argmax(p) + 0.5) / NB:.2f}")
+        else:
+            prof[lift]["verdict"] = (f"no concentration: peak/min {pk:.2f} vs "
+                                     f"{ck:.2f}. Hypothesis does NOT hold here")
+        print(f"  {lift}: {prof[lift]['verdict']}")
+
+    rose = sum(1 for v in ty.values() if v["ratio_qs"] > v["ratio_dyn"])
+    print(f"  tilt/yaw rises when quasi-static on {rose} of {len(ty)} captures")
+
+    fig = plot.plot_pause_attitude({"ty": ty, "prof": prof})
+    out = ROOT / "analysis" / "49_pause_attitude_correction.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -1324,6 +1417,8 @@ def main(argv: list[str]) -> int:
         return draw_paused_squat()
     if "--dpaths" in argv:
         return draw_bar_path_with_d()
+    if "--pauseattitude" in argv:
+        return draw_pause_attitude()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:

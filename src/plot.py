@@ -1563,7 +1563,7 @@ def plot_bar_path_with_d(data: dict):
         for i, r in enumerate(goff):
             p = r["curve_pipeline"] * 100
             ax.plot(p[:, 0], p[:, 1], color="#c2410c", lw=1.2, alpha=0.85,
-                    ls="--", label="step 6 OFF (ships)" if i == 0 else None,
+                    ls="--", label="step 6 OFF (was the default)" if i == 0 else None,
                     zorder=3)
         for i, r in enumerate(gon):
             p = r["curve_pipeline"] * 100
@@ -1599,4 +1599,66 @@ def plot_bar_path_with_d(data: dict):
         "shipping default stays OFF for exactly that reason.",
         fontsize=11, y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.90))
+    return fig
+
+
+def plot_pause_attitude(data: dict):
+    """C31 — does a PAUSE let Core Motion re-reference gravity mid-rep?
+
+    `data` carries `ty` (per-capture tilt/yaw ratios, quasi-static and dynamic)
+    and `prof` (per-lift median tilt-correction profiles across the rep).
+
+    The observable needs no video. Core Motion reports an attitude; the gyro
+    reports a rate. The difference between the attitude increment and the gyro's
+    is what the FUSION added — and gravity can only correct TILT, never yaw
+    about gravity, so the tilt/yaw ratio says whether the accelerometer is being
+    trusted. Numerical error has no such preference, which is what makes the
+    ratio the decisive statistic rather than the magnitude.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(16.5, 5.4))
+
+    ax = axes[0]
+    names = list(data["ty"])
+    qs = [data["ty"][n]["ratio_qs"] for n in names]
+    dyn = [data["ty"][n]["ratio_dyn"] for n in names]
+    y = np.arange(len(names))
+    ax.scatter(dyn, y, s=26, color="#c2410c", label="moving")
+    ax.scatter(qs, y, s=26, color="#1d4ed8", label="quasi-static")
+    for i, (a, b) in enumerate(zip(dyn, qs)):
+        ax.plot([a, b], [i, i], color="0.75", lw=0.8, zorder=0)
+    ax.axvline(1.0, color="0.3", ls=":", lw=1)
+    ax.set_yticks(y)
+    ax.set_yticklabels([n[:26] for n in names], fontsize=5.5)
+    ax.set_xlabel("tilt / yaw in the fusion correction", fontsize=8)
+    rose = sum(1 for n in names
+               if data["ty"][n]["ratio_qs"] > data["ty"][n]["ratio_dyn"])
+    ax.set_title(f"Gravity can only correct TILT.\nThe ratio rises when still on "
+                 f"{rose} of {len(names)} —\nso the mechanism is REAL.", fontsize=9)
+    ax.legend(fontsize=7, frameon=False)
+    ax.grid(alpha=0.25, axis="x")
+
+    for ax, lift in zip(axes[1:], ("bench", "squat")):
+        ph = (np.arange(len(data["prof"][lift]["paused"])) + 0.5) / len(
+            data["prof"][lift]["paused"])
+        ax.plot(ph, data["prof"][lift]["paused"], lw=2.2, color="#b91c1c",
+                marker="o", ms=3, label="PAUSED")
+        ax.plot(ph, data["prof"][lift]["continuous"], lw=2.2, color="#166534",
+                marker="s", ms=3, label="continuous")
+        ax.set_xlabel("phase through the rep", fontsize=8)
+        ax.set_ylabel("tilt correction (deg/s)", fontsize=8)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=8, frameon=False)
+        verdict = data["prof"][lift]["verdict"]
+        ax.set_title(f"{lift}\n{verdict}", fontsize=9)
+    axes[1].set_ylim(bottom=0)
+    axes[2].set_ylim(bottom=0)
+
+    fig.suptitle(
+        "analysis/49 — the owner's hypothesis: does a pause let the accelerometer "
+        "find g, so Core Motion corrects tilt MID-REP?\n"
+        "Half right. The mechanism is real and visible, but it separates the two "
+        "lifts rather than the two styles: a paused SQUAT concentrates the "
+        "correction mid-rep, a paused BENCH does not.",
+        fontsize=11, y=0.99)
+    fig.tight_layout(rect=(0, 0, 1, 0.88))
     return fig

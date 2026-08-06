@@ -2288,3 +2288,132 @@ def test_quality_flags_rejects_only_actual_clipping(path):
         "the strap-resonance flag is back. It rejected 33 of 73 real reps and "
         "fired hardest on the lift with no floor impact; see the docstring "
         "above and segment.quality_flags before reinstating it")
+
+
+# ------------------------------------------- the pause and Core Motion's fusion --
+# C31, 2026-08-06. The owner's hypothesis: a pause holds the watch quasi-static
+# long enough for the accelerometer to serve as a gravity reference, so Core
+# Motion corrects accumulated tilt MID-REP — a step at the same phase every rep,
+# which is P3's signature and is what step 7's boundary-anchored linear detrend
+# cannot remove.
+#
+# It is HALF RIGHT and the half that fails is the interesting one, so both
+# halves are pinned here. See analysis/49, `python run.py --pauseattitude`.
+
+
+# Both datasets: the paused squats live in `data_v2/raw` and `ALL_LOGS` above is
+# `data/raw` only, so the pause tests would silently have no paused squat to
+# look at and would pass on an empty group. Named separately rather than
+# widening ALL_LOGS, which many older tests are calibrated against.
+_RAW_V2 = Path(__file__).resolve().parents[1] / "data_v2" / "raw"
+BOTH_DATASETS = ALL_LOGS + (sorted(_RAW_V2.glob("*.csv")) if _RAW_V2.is_dir() else [])
+
+
+def _fusion_tilt_yaw(log):
+    """Core Motion's attitude increment minus the gyro's, split tilt vs yaw.
+
+    Gravity can correct TILT and is geometrically incapable of correcting yaw
+    about gravity, while numerical error has no such preference — which is what
+    makes the RATIO the decisive statistic rather than the magnitude. Midpoint
+    gyro rule, because a left-endpoint one makes fast motion look like fusion.
+    """
+    from scipy.spatial.transform import Rotation
+
+    q, dt, w = log["quat"], log["dt"], log["gyro"]
+    R = Rotation.from_quat(q, scalar_first=True)
+    wm = 0.5 * (w[:-1] + w[1:])
+    inc = Rotation.from_rotvec(wm * dt[:-1, None]).inv() * (R[:-1].inv() * R[1:])
+    world = R[:-1].apply(inc.as_rotvec())
+    return (np.degrees(np.linalg.norm(world[:, :2], axis=1)) / dt[:-1],
+            np.degrees(np.abs(world[:, 2])) / dt[:-1])
+
+
+def test_the_gravity_correction_mechanism_is_real():
+    """Tilt beats yaw in the fusion correction, and more so when still.
+
+    This is the owner's mechanism, confirmed: Core Motion really does lean on
+    the accelerometer for gravity, and it leans harder when the watch is
+    quasi-static. Measured 22 of 30 captures with the ratio higher when still.
+    """
+    from src import io, pipeline
+
+    rose = total = 0
+    for p in BOTH_DATASETS:
+        if pipeline.expected_reps(p) is None:
+            continue
+        log = io.load_log(p)
+        tilt, yaw = _fusion_tilt_yaw(log)
+        a = np.linalg.norm(log["accel"], axis=1)[:-1]
+        wm = np.degrees(np.linalg.norm(log["gyro"], axis=1))[:-1]
+        q = (wm < 20.0) & (a < 1.5)
+        if not q.any() or not (~q).any():
+            continue
+        total += 1
+        r_qs = np.median(tilt[q]) / max(np.median(yaw[q]), 1e-9)
+        r_dy = np.median(tilt[~q]) / max(np.median(yaw[~q]), 1e-9)
+        # Tilt always dominates: a gravity-referencing filter, not a free gyro.
+        assert r_qs > 1.0, f"{p.name}: tilt/yaw {r_qs:.2f} when still"
+        rose += r_qs > r_dy
+    assert total >= 25
+    assert rose >= 0.6 * total, (
+        f"tilt/yaw rose when still on only {rose} of {total}; the "
+        f"accelerometer-as-gravity-reference mechanism is not visible")
+
+
+def test_the_pause_concentrates_the_correction_on_SQUAT_but_NOT_on_BENCH():
+    """The half of the hypothesis that fails, pinned so it is not re-proposed.
+
+    A paused SQUAT concentrates the tilt correction mid-rep — peak/min 3.84
+    against 2.34 for continuous squats, peaking at phase 0.62, which is the
+    bottom hold. A paused BENCH does not: 2.17 against 2.28, and its absolute
+    correction is LOWER than a touch-and-go bench throughout.
+
+    So the pause does not explain the paused-BENCH behaviour, and anyone
+    reaching for it as the explanation of the `d` dissent (C32 nominated it)
+    should read this first. Continuous lifts already spend 34-57% of their
+    samples quasi-static — between reps, at lockout, in the setup — so a pause
+    adds no gravity-reference opportunity the lift did not already have.
+    """
+    from src import io, pipeline
+
+    NB = 20
+    prof = {}
+    for p in BOTH_DATASETS:
+        if pipeline.expected_reps(p) is None or "deadlift" in p.name:
+            continue
+        log = io.load_log(p)
+        tilt, _ = _fusion_tilt_yaw(log)
+        r = pipeline.run(p)
+        rows = []
+        for i0, i1 in r["bounds"]:
+            i1 = min(i1, len(tilt))
+            if i1 - i0 < NB:
+                continue
+            ph = np.linspace(0, 1, i1 - i0)
+            rows.append([np.median(tilt[i0:i1][(ph >= k / NB) & (ph < (k + 1) / NB)])
+                         for k in range(NB)])
+        if not rows:
+            continue
+        lift = "bench" if "bench" in p.name else "squat"
+        style = "paused" if ("spoto" in p.name or "pause" in p.name) else "continuous"
+        prof.setdefault((lift, style), []).append(
+            np.nanmedian(np.array(rows, dtype=float), axis=0))
+
+    def contrast(key):
+        m = np.median(np.array(prof[key]), axis=0)
+        return float(np.max(m) / np.min(m)), float((np.argmax(m) + 0.5) / NB)
+
+    sq_p, sq_phase = contrast(("squat", "paused"))
+    sq_c, _ = contrast(("squat", "continuous"))
+    bn_p, _ = contrast(("bench", "paused"))
+    bn_c, _ = contrast(("bench", "continuous"))
+
+    assert sq_p > sq_c * 1.4, (
+        f"paused squat no longer concentrates the correction: {sq_p:.2f} vs "
+        f"{sq_c:.2f} continuous")
+    assert 0.45 < sq_phase < 0.80, (
+        f"paused squat's peak moved to phase {sq_phase:.2f}, away from the "
+        f"bottom hold")
+    assert bn_p < bn_c * 1.4, (
+        f"paused bench now DOES concentrate the correction ({bn_p:.2f} vs "
+        f"{bn_c:.2f}); the hypothesis this test refutes may need revisiting")

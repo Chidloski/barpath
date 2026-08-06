@@ -1777,16 +1777,68 @@ were chosen: a deadlift, the bench where `d` clearly helped (`bench_95x2`,
 6 of 6 benches and the POSITION rms on only 3 of 6. A figure showing only the
 wins would be the exact failure this project keeps repeating.
 
-**Stale label, recorded not fixed (C33):** the orange series is captioned
-"step 6 OFF (ships)" in `plot.plot_bar_path_with_d`. Step 6 has shipped ON since
-`70b2a63`, so that legend now names the *old* default. `src/plot.py` was held by
-another agent when this was spotted.
+**Stale label, FIXED (C31, after C33 recorded it):** the orange series read
+"step 6 OFF (ships)", which named the *old* default once step 6 shipped ON in
+`70b2a63`. It now reads "step 6 OFF (was the default)".
 
 **What it does not show.** Why the two referees disagree about `d` — it helps
 uniformly under `truth.py`'s template and is mixed under `markers.py` — which is
 the highest-value open question in the project. See CLAUDE.md P2.
 
+## 49 — does a PAUSE let Core Motion re-reference gravity mid-rep?
+
+`python run.py --pauseattitude`. Branch `c29-jump-state`. The owner's hypothesis,
+2026-08-06: a pause holds the watch quasi-static long enough for the
+accelerometer to serve as a gravity reference, so Core Motion corrects
+accumulated tilt DURING the rep — a step at the same phase every rep, which is
+P3's signature and is exactly what step 7's boundary-anchored linear detrend
+cannot remove.
+
+**The observable needs no video and no sync**, which is why this was cheap:
+Core Motion's attitude increment minus the gyro's, per sample (midpoint rule —
+a left-endpoint one makes fast motion look like fusion, and contaminated the
+first pass). Decomposed in the world frame into TILT and YAW, because **gravity
+can correct tilt and is geometrically incapable of correcting yaw about
+gravity, while numerical error has no such preference.** The RATIO is therefore
+the decisive statistic, not the magnitude.
+
+**Verdict: half right, and the half that fails is the useful half.**
+
+*The mechanism is REAL.* Tilt/yaw exceeds 1.0 on every one of the 30 labelled
+captures and RISES when quasi-static on 22 of them (typically 2.0-3.1 still
+against 1.0-2.4 moving). Core Motion visibly leans on the accelerometer for
+gravity, and leans harder when the watch is still.
+
+*But it separates the two LIFTS, not the two STYLES.*
+
+    lift    peak/min of the within-rep tilt profile   peak phase
+    squat   paused 3.84  vs continuous 2.34           0.62  <- the bottom hold
+    bench   paused 2.17  vs continuous 2.28           0.28  (no concentration)
+
+A paused SQUAT concentrates the correction mid-rep, about 2x, right at the
+bottom hold. A paused BENCH does not, and its absolute correction is LOWER than
+a touch-and-go bench throughout.
+
+**Why the general hypothesis fails:** continuous lifts already spend **34-57%
+of their samples quasi-static** — between reps, at lockout, in the setup — so a
+pause adds no gravity-reference opportunity the lift did not already have. It
+changes WHERE the correction lands, not how much there is, and only on squat.
+So it does **not** explain the paused-bench `d` dissent, which C32 had
+nominated it for.
+
+**What it does suggest, and this is the part worth chasing.** The differential
+within-rep tilt correction is 0.5-0.9 degrees accumulated across a rep. A tilt
+error theta leaks `g*sin(theta)` into the horizontal, so double-integrated with
+step 7's endpoint line removed that is **4-10 cm of surviving horizontal
+error** — the same order as P2's entire budget. Treat it as an
+order-of-magnitude bound rather than a measurement: it assumes worst-case
+geometry with the whole leak on one axis. But it says Core Motion's *mid-rep
+fusion corrections* are a plausible major contributor to P3 **regardless of the
+pause**, and nothing in this project had looked at them. Gated in
+`tests/test_real_data.py` — both halves, so the refuted half is not
+re-proposed.
+
 ---
 
-*Numbering: 47 and 48 are taken. 49 was in flight with another agent as this was
-written; 50 was claimed by C32 and released unused.*
+*Numbering: 47, 48 and 49 are taken. 50 was claimed by C32 and released unused,
+so the next free number is 50.*

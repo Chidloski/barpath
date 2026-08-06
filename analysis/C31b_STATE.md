@@ -213,6 +213,57 @@ script) gave `squat_pause_140x4_2` h 2.57->2.00, bn 1.31->1.68 and
 numbers are INDICATIVE ONLY — `bench_sync` is unvalidated on squat, and video
 ROM reads 57.5-58.1 cm against the IMU's 66.1-69.1.
 
+## THE PAUSE AND CORE MOTION'S FUSION (C31, 2026-08-06) — half right
+
+Owner's hypothesis: a pause holds the watch quasi-static long enough for the
+accelerometer to act as a gravity reference, so Core Motion corrects tilt
+MID-REP — a step at the same phase every rep, which is P3's signature and is
+exactly what step 7's boundary-anchored linear detrend cannot remove.
+
+Observable, needing no video and no sync: the per-sample FUSION CORRECTION,
+Core Motion's attitude increment minus the gyro's (midpoint rule — a
+left-endpoint one makes fast motion look like fusion and contaminated the first
+pass). Decomposed in the world frame into TILT and YAW, because **gravity can
+correct tilt and is geometrically incapable of correcting yaw about gravity,
+while numerical error has no such preference.** That ratio, not the magnitude,
+is the decisive statistic.
+
+**The mechanism is REAL.** Tilt/yaw exceeds 1.0 on every capture and RISES when
+quasi-static on 22 of 30 (typ. 2.0-3.1 still vs 1.0-2.4 moving). Core Motion is
+visibly leaning on the accelerometer for gravity, harder when the watch is
+still. The owner's physics is right.
+
+**But it does not separate paused from continuous, and on bench it fails
+outright:**
+
+    lift    peak/min of the within-rep tilt profile   peak phase
+    squat   paused 3.84   vs continuous 2.34          0.62  <- the bottom hold
+    bench   paused 2.17   vs continuous 2.28          0.28  (no concentration)
+
+A paused SQUAT does concentrate the correction mid-rep, ~2x, at the bottom hold.
+A paused BENCH does not — and its absolute correction is LOWER than a
+touch-and-go bench throughout.
+
+**Why the hypothesis fails in general:** continuous lifts already spend
+**34-57% of their samples quasi-static** — between reps, at lockout, in the
+setup — so a pause adds no gravity-reference opportunity the lift did not
+already have. The pause changes WHERE it lands, not how much there is, and only
+on squat.
+
+**So it does NOT explain the paused-bench `d` dissent**, which was C32's
+nomination. That remains open, and the referee split (item C) is the better lead.
+
+**What it DOES suggest, and this is the part worth chasing.** Scale estimate:
+the differential within-rep tilt correction is 0.5-0.9 degrees accumulated
+across a rep, and a tilt error theta leaks g*sin(theta) into the horizontal.
+Double-integrated and with step 7's endpoint line removed, that is **4-10 cm of
+surviving horizontal position error** — the same order as P2's entire budget.
+Treat as an order-of-magnitude bound, not a measurement: it assumes worst-case
+geometry with all the leak on one axis. But it says Core Motion's mid-rep
+fusion corrections are a plausible major contributor to P3 **regardless of the
+pause**, which nothing in this project had looked at. `analysis/49`,
+`python run.py --pauseattitude`, gated in `tests/test_real_data.py`.
+
 ## Practicalities
 
 - Tracked-path cache (all 13 data_v2 clips), pickled by absolute .mov path:

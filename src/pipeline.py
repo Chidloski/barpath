@@ -127,7 +127,7 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
 
     **What switching this on actually bought, measured: three more captures
     crossed `beats_null = 1.0`.** All SEVEN template-refereed benches now beat
-    a flat vertical line, where C10 had four of them losing — including the
+    a flat vertical line, where C10 had THREE of them losing — including the
     three 2026-07-30 paused benches that were the worst of the seven
     (0.72 / 0.80 / 0.92). The three deadlifts still lose and remain xfail.
     That is the strongest single piece of evidence for this default.
@@ -141,13 +141,11 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     The regressing benches are also filmed from the side OPPOSITE the watch, so
     their referee tracks the far end of the bar (C31). Open.
 
-    Two candidate confounds were checked and only one survives. The regressing
-    benches ARE filmed from the side opposite the watch, so the referee tracks
-    the far end of the bar (C31) — still open. But the SCALE is not it: C32
-    swept `bench_spoto_95x5_1`'s referee scale over a 47% span and `d` made it
-    worse at every point, so the dissent is scale-invariant. That capture's
-    0.68-of-plate-radius warning is `truth.find_plate` mis-detecting the rim,
-    not the stickers; the capture is fit to referee.
+    The SCALE was checked and is NOT it: C32 swept `bench_spoto_95x5_1`'s
+    referee scale over a 47% span and `d` made it worse at every point, so the
+    dissent is scale-invariant. That capture's 0.68-of-plate-radius warning is
+    `truth.find_plate` mis-detecting the rim, not the stickers, and the capture
+    is fit to referee.
 
     B2's finding is not superseded and should not be re-tried: `d` cannot be
     FITTED from the video, the objective is flat and the fit absorbs P3.
@@ -159,13 +157,6 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     **Every number recorded in the docs before 2026-08-06 was measured with
     this OFF.** When comparing against CLAUDE.md or TASKS.md, pass
     `wrist_offset=None` or you are comparing two different quantities.
-
-    B2's finding is not superseded and should not be re-tried: `d` cannot be
-    FITTED from the video, the objective is flat and the fit absorbs P3.
-    C31b reproduced that from the other direction — position rms is monotone in
-    |d| out to three times the tape on every capture, so there is no interior
-    optimum for an optimiser to find. Pass the measured constant; do not solve
-    for it.
 
     `video` turns on A3's metrics. Both are computed outside the nine steps
     because they judge the pipeline rather than being part of it, and both are
