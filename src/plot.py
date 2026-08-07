@@ -2028,8 +2028,19 @@ def plot_tracking_review(path: dict, stem: str, info: dict | None = None):
         ax.grid(alpha=0.25)
 
     if info:
-        flag = ("   *** TRAVEL IMPLAUSIBLE FOR THIS LIFT — the tracker is very "
-                "likely not on the bar ***" if info.get("implausible") else "")
+        want = info.get("expected_reps")
+        reps_note = (f"{info['n_reps']} reps found in the video"
+                     if want is None else
+                     f"{info['n_reps']} reps found in the video, "
+                     f"filename says {want}")
+        flags = []
+        if info.get("implausible"):
+            flags.append("*** TRAVEL IMPLAUSIBLE FOR THIS LIFT — the tracker is "
+                         "very likely not on the bar ***")
+        if not info.get("reps_match", True):
+            flags.append(f"*** FOUND {info['n_reps']} REPS, FILENAME SAYS "
+                         f"{info['expected_reps']} — do not trust this track ***")
+        flag = ("   " + "   ".join(flags)) if flags else ""
         sub = (f"{stem}      tracker {info.get('tracker', '?')}   "
                f"lift {info.get('lift', '?')}   camera on the "
                f"{info.get('camera_side', '?')}, watch on the LEFT wrist\n"
@@ -2037,9 +2048,9 @@ def plot_tracking_review(path: dict, stem: str, info: dict | None = None):
                f"travel {info['travel_cm']:.1f} cm   "
                f"fore-aft {info['fore_aft_cm']:.1f} cm   "
                f"median residual {info['residual_px']:.2f} px   "
-               f"{info['n_reps']} reps found in the video{flag}")
-        fig.suptitle(sub, fontsize=10.5, y=0.995,
-                     color="#b91c1c" if info.get("implausible") else "0.1")
+               f"{reps_note}{flag}")
+        bad = info.get("implausible") or not info.get("reps_match", True)
+        fig.suptitle(sub, fontsize=10.5, y=0.995, color="#b91c1c" if bad else "0.1")
     else:
         fig.suptitle(stem, fontsize=11, y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.95))

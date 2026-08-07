@@ -1666,13 +1666,18 @@ def track_all(force: bool = False) -> int:
                       f"{str(exc).split(':')[-1].strip()[:56]}")
                 continue
         ok += 1
-        flag = "  <-- IMPLAUSIBLE, tracker is not on the bar" if r["implausible"] else ""
-        flagged += bool(r["implausible"])
+        bits = []
+        if r["implausible"]:
+            bits.append("IMPLAUSIBLE TRAVEL")
+        if not r["reps_match"]:
+            bits.append(f"REP COUNT {r['n_reps']} != {r['expected_reps']}")
+        flag = ("  <-- " + ", ".join(bits)) if bits else ""
+        flagged += bool(bits)
+        want = "" if r["expected_reps"] is None else f"/{r['expected_reps']}"
         print(f"  {clip.stem:34s} cov {r['coverage'] * 100:5.1f}%  "
-              f"travel {r['travel_cm']:5.1f} cm  reps {r['n_reps']}{flag}")
+              f"travel {r['travel_cm']:5.1f} cm  reps {r['n_reps']}{want}{flag}")
 
-    print(f"\n{ok} cached, {failed} refused by the tracker, "
-          f"{flagged} flagged implausible")
+    print(f"\n{ok} cached, {failed} refused by the tracker, {flagged} flagged")
     print("figures in analysis/tracking/v1 (plate template) and v2 (markers)"
           " — look at them before trusting a number")
     return 0

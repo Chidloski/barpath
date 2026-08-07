@@ -165,3 +165,44 @@ def test_camera_side_is_recorded_for_every_lift():
     assert set(tracked.CAMERA_SIDE) == set(truth.PLATE_DIAMETER_M), (
         "a lift gained or lost a camera-side record")
     assert tracked.CAMERA_SIDE["deadlift"] != tracked.CAMERA_SIDE["bench"]
+
+
+def test_the_video_finds_the_rep_count_the_FILENAME_says():
+    """The check that makes this figure a gate rather than a picture.
+
+    The filename is the only rep label these captures carry. If the video cannot
+    find that many reps, either the tracking is wrong or the clip is not the set
+    the name claims — and the first version of `video_reps` reported n-1 windows
+    on every bench and n-2 on every deadlift while looking perfectly plausible.
+
+    Two structural bugs caused that and both are pinned here by consequence.
+    A rep is bracketed by the extremum the set STARTS on — bottoms for a
+    deadlift, TOPS for a bench or squat — and `find_peaks` cannot return an
+    extremum at index 0 or -1, which is exactly where a deadlift's first and
+    last floor rests sit.
+
+    Every clip must agree with its filename EXCEPT the ones independently
+    flagged as mis-tracked. That exception is the point: the two checks are
+    computed from different quantities — rep count from the height's extrema,
+    `implausible` from total travel against the lift's range of motion — and
+    they land on the same clips.
+    """
+    from src import tracked
+
+    disagree = []
+    for clip in CACHED:
+        r = tracked.review(clip)
+        if r["expected_reps"] is None or r["reps_match"]:
+            continue
+        disagree.append((clip.stem, r["expected_reps"], r["n_reps"],
+                         r["implausible"]))
+
+    unexplained = [d for d in disagree if not d[3]]
+    assert not unexplained, (
+        "clips whose rep count disagrees with the filename and which are NOT "
+        f"flagged as mis-tracked: {unexplained}")
+
+    # And the check must still be capable of firing, or it is measuring nothing.
+    assert len(CACHED) - len(disagree) >= 20, (
+        f"only {len(CACHED) - len(disagree)} clips match their filename; the "
+        f"rep finder has probably regressed")

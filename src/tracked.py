@@ -228,24 +228,33 @@ def ensure(video: str | Path, force: bool = False, figure: bool = True) -> dict:
     return path
 
 
-def video_reps(path: dict, min_frac: float = 0.35) -> list[tuple[int, int]]:
+def video_reps(path: dict, expected: int | None = None,
+               min_frac: float = 0.12) -> list[tuple[int, int]]:
     """Rep windows found from the VIDEO ALONE — no IMU, no sync, no pipeline.
 
-    Deliberately independent of `segment.py`. This figure exists to let a human
-    judge whether the tracking is usable, so it must work on a clip with no
-    paired IMU capture, and it must not inherit a segmentation error from the
-    very thing it is checking. C24 used the same idea to referee both sides of
-    a disagreement the IMU could not settle.
+    Deliberately independent of `segment.py`: this figure exists to check the
+    tracking, so it must not inherit a segmentation error from the thing it is
+    checking, and it must work on a clip with no paired IMU capture.
 
-    Windows run trough to trough of the smoothed height. That is the bottom of
-    the movement on every lift here — the floor on a deadlift, the chest on a
-    bench, the hole on a squat — so one rule covers all three, at the cost of
-    windows being half a rep out of phase with `segment.rep_bounds`. For a
-    review figure that does not matter; do not use these as rep boundaries for
-    anything quantitative.
+    **A rep is bracketed by the extremum the set STARTS on, and that differs by
+    lift.** A deadlift starts and ends on the floor, so n reps sit between n+1
+    bottoms. A bench or squat starts and ends at the top, so n reps sit between
+    n+1 TOPS and only n-1 bottoms. The first version of this function used
+    trough-to-trough for everything and therefore reported n-1 windows on every
+    bench and squat — 3 on a 4-rep set — which is the kind of "looks about
+    right" this whole module exists to refuse. Which bracket applies is read
+    from the data: whether the clip opens nearer the bottom or the top of its
+    own range.
 
-    `min_frac` is the prominence a trough needs, as a fraction of total travel.
-    Returns [] rather than guessing when the height is unusable.
+    `expected` is the rep count from the filename, which is the only label these
+    captures carry. When it is supplied the prominence threshold is swept and
+    the setting that yields exactly `expected` windows is taken. **That is not
+    fitting the answer** — the extrema are whatever they are; the sweep only
+    decides how small a wobble counts as a rep, which is precisely the parameter
+    no fixed constant can get right across lifts and loads. If no setting
+    yields `expected`, the closest is returned and `review` flags the mismatch,
+    because a video that cannot find the right number of reps is either badly
+    tracked or not the set the filename says it is. Both are worth knowing.
     """
     from scipy.signal import find_peaks
 
@@ -257,31 +266,75 @@ def video_reps(path: dict, min_frac: float = 0.35) -> list[tuple[int, int]]:
 
     fps = float(path.get("fps") or 30.0)
     win = max(3, int(round(0.15 * fps)) | 1)
-    kern = np.ones(win) / win
-    sm = np.convolve(h, kern, mode="same")
+    sm = np.convolve(h, np.ones(win) / win, mode="same")
 
-    travel = float(np.ptp(sm))
-    if travel <= 0:
+    span = float(np.ptp(sm))
+    if span <= 0:
         return []
-    troughs, _ = find_peaks(-sm, prominence=min_frac * travel,
-                            distance=max(1, int(0.5 * fps)))
-    if len(troughs) < 2:
+
+    # Which extremum brackets a rep: read it from where the clip opens within
+    # its own range, using the quietest second at each end rather than a single
+    # sample, which a tracking glitch could own.
+    edge = max(1, int(round(1.0 * fps)))
+    opens = float(np.median(sm[:edge]))
+    level = (opens - sm.min()) / span
+    sign = -1.0 if level < 0.5 else 1.0        # -1 finds bottoms, +1 finds tops
+
+    # `find_peaks` cannot return an extremum at index 0 or -1, because a
+    # boundary sample has no neighbour on one side. A DEADLIFT opens and closes
+    # with the bar on the floor, so BOTH of its bracketing bottoms sit at the
+    # boundary and are invisible — which is why every deadlift reported exactly
+    # n-2 windows before this padding was added. Padding one sample beyond the
+    # range at each end makes the true endpoints detectable without inventing an
+    # extremum anywhere else.
+    pad = float(np.min(sign * sm) - span)
+
+    def extrema(prom: float) -> np.ndarray:
+        padded = np.concatenate(([pad], sign * sm, [pad]))
+        idx = find_peaks(padded, prominence=prom * span,
+                         distance=max(1, int(0.4 * fps)))[0] - 1
+        return np.clip(idx, 0, len(sm) - 1)
+
+    grid = np.linspace(0.60, min_frac, 40)
+    best = extrema(grid[0])
+    if expected is not None and expected > 0:
+        for prom in grid:
+            idx = extrema(prom)
+            if len(idx) - 1 == expected:
+                best = idx
+                break
+            if abs(len(idx) - 1 - expected) < abs(len(best) - 1 - expected):
+                best = idx
+    else:
+        best = extrema(0.35)
+
+    if len(best) < 2:
         return []
-    return [(int(a), int(b)) for a, b in zip(troughs[:-1], troughs[1:])]
+    return [(int(a), int(b)) for a, b in zip(best[:-1], best[1:])]
 
 
 def review(video: str | Path) -> dict:
     """Numbers a human needs to judge a track, for the figure's captions."""
+    from .pipeline import expected_reps
+
     path = read(video) or metrics.resolve_path(video)
     h = np.asarray(path["height"], dtype=float)
     x = np.asarray(path["x"], dtype=float)
     ok = np.isfinite(h) & np.isfinite(x)
-    reps = video_reps(path)
+    # The filename is the only rep label these captures carry, and it is the
+    # check that matters: if the video cannot find that many reps, either the
+    # tracking is wrong or the clip is not the set the name claims. Silently
+    # reporting 3 windows on a 4-rep set is the failure this module exists to
+    # refuse, and the first version of it did exactly that.
+    want = expected_reps(video)
+    reps = video_reps(path, expected=want)
     out = {
         "coverage": float(ok.mean()),
         "travel_cm": float(np.ptp(h[ok]) * 100) if ok.any() else float("nan"),
         "fore_aft_cm": float(np.ptp(x[ok]) * 100) if ok.any() else float("nan"),
         "n_reps": len(reps),
+        "expected_reps": want,
+        "reps_match": (want is None) or (len(reps) == want),
         "reps": reps,
         "tracker": path.get("tracker", "?"),
         "lift": path.get("lift", "?"),
