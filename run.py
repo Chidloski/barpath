@@ -9,6 +9,7 @@
     python run.py --rom                # per-rep vertical ROM against the bounds
     python run.py --v2rom              # C24: per-rep ROM on the paired benches
     python run.py --dlconic            # C27: 8-sticker deadlifts, conic vs pipeline
+    python run.py --dlparabola         # D1: where the deadlift fore-aft is generated
     python run.py --anchors            # C6: attitude before and after a set
     python run.py --bias               # B6: constant-bias corrections vs the video
     python run.py --closure            # C11: vertical momentum, bench vs deadlift
@@ -1086,6 +1087,602 @@ def draw_scorecard() -> int:
     return 0
 
 
+def draw_paused_squat() -> int:
+    """C31a — the paused-squat short-count in `_longest_cadence`.
+
+    Writes `analysis/47_squat_pause_segmentation.png`. Two of the four paused
+    squats of 2026-08-06 counted 3 of 4 under the shipping rule: a paused set's
+    cadence lengthens rep by rep, so the run's global gap spread cannot tell a
+    fatiguing set from a set with a post-set movement tacked on.
+
+    The tolerance panel is measured, not quoted. For each capture this sweeps
+    the cadence tolerance and records every value at which that capture
+    segments to its labelled rep count, under BOTH the pre-C31a rule (the run's
+    global spread) and the shipped one (worst step between adjacent gaps). The
+    old rule's two binding captures come out disjoint, which is the evidence
+    that the constant could not simply be re-tuned.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import plot, segment
+
+    def spread_cadence(chosen, t, tol):
+        """`segment._longest_cadence` exactly as it stood before C31a."""
+        if len(chosen) < 3:
+            return chosen
+        times = [t[l[0]] for l in chosen]
+        found, i = [], 0
+        while i < len(chosen):
+            j = i + 1
+            while j < len(chosen):
+                g = np.diff(times[i:j + 1])
+                if g.min() <= 0 or g.max() / g.min() > tol:
+                    break
+                j += 1
+            found.append((j - i, float(np.median(times[i:j])), i, j))
+            i += 1
+        b = max(found, key=lambda r: (r[0], r[1]))
+        return chosen[b[2]:b[3]]
+
+    def cluster_of(vb, t, lobes):
+        shapes = np.array([segment._shape(vb, t, i) for i, _, _, _ in lobes])
+        peaks = np.array([np.abs(vb[a:b]).max() for _, a, b, _ in lobes])
+        times = np.array([t[i] for i, _, _, _ in lobes])
+        areas = np.array([abs(a) for _, _, _, a in lobes])
+        best, bs = None, None
+        for s in range(len(lobes)):
+            keep = segment._grow(shapes, peaks, s, 0.7, 2.5)
+            if not keep.any():
+                continue
+            n = int(keep.sum())
+            sc = (n, float(np.median(times[keep])) if n > 1
+                  else float(areas[keep].sum()))
+            if bs is None or sc > bs:
+                best, bs = keep, sc
+        return [l for l, k in zip(lobes, best) if k] if best is not None else []
+
+    def windows(allb, chosen, t, n):
+        """`_similar_cluster`'s NMS then `_full_cycles`, i.e. the rest of step 5."""
+        if len(chosen) > 2:
+            span = np.median(np.diff([t[l[0]] for l in chosen]))
+            merged = [chosen[0]]
+            for l in chosen[1:]:
+                if t[l[0]] - t[merged[-1][0]] < 0.6 * span:
+                    if l[3] > merged[-1][3]:
+                        merged[-1] = l
+                else:
+                    merged.append(l)
+            chosen = merged
+        return [tuple(map(int, b))
+                for b in segment._full_cycles(allb, chosen, False, n)]
+
+    raw2 = ROOT / "data_v2" / "raw"
+    data: dict = {}
+    for path in sorted(raw2.glob("squat_pause_*.csv")):
+        stem = path.stem.split("_20260")[0]
+        result = pipeline.run(path)
+        log = result["log"]
+        t = log["t"]
+        vb = segment.bandpass(result["velocity"][:, 2], log["fs"])
+        lobes = segment._concentric_lobes(vb, t, 0.08)
+        allb = segment._all_lobes(vb, t, 0.08)
+        cl = cluster_of(vb, t, lobes)
+        old = windows(allb, spread_cadence(cl, t, 1.45), t, len(vb))
+        new = windows(allb, segment._longest_cadence(cl, t), t, len(vb))
+        data[stem] = {
+            "t": t, "vb": vb,
+            "lobes": [(int(a), int(b), int(pk), float(ar))
+                      for pk, a, b, ar in lobes],
+            "cluster": [float(t[l[0]]) for l in cl],
+            "old": old, "new": new,
+            "exp": pipeline.expected_reps(path),
+        }
+        print(f"{stem}: shipping rule {len(old)}/{data[stem]['exp']}, "
+              f"C31a rule {len(new)}/{data[stem]['exp']}")
+
+    if not data:
+        print("no paused squats in data_v2/raw/")
+        return 1
+
+    # --- the tolerance panel, over every labelled capture in both datasets --
+    cache: dict = {}
+    for root in (ROOT / "data" / "raw", ROOT / "data_v2" / "raw"):
+        for path in sorted(root.glob("*.csv")):
+            exp = pipeline.expected_reps(path)
+            if exp is None:
+                continue
+            result = pipeline.run(path)
+            log = result["log"]
+            t = log["t"]
+            vb = segment.bandpass(result["velocity"][:, 2], log["fs"])
+            lobes = segment._concentric_lobes(vb, t, 0.08)
+            if not lobes:
+                continue
+            # a lift with floor impacts never reaches the cadence rule at all
+            impact = len(segment.impact_anchors(log)) >= 3
+            cache[path.name] = {
+                "t": t, "allb": segment._all_lobes(vb, t, 0.08), "n": len(vb),
+                "cl": None if impact else cluster_of(vb, t, lobes),
+                "exp": exp, "impact": impact,
+            }
+
+    grid = np.arange(1.02, 2.60, 0.004)
+    tol: dict = {}
+    for rule_name, rule in (("old", spread_cadence),
+                            ("new", segment._longest_cadence)):
+        per: dict = {}
+        for value in grid:
+            for name, c in cache.items():
+                good = (c["impact"] or
+                        len(windows(c["allb"], rule(c["cl"], c["t"], float(value)),
+                                    c["t"], c["n"])) == c["exp"])
+                per.setdefault(name, []).append(good)
+        tol[rule_name] = {
+            name: (float(grid[np.argmax(v)]) if any(v) else None,
+                   float(grid[len(v) - 1 - np.argmax(v[::-1])]) if any(v) else None,
+                   bool(all(v)))
+            for name, v in per.items()}
+    data["_tol"] = tol
+    data["_grid"] = (float(grid[0]), float(grid[-1]))
+
+    fig = plot.plot_squat_pause_segmentation(data)
+    out = ROOT / "analysis" / "47_squat_pause_segmentation.png"
+    fig.savefig(out, dpi=125)
+    print(f"wrote {out}")
+    return 0
+
+
+def draw_bar_path_with_d() -> int:
+    """C31 — the bar path with step 6 on, now that `d` has been measured.
+
+    Writes `analysis/48_bar_path_with_d.png`.
+
+    `d` comes from `correct.WRIST_OFFSET_M`, the owner's tape of 2026-08-06.
+    It is NOT fitted — B2 established that fitting it against the video is
+    ill-conditioned and returns |d| = 129 cm under leave-one-out.
+
+    Three captures, chosen to show the disagreement rather than the win: a
+    deadlift, the bench where `d` clearly helped (`bench_95x2`, 1.46 -> 0.80 cm)
+    and the paused bench where it clearly hurt (`bench_spoto_95x5_1`,
+    1.17 -> 3.54). Each is scored twice against ONE tracked video path, so the
+    only thing differing between the two curves is `wrist_offset`.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    from src import correct, metrics, pipeline, plot, truth
+
+    picks = ["deadlift_160x6_1", "bench_95x2", "bench_spoto_95x5_1"]
+    raw = ROOT / "data_v2" / "raw"
+
+    data = {}
+    for stem in picks:
+        hits = sorted(raw.glob(f"{stem}_*.csv"))
+        if not hits:
+            print(f"  {stem}: no capture found, skipping")
+            continue
+        csv = hits[0]
+        video = pipeline.find_video(csv)
+        if video is None:
+            print(f"  {stem}: no video, skipping")
+            continue
+        # Track ONCE and score twice. resolve_path accepts the dict straight
+        # back, so the two arms cannot differ by a re-track.
+        path = metrics.resolve_path(video)
+        d = correct.WRIST_OFFSET_M[truth.lift_of(csv)]
+        arms = {}
+        for tag, off in (("off", None), ("on", d)):
+            res = pipeline.run(csv, wrist_offset=off)
+            arms[tag] = metrics.vs_truth(res, path)
+        arms["d"] = d
+        data[stem] = arms
+        print(f"  {stem}: h rms {arms['off']['pipeline_h_rms']:.2f} -> "
+              f"{arms['on']['pipeline_h_rms']:.2f} cm")
+
+    if not data:
+        print("nothing to draw")
+        return 1
+
+    fig = plot.plot_bar_path_with_d(data)
+    out = ROOT / "analysis" / "48_bar_path_with_d.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_pause_attitude() -> int:
+    """C31 — does a PAUSE let Core Motion re-reference gravity mid-rep?
+
+    Writes `analysis/49_pause_attitude_correction.png`.
+
+    The owner's hypothesis, 2026-08-06: during a pause the watch is quasi-static,
+    so the accelerometer becomes a trustworthy gravity reference and Core Motion
+    corrects accumulated tilt error DURING the rep. That would land a step
+    mid-rep at the same phase every rep, which is P3's signature and is exactly
+    what step 7's boundary-anchored linear detrend cannot remove.
+
+    The observable needs no video and no sync: the per-sample FUSION CORRECTION,
+    Core Motion's attitude increment minus the gyro's (midpoint rule, so the
+    left-endpoint discretisation error that contaminates a naive version is
+    gone). Decomposed in the world frame into TILT and YAW, because gravity can
+    correct tilt and is geometrically incapable of correcting yaw about gravity,
+    while numerical error has no such preference.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+    from src import io, pipeline, plot
+
+    NB = 20
+
+    def split(log):
+        q, dt, w = log["quat"], log["dt"], log["gyro"]
+        R = Rotation.from_quat(q, scalar_first=True)
+        wm = 0.5 * (w[:-1] + w[1:])
+        inc = Rotation.from_rotvec(wm * dt[:-1, None]).inv() * (R[:-1].inv() * R[1:])
+        world = R[:-1].apply(inc.as_rotvec())
+        tilt = np.degrees(np.linalg.norm(world[:, :2], axis=1)) / dt[:-1]
+        yaw = np.degrees(np.abs(world[:, 2])) / dt[:-1]
+        return tilt, yaw
+
+    csvs = sorted(list((ROOT / "data" / "raw").glob("*.csv"))
+                  + list((ROOT / "data_v2" / "raw").glob("*.csv")))
+    ty, prof = {}, {}
+    for c in csvs:
+        if pipeline.expected_reps(c) is None:
+            continue
+        log = io.load_log(c)
+        tilt, yaw = split(log)
+        a = np.linalg.norm(log["accel"], axis=1)[:-1]
+        wm = np.degrees(np.linalg.norm(log["gyro"], axis=1))[:-1]
+        q = (wm < 20.0) & (a < 1.5)
+        ty[c.stem] = {
+            "ratio_qs": float(np.median(tilt[q]) / max(np.median(yaw[q]), 1e-9)),
+            "ratio_dyn": float(np.median(tilt[~q]) / max(np.median(yaw[~q]), 1e-9)),
+        }
+        if "deadlift" in c.name:
+            continue
+        r = pipeline.run(c)
+        lift = "bench" if "bench" in c.name else "squat"
+        style = "paused" if ("spoto" in c.name or "pause" in c.name) else "continuous"
+        rows = []
+        for i0, i1 in r["bounds"]:
+            i1 = min(i1, len(tilt))
+            if i1 - i0 < NB:
+                continue
+            ph = np.linspace(0, 1, i1 - i0)
+            rows.append([np.median(tilt[i0:i1][(ph >= k / NB) & (ph < (k + 1) / NB)])
+                         for k in range(NB)])
+        if rows:
+            prof.setdefault(lift, {}).setdefault(style, []).append(
+                np.nanmedian(np.array(rows, dtype=float), axis=0))
+
+    for lift in prof:
+        for style in prof[lift]:
+            prof[lift][style] = np.median(np.array(prof[lift][style]), axis=0)
+        p, cont = prof[lift]["paused"], prof[lift]["continuous"]
+        pk = float(np.max(p) / np.min(p))
+        ck = float(np.max(cont) / np.min(cont))
+        if pk > ck * 1.4:
+            prof[lift]["verdict"] = (f"paused CONCENTRATES it mid-rep: peak/min "
+                                     f"{pk:.2f} vs {ck:.2f}, peak at phase "
+                                     f"{(np.argmax(p) + 0.5) / NB:.2f}")
+        else:
+            prof[lift]["verdict"] = (f"no concentration: peak/min {pk:.2f} vs "
+                                     f"{ck:.2f}. Hypothesis does NOT hold here")
+        print(f"  {lift}: {prof[lift]['verdict']}")
+
+    rose = sum(1 for v in ty.values() if v["ratio_qs"] > v["ratio_dyn"])
+    print(f"  tilt/yaw rises when quasi-static on {rose} of {len(ty)} captures")
+
+    fig = plot.plot_pause_attitude({"ty": ty, "prof": prof})
+    out = ROOT / "analysis" / "49_pause_attitude_correction.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_pipeline_now() -> int:
+    """C31 — what the branch pipeline produces, on all three lifts.
+
+    Writes `analysis/50_pipeline_now.png`. The product view rather than a
+    diagnostic: step 9's output, reps overlaid, fore-aft stretched 4x, with the
+    video over the top wherever a referee exists.
+
+    Six captures chosen to span what the corpus can and cannot check: two
+    deadlifts (one refereed by the conic marker path, one by the plate
+    template), two benches (one where step 6 clearly helped, one where it
+    clearly hurt) and two squats, which have no referee at all because
+    `metrics.vs_truth` still refuses squat.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import metrics, pipeline, plot, truth
+
+    picks = [
+        ("data_v2", "deadlift_160x6_1"), ("data", "deadlift_155x6_1"),
+        ("data_v2", "bench_95x2"), ("data_v2", "bench_spoto_95x5_1"),
+        ("data_v2", "squat_pause_145x4_1"), ("data_v2", "squat_170x1"),
+    ]
+    panels = []
+    for dataset, stem in picks:
+        hits = sorted((ROOT / dataset / "raw").glob(f"{stem}_*.csv"))
+        if not hits:
+            print(f"  {stem}: not found, skipping")
+            continue
+        csv = hits[0]
+        res = pipeline.run(csv)
+        rom = np.median(res["rep_rom_m"]) * 100 if res["rep_rom_m"] else float("nan")
+        exp = pipeline.expected_reps(csv)
+        head = (f"{stem}   {len(res['reps'])}/{exp} reps   "
+                f"median ROM {rom:.0f} cm")
+
+        video, paths = None, res["planar"]
+        try:
+            m = metrics.vs_truth(res, pipeline.find_video(csv))
+        except (ValueError, FileNotFoundError):
+            # vs_truth's squat refusal is STALE rather than wrong-headed: its
+            # stated reason describes the OLD template footage. Do not paraphrase
+            # the exception into the caption — it would print a reason that is no
+            # longer true. But do not overcorrect either: only two of the four
+            # 8-sticker squat clips track cleanly (C31, 2026-08-07).
+            cap = (f"{head}\nNO REFEREE — vs_truth still refuses squat "
+                   f"(reason is stale; this footage tracks)")
+        else:
+            good = [r for r in m["per_rep"] if r.get("covered")]
+            video = [r["curve_video"] for r in good]
+            paths = [r["curve_pipeline"] for r in good]
+            verdict = "beats" if m["beats_null"] > 1 else "LOSES TO"
+            cap = (f"{head}\nh {m['pipeline_h_rms']:.2f} cm rms, "
+                   f"v {m['pipeline_v_rms']:.2f}   "
+                   f"{verdict} flat line ({m['beats_null']:.2f}x)")
+        panels.append({"stem": stem, "paths": paths, "video": video,
+                       "caption": cap})
+        print(f"  {stem}: {len(res['reps'])}/{exp} reps"
+              + ("" if video is None else f", scored"))
+
+    if not panels:
+        print("nothing to draw")
+        return 1
+    fig = plot.plot_pipeline_now(panels)
+    out = ROOT / "analysis" / "50_pipeline_now.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_jump_with_d() -> int:
+    """C31 — does C29's jump correction compose with step 6's `d`?
+
+    Writes `analysis/51_jump_with_d.png`.
+
+    P6 was measured entirely before `d` existed: C29's rest-window jump
+    correction took deadlift horizontal rms from 10.66 to 3.93 cm with step 6
+    OFF, on the axis `d` most affects. Four arms on all six deadlifts, sharing
+    the same rest-to-rest windows so the comparison is internal:
+
+        control  rest windows, no correction, no d   <- C29's honest baseline
+        C29      rest windows + 0.20 s jump, no d
+        d        rest windows, no correction, with d
+        both     rest windows + 0.20 s jump, with d
+
+    Reproduces C29's own control and treatment (10.66 -> 3.93, beats_null
+    0.21 -> 0.69) to two decimals, which is what licenses reading the new rows.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import correct, metrics, oracle, pipeline, plot, truth
+
+    ARMS = [("control", -1, False), ("C29", 0.20, False),
+            ("d", -1, True), ("both", 0.20, True)]
+    csvs = (sorted((ROOT / "data" / "raw").glob("deadlift_*.csv"))
+            + sorted((ROOT / "data_v2" / "raw").glob("deadlift_*.csv")))
+    rows = {}
+    for csv in csvs:
+        video = pipeline.find_video(csv)
+        if video is None:
+            continue
+        path = metrics.resolve_path(video)
+        d = correct.WRIST_OFFSET_M[truth.lift_of(csv)]
+        row = {}
+        for tag, width, use_d in ARMS:
+            base = pipeline.run(csv, wrist_offset=None)
+            res = oracle.jump_rest_windows(
+                base, width_s=width, wrist_offset=(d if use_d else None))
+            m = metrics.vs_truth(res, path)
+            row[tag] = (m["pipeline_h_rms"], m["beats_null"],
+                        m["pipeline_v_rms"], m["n_compared"])
+        rows[csv.stem[:24]] = row
+        print(f"  {csv.stem[:24]}: "
+              + "  ".join(f"{t} {row[t][0]:.2f}" for t, _, _ in ARMS))
+
+    if not rows:
+        print("nothing to draw")
+        return 1
+    for tag, _, _ in ARMS:
+        med = np.median([r[tag][0] for r in rows.values()])
+        mb = np.median([r[tag][1] for r in rows.values()])
+        print(f"  {tag:8s} median h_rms {med:5.2f} cm   beats_null {mb:.2f}")
+
+    fig = plot.plot_jump_with_d(rows, [a[0] for a in ARMS])
+    out = ROOT / "analysis" / "51_jump_with_d.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_deadlift_parabola() -> int:
+    """D1 — where is the deadlift's invented fore-aft GENERATED?
+
+    Writes `analysis/52_deadlift_excursion_origin.png`.
+
+    The question was the owner's: the reconstruction sweeps 20-35 cm of fore-aft
+    on deadlift where the video says the bar moved 4.3-6.2, which is not merely
+    inaccurate but impossible. The hypothesis on the table was the floor impact
+    — B6 measured the watch ringing on its strap there, and step 6 assumes `d`
+    is rigid in body coordinates exactly where it demonstrably is not.
+
+    **The impact is not it, and the answer is simpler and worse.** Attributing
+    each detrended rep path to disjoint sets of samples — an EXACT linear
+    decomposition, `oracle.rep_attribution`, self-checking to 1e-13 m — the
+    window around every floor impact contributes 9-49% of the per-rep excursion
+    at any half-width from 0.10 to 0.50 s, and by phase decile the contribution
+    is spread 1-8 cm across all ten deciles. Nothing is localised.
+
+    What IS there is one number per rep. The reconstruction's per-rep fore-aft
+    path is a PARABOLA — median r2 0.76 to 1.00 over the six deadlifts against
+    `c*tau(tau-T)/2`, the response to a constant horizontal acceleration after
+    step 7's endpoint line — with `c` between 0.005 and 0.16 m/s^2, an effective
+    tilt of 0.03-0.94 degrees. Pooled over 30 deadlift reps that `c` is 5.0x the
+    video's own and uncorrelated with it (r = +0.18); over 24 bench reps it is
+    0.7x and correlated. And it GROWS through the set on 4 of 6 captures
+    (Spearman rho of |c| against rep index 1.00, 1.00, 0.94, 0.50) while the
+    video's per-rep fore-aft stays flat.
+
+    Slow: it decodes every deadlift and bench clip that scores.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import metrics, oracle, pipeline, plot
+
+    def gather(csvs):
+        rows = []
+        for csv in csvs:
+            res = pipeline.run(csv)
+            video = pipeline.find_video(csv)
+            if video is None:
+                continue
+            path = metrics.resolve_path(video)
+            try:
+                vt = metrics.vs_truth(res, path)
+            except (ValueError, FileNotFoundError) as e:
+                print(f"  {csv.stem.split('_2026')[0]}: refused ({e})")
+                continue
+            t = res["log"]["t"]
+            per = []
+            for k, p in enumerate(vt["per_rep"]):
+                if not p["covered"]:
+                    continue
+                a, b = res["bounds"][k]
+                span = t[b - 1] - t[a]
+                per.append(dict(k=k, T=span,
+                                rec=oracle.parabola_fit(p["curve_pipeline"][:, 0], span),
+                                vid=oracle.parabola_fit(p["curve_video"][:, 0], span),
+                                curve=p["curve_pipeline"][:, 0],
+                                vcurve=p["curve_video"][:, 0],
+                                video_exc=p["video_fore_aft_cm"] / 100))
+            rows.append(dict(name=csv.stem.split("_2026")[0], r=res, vt=vt, per=per,
+                             path=path))
+            print(f"  {rows[-1]['name']:22s} median r2 "
+                  f"{np.median([p['rec']['r2'] for p in per]):.2f}, "
+                  f"tilt {per[0]['rec']['tilt_deg']:.2f} -> "
+                  f"{per[-1]['rec']['tilt_deg']:.2f} deg")
+        return rows
+
+    dls = (sorted((ROOT / "data_v2" / "raw").glob("deadlift_*.csv"))
+           + sorted((ROOT / "data" / "raw").glob("deadlift_*.csv")))
+    bns = (sorted((ROOT / "data_v2" / "raw").glob("bench*.csv"))
+           + sorted((ROOT / "data" / "raw").glob("bench*.csv")))
+    print("deadlift:")
+    dl = gather(dls)
+    print("bench:")
+    bn = gather(bns)
+    if not dl:
+        print("nothing to draw")
+        return 1
+
+    # The rejected arm, for panel F. `parabola_detrend` is an ADDITION to
+    # step 7 and is scored through the same `vs_truth`, so the two rows differ
+    # in exactly one thing.
+    arms = []
+    print("\nshipping -> + parabola removed:")
+    for row in dl + bn:
+        res = row["r"]
+        alt = dict(res)
+        alt["reps"] = oracle.parabola_detrend(res["reps"], res["bounds"],
+                                              res["log"]["t"])
+        vt0, vt1 = row["vt"], metrics.vs_truth(alt, row["path"])
+        arms.append(({"name": row["name"], "bn": vt0["beats_null"]},
+                     {"name": row["name"], "bn": vt1["beats_null"]}))
+        print(f"  {row['name']:22s} h {vt0['pipeline_h_rms']:5.2f} -> "
+              f"{vt1['pipeline_h_rms']:5.2f} cm   beats_null "
+              f"{vt0['beats_null']:.2f} -> {vt1['beats_null']:.2f}")
+
+    fig = plot.plot_deadlift_parabola(dl, bn, arms)
+    out = ROOT / "analysis" / "52_deadlift_excursion_origin.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def track_all(force: bool = False) -> int:
+    """C31 — the tracking protocol: track once, cache to CSV, render the review.
+
+    `python run.py --track` caches every clip that is not cached yet;
+    `--track --force` re-tracks everything, which is what you do after changing
+    `markers.py` or `truth.py`, because a cached path is only valid for the
+    tracker code that produced it.
+
+    Writes `<dataset>/tracked/<stem>.csv` and
+    `analysis/tracking/<v1|v2>/<stem>.png` — split by dataset, because the
+    two corpora are scored by different referees and one shared directory
+    put two incomparable things side by side.
+    The CSVs are committed: tracking a clip costs 1-2 minutes of ffmpeg and this
+    pays it once for the life of the repo instead of once per analysis.
+
+    **Look at the figures.** That is the other half and it is the half that
+    matters. Six squat clips have been feeding travel figures of 0.2 to 24.7 cm
+    into comparisons — for 65-70 cm squats — behind coverage of 96-100% and
+    healthy residuals, because the tracker had locked onto gym furniture. Every
+    summary statistic said fine. The path, drawn, is obviously not a barbell.
+    """
+    import warnings
+    from src import tracked
+
+    clips = sorted(list((ROOT / "data" / "video").glob("*.mov"))
+                   + list((ROOT / "data_v2" / "video").glob("*.mov")))
+    if not clips:
+        print("no clips found")
+        return 1
+
+    ok = failed = flagged = 0
+    for clip in clips:
+        cached = tracked.csv_path(clip).is_file()
+        if cached and not force:
+            r = tracked.review(clip)
+        else:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    tracked.ensure(clip, force=force)
+                r = tracked.review(clip)
+            except Exception as exc:
+                failed += 1
+                print(f"  REFUSED  {clip.stem:34s} {type(exc).__name__}: "
+                      f"{str(exc).split(':')[-1].strip()[:56]}")
+                continue
+        ok += 1
+        bits = []
+        if r["implausible"]:
+            bits.append("IMPLAUSIBLE TRAVEL")
+        if not r["reps_match"]:
+            bits.append(f"REP COUNT {r['n_reps']} != {r['expected_reps']}")
+        flag = ("  <-- " + ", ".join(bits)) if bits else ""
+        flagged += bool(bits)
+        want = "" if r["expected_reps"] is None else f"/{r['expected_reps']}"
+        print(f"  {clip.stem:34s} cov {r['coverage'] * 100:5.1f}%  "
+              f"travel {r['travel_cm']:5.1f} cm  reps {r['n_reps']}{want}{flag}")
+
+    print(f"\n{ok} cached, {failed} refused by the tracker, {flagged} flagged")
+    print("figures in analysis/tracking/v1 (plate template) and v2 (markers)"
+          " — look at them before trusting a number")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -1117,6 +1714,20 @@ def main(argv: list[str]) -> int:
         return draw_vs_truth()
     if "--scorecard" in argv:
         return draw_scorecard()
+    if "--pausedsquat" in argv:
+        return draw_paused_squat()
+    if "--dpaths" in argv:
+        return draw_bar_path_with_d()
+    if "--pauseattitude" in argv:
+        return draw_pause_attitude()
+    if "--pipelinenow" in argv:
+        return draw_pipeline_now()
+    if "--jumpd" in argv:
+        return draw_jump_with_d()
+    if "--track" in argv:
+        return track_all(force="--force" in argv)
+    if "--dlparabola" in argv:
+        return draw_deadlift_parabola()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:

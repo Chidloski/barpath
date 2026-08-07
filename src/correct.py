@@ -41,8 +41,21 @@ held-out capture worse, 5.1 -> 16.2 cm.
 So d wants a tape measure, not an optimiser: watch centre to bar centre, in
 watch axes, once. Thirty seconds, and the same class of fix as measuring the
 plates for truth.PLATE_DIAMETER_M — which was done on 2026-07-30 and took about
-that long. Until then it stays None and the correction
-stays off, because a guessed d costs up to 0.8 cm rather than saving anything.
+that long.
+
+**The owner did it on 2026-08-06, and `WRIST_OFFSET_M` below is the tape.**
+That paragraph used to end "until then it stays None"; the reason it stayed
+None is gone. **And the DEFAULT has moved with it: step 6 is ON**
+(`pipeline.run(wrist_offset="auto")`, 70b2a63) — pass None for the old
+behaviour. *This paragraph said "the DEFAULT has not moved" for about an hour,
+between C31b recording the constant and the owner's call to ship it; C33
+corrected it on 2026-08-06.* See the constant's comment block and `pipeline.run`
+for what it costs as well as what it buys.
+
+Note the first paragraph above is **not** superseded by the tape. `d` still
+cannot be recovered from the video; it can only be measured with a ruler. C31
+re-confirmed that from the other side by fitting `lever` on top of the tape and
+landing 108/74/4 degrees away from it.
 
 **How big is it really? Smaller than this project has been claiming.** B2
 measured it. The rotation premise above is right — the watch turns 18-22
@@ -175,6 +188,73 @@ from __future__ import annotations
 
 import numpy as np
 from scipy.spatial.transform import Rotation
+
+
+# The tape, measured by the owner on 2026-08-06. Watch face centre to bar
+# centre, in WATCH body axes: +x toward the crown, +z out through the display.
+#
+#   squat            5 cm toward the crown, 4 cm UP OUT of the case    |d| = 6.4
+#   bench, deadlift  9 cm toward the crown, 3 cm DOWN INTO the case    |d| = 9.5
+#
+# **The sign is the thing to get right and the easy thing to get wrong.**
+# `apply_offset` computes p_bar = p_watch - R(t).d, so ITS d points BAR -> WATCH
+# and is the negative of what a tape measured from the watch reads. Hence the
+# leading minus on the crown component: the bar is 9 cm toward the crown from
+# the watch, so the watch is 9 cm anti-crown from the bar.
+#
+# Corroborated rather than assumed, because a sign error here is invisible —
+# it produces a plausible curve of the right size pointing the wrong way.
+# Sweeping d's direction over the sphere at the measured magnitude and scoring
+# by C30's acceleration correlation, the literal tape value lands within
+# 0.02-0.03 of the best achievable correlation on all three data_v2 deadlifts
+# (C31, 2026-08-06). It was NOT fitted; the sweep only checks it.
+#
+# Squat's is the odd one and the direction is the reason: the bar is on the
+# lifter's back and the wrists are under it palm-forward, so the display faces
+# roughly the same way the bar sits rather than away from it.
+#
+# **THIS IS THE SHIPPING DEFAULT AS OF 70b2a63.** `pipeline.run(wrist_offset=)`
+# defaults to "auto", which looks this table up by lift and applies it; pass
+# None for the old behaviour. The owner's call, and the reason is geometric
+# rather than metric: this project reconstructs the BAR path from a sensor on
+# the WRIST, and R(t).d is the only term between them, so omitting a measured
+# term does not make the answer more conservative — it makes it an answer to a
+# different question.
+#
+# *This block read "THIS IS NOT THE SHIPPING DEFAULT ... is still None" until
+# 2026-08-06 (C33 corrected it). C31b left the default off on the metric alone
+# and was overruled on the geometry an hour later; the metric argument it made
+# is kept below because it is still the honest account of what `d` costs.*
+#
+# What it costs, measured rather than argued. On the nine marker-refereed
+# captures (C31b, 2026-08-06) applying `d` improves per-rep horizontal rms on
+# 5 of the 6 whose DISPLAY AXIS step 8 can find and makes it 39-202% worse on
+# the 3 it cannot — and on those three the axis turns 23-50 degrees when `d` is
+# applied, so the before and after are not measured along the same line. The
+# blocker there is step 8, not step 6, and not more tape.
+#
+# What it is good for, measured rather than argued:
+#   * bench VERTICAL rms improves on 6 of 6, by ~20-25%
+#   * `bench_92.5x4_1` — the one capture CLAUDE.md records as losing to the
+#     flat-line null — crosses it, `beats_null` 0.71 -> 1.78
+#   * the ACCELERATION correlation against the video improves on 6 of 6 benches
+#     and on 3 of 3 deadlifts, deadlift going 0.12-0.23 to 0.43-0.64
+#
+# And one thing it is NOT evidence of. Sweeping |d| along this direction, the
+# position rms falls monotonically out to 3x the tape on deadlift and on the
+# vertical axis of bench — no interior optimum anywhere. So an improvement in
+# position rms does not identify a lever arm and never could; that is B2's
+# result reproduced from the other side, and it is why this is a constant and
+# not a fitted parameter. The acceleration correlation DOES have an interior
+# optimum, tightly at 0.5-0.75x the tape on all six benches and nowhere on
+# deadlift — consistent with the wrist extension named at the end of
+# `apply_offset`, which would shorten the EFFECTIVE lever below the geometric
+# one. Unresolved; see analysis/48.
+WRIST_OFFSET_M = {
+    "bench": np.array([-0.09, 0.0, 0.03]),
+    "deadlift": np.array([-0.09, 0.0, 0.03]),
+    "squat": np.array([-0.05, 0.0, -0.04]),
+}
 
 
 def apply_offset(position: np.ndarray, quat: np.ndarray,

@@ -267,6 +267,53 @@ def _frames_u8(path: str | Path, scale: float) -> tuple[np.ndarray, float]:
 #
 # So: one number, measured where it can be, applied everywhere, and flagged.
 #
+# **Still reproducible on its own source footage, checked 2026-08-06 (C32).**
+# `bar_path` re-run today on the three `video_only` deadlifts gives
+# `sticker_ratio` 0.861 / 0.877 / 0.898 against the 0.862 / 0.878 / 0.834 above,
+# so four rewrites of the seeder since have not moved the calibration.
+#
+# **What the EIGHT-sticker plate does to it is unresolved, and the attempt to
+# resolve it without a tape failed instructively (C32, 2026-08-06.)** The rim
+# was re-measured without `find_plate` — walking outward along 720 rays from the
+# tracked constellation centre, strongest dark->bright intensity step in
+# [0.95, 1.40] R, median over rays and over 25 frames, keeping only rays whose
+# background is 30/255 brighter than the plate face:
+#
+#     plate / session                              radial     IQR    find_plate
+#     3-sticker, video_only deadlifts 20260801   0.919-0.926  0.000-0.010  0.861-0.898
+#     3-sticker, bench_85x6 20260801             0.907        0.048        0.698
+#     3-sticker, the four benches of 20260803    0.812-0.860  0.016-0.037  0.786-0.849
+#     8-sticker, the three deadlifts of 20260804 0.936-0.940  0.004-0.007  0.757-0.868
+#     8-sticker, the two benches of 20260806     0.943-0.947  0.053-0.095  0.681-0.692
+#
+# **Read the first row before any other: this is the radial gradient search
+# rejected six paragraphs above, and it reproduces its own rejection.** That
+# attempt read 0.928 / 0.938 / 0.929 on this same footage and the overlay showed
+# it sitting on the bumper's inner step rather than its outer edge; today it
+# reads 0.919 / 0.922 / 0.926. So it carries a positive bias of unknown size and
+# **cannot set the scale.** Consistency is not accuracy, and this is now the
+# project's second demonstration of it on the same measurement.
+#
+# What survives is the DIFFERENCE between plates, since the bias is a property
+# of the method and the rim profile rather than of the sticker placement: the
+# eight-sticker plate reads 0.936-0.947 where the old deadlift plate reads
+# 0.919-0.926, i.e. its stickers sit perhaps 1.5-3% closer to the rim. That is
+# the direction C27 predicted from the other side — video reading 4.6-9.3% below
+# the reconstruction, with "~0.92 would close it exactly" — but it is nothing
+# like enough to confirm the size, and C27's warning that the number must not be
+# adopted by fitting still stands. **Nothing here is changed.** `STICKER_RATIO`
+# and `truth.sticker_plate_diameter` cancel one another on the older captures
+# and moving one alone silently rescales all of them. The answer is a tape
+# across the sticker circle into `bar_path(sticker_diameter_m=)`, which retires
+# the constant per capture instead of re-tuning it for everybody.
+#
+# Two things NOT to read as confirmation. Scaling the referee up improves
+# `pipeline_v_rms` on every bench capture, including the three-sticker ones, so
+# that trend is the known IMU-versus-video vertical disagreement (C24) and says
+# nothing about the sticker circle. And the 20260803 bench row is the least
+# trustworthy in the table: those are light blue calibrated discs, so a
+# dark-plate-against-bright-background edge test barely applies.
+#
 # **On bench this is transferred, not measured, and that is the weakest claim in
 # this module.** The bench plate is a different plate (425 mm notched against
 # the 445 mm bumper) and carries its own set of stickers, so the ratio holds
@@ -918,6 +965,41 @@ def static_points(stack: np.ndarray, n_sample: int = 30, radius: float = 3.0,
     with obviously visible markers is what it would look like; the response is
     to raise `recur_max`, not to lower it. A hand-held camera breaks the
     premise outright and this whole function with it.
+
+    **That limit is REAL, it is what breaks the squats, and it CANNOT be fixed
+    by raising `recur_max` (C31, 2026-08-07).** Both halves are measured.
+
+    Real: whole-clip travel on the 8-sticker squats, against a true ~65-70 cm.
+
+        clip                    0.70    0.90    1.01
+        squat_170x1             14.8    78.9    25.4
+        squat_pause_140x4_3     26.1    21.8    55.7
+        squat_pause_145x4_1     62.9   194.4      -    <- the one that WORKS
+
+    The outcome swings by 5x with this one number, so suppression is squarely
+    implicated. But **there is no constant to move to**: 0.70 is right for the
+    capture that works and wrong for both that do not, 0.90 rescues one and
+    DESTROYS the working one, 1.01 rescues the other. Disjoint, exactly as
+    C31a found for the cadence tolerance one module over.
+
+    And the obvious generalisation FAILS for an interesting reason. Making
+    suppression a hypothesis — try several `recur_max`, let `_trial_merit`
+    pick, as C23 made it pick between families — was built and measured:
+    `bench_92.5x4_1` went from 27.8 cm of travel to **0.6**, and two more
+    benches moved. **`_trial_merit` cannot referee this choice, because it
+    rewards RIGIDITY and furniture is maximally rigid.** A rack upright gives a
+    perfect full-marker fraction, a near-zero residual and a zero apparent-size
+    spread — the three things the merit is built from — so as soon as
+    suppression is relaxed the merit's favourite object is the thing
+    suppression existed to remove. The merit was written on the assumption that
+    static points were already gone, and it is only valid inside that
+    assumption.
+
+    So a fix has to give the merit a MOVEMENT requirement before it can be
+    trusted at low suppression — "the bar is the thing in a gym that moves" is
+    already this module's stated principle and `_trial_merit` is the one place
+    that does not apply it. Do not re-propose a `recur_max` ladder without
+    that; it has been measured and it regresses three benches.
     """
     stride = max(1, len(stack) // n_sample)
     idx = list(range(0, len(stack), stride))
@@ -1777,6 +1859,15 @@ def calibration_report(stack: np.ndarray, seed: int, model: dict,
     radius. The owner placed the stickers "as close to the circumference as
     possible", so this should sit a little under 1. Well away from it says the
     rim detection and the constellation are not looking at the same plate.
+
+    **And on bench it is the rim detection that is wrong, every time.** Drawn
+    back over the seed frame the detected circle misses the plate on all six
+    `data_v2` bench captures — displaced 32-94 px from the plate centre and
+    oversized — worst on the two 2026-08-06 ones, which report 0.68 and 0.69.
+    So on bench read `sticker_ratio` as a statement about `truth.find_plate`,
+    not about the stickers. It does sit on the plate on deadlift, which is
+    where `STICKER_RATIO` was calibrated and why the check is worth keeping
+    there (C32, 2026-08-06).
     """
     py, px, prad, _ = plate
     cen = model["rim"].mean(axis=0)
@@ -2071,13 +2162,29 @@ def validate(path: dict, video: str | Path = "") -> None:
     # A cross-check, not a gate on the scale — `STICKER_RATIO` sets that. This
     # says only whether the rim detector agrees with the constellation on this
     # capture. It does not on bench, which is known and is why it does not vote.
+    #
+    # **On bench this warning fires on the DETECTOR, not on the stickers, and
+    # the wording used to invite the opposite reading (C32, 2026-08-06).** It
+    # sent an agent to audit `bench_spoto_95x5_1` for a 26% scale error, and
+    # what is actually wrong is the measuring instrument: drawn back over the
+    # seed frame, `find_plate`'s circle on both 2026-08-06 benches is off the
+    # plate entirely — displaced 32 and 76 px and oversized — which is the
+    # dark-disc-on-a-dark-background growth the `STICKER_RATIO` comment already
+    # records. The two captures of that session also agree with each other,
+    # 0.681 and 0.692, so nothing singles either of them out. That does NOT
+    # clear the absolute scale, which is open on every eight-sticker capture
+    # and settled only by a tape into `bar_path(sticker_diameter_m=)`; it
+    # relocates the doubt from one capture to a constant.
     if abs(cal["sticker_ratio"] - STICKER_RATIO) > 0.15:
         warnings.warn(
             f"{name}: the rim detector puts the sticker circle at "
             f"{cal['sticker_ratio']:.2f} of the plate radius, against the "
-            f"{STICKER_RATIO:.3f} this module scales by. The absolute scale is "
-            f"unconfirmed on this capture — distances may carry that ratio as a "
-            f"multiplicative error. See markers.STICKER_RATIO.", stacklevel=2)
+            f"{STICKER_RATIO:.3f} this module scales by. On BENCH the rim "
+            f"detector is the likelier culprit — it grows without limit on a "
+            f"dark background, and drawn over the frame it misses the plate. "
+            f"This does not by itself convict the capture's absolute scale; "
+            f"measure the sticker circle and pass sticker_diameter_m. See "
+            f"markers.STICKER_RATIO.", stacklevel=2)
 
     if np.isfinite(cal["spacing_bias_cm"]) and cal["spacing_bias_cm"] > 1.0:
         warnings.warn(

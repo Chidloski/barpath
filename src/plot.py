@@ -38,6 +38,8 @@ import textwrap
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 STRETCH = 4.0
 
@@ -1348,4 +1350,708 @@ def plot_v2_deadlift_conic(data: dict):
         "the referee can be believed",
         fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.965))
+    return fig
+
+
+def plot_squat_pause_segmentation(data: dict):
+    """The paused-squat short-count, and why the cadence constant could not move.
+
+    C31a, 2026-08-06. Three panels of band-passed vertical velocity — the
+    signal `segment.rep_bounds` actually works on — for the two paused squats
+    that counted 3 of 4 and the one that counted 4 of 4, then a fourth panel
+    showing the tolerance each capture admits under each rule.
+
+    The figure exists to make one thing visible: the dropped rep is a REAL rep,
+    sitting in the cluster with its siblings, and it is discarded purely
+    because the gap before it is longer than the others. `squat_pause_140x4_3`
+    drops its LAST rep and `squat_pause_140x4_2` its FIRST, which is why the
+    fourth panel matters — the mechanism is the gap ratio, not a position in
+    the set.
+
+    Panel 4 is the negative result and the reason a re-tune was not the fix.
+    Under the shipping rule `bench_spoto_90x5_1` counts correctly only below
+    1.572 and `squat_pause_140x4_3` only above 1.576, so the two grey bars
+    never overlap and no constant satisfies both. The green bars do overlap,
+    over 1.460-1.528.
+
+    `data` comes from `run.draw_paused_squat`; see it for the shape.
+    """
+    CHOSE, DROP, REJ = "#2f7d4f", "#c0392b", "#9aa4ad"
+    D = data
+    names = [k for k in D if not k.startswith("_")]
+    fig = plt.figure(figsize=(15.5, 15.0))
+    gs = fig.add_gridspec(4, 1, height_ratios=[1, 1, 1, 1.35], hspace=0.58,
+                          left=0.138, right=0.982, top=0.898, bottom=0.075)
+
+    for row, name in enumerate(names):
+        c = D[name]; ax = fig.add_subplot(gs[row])
+        t, vb = c["t"], c["vb"]
+        old, new, exp = c["old"], c["new"], c["exp"]
+        lo = min(t[old[0][0]], t[new[0][0]]) - 6.5
+        hi = max(t[old[-1][1] - 1], t[new[-1][1] - 1]) + 6.5
+        m = (t >= lo) & (t <= hi)
+        span = vb[m].max() - vb[m].min()
+        ymin, ymax = vb[m].min() - 0.34 * span, vb[m].max() + 0.46 * span
+        ax.set_ylim(ymin, ymax); ax.set_xlim(lo, hi)
+        ax.axhline(0, color="#ccd2d8", lw=0.8, zorder=1)
+
+        for (a, b) in new:
+            recovered = not any(abs(t[a] - t[oa]) < 0.6 for oa, ob in old)
+            ax.axvspan(t[a], t[b - 1], zorder=2,
+                       facecolor=DROP if recovered else CHOSE,
+                       alpha=0.26 if recovered else 0.15,
+                       hatch="///" if recovered else None,
+                       edgecolor=DROP if recovered else "none", lw=0.0)
+            if recovered:
+                ax.text((t[a] + t[b - 1]) / 2, ymax - 0.04 * span,
+                        "REP DROPPED\nby the shipping rule", ha="center",
+                        va="top", fontsize=11, fontweight="bold", color=DROP,
+                        zorder=9)
+
+        cl = set(np.round(c["cluster"], 3))
+        for (a, b, pk, ar) in c["lobes"]:
+            inc = round(float(t[pk]), 3) in cl
+            if not inc:
+                ax.axvspan(t[a], t[b - 1], facecolor=REJ, alpha=0.17, zorder=2)
+            ax.plot(t[pk], vb[pk], "v", ms=9.5 if inc else 7,
+                    color=CHOSE if inc else REJ, mec="white", mew=0.9, zorder=8)
+
+        ax.plot(t[m], vb[m], color="#1f2d3a", lw=1.3, zorder=6)
+
+        ct = np.array(c["cluster"]); gaps = np.diff(ct)
+        ytxt = ymin + 0.13 * span
+        for i, g in enumerate(gaps):
+            ax.annotate("", xy=(ct[i], ytxt), xytext=(ct[i + 1], ytxt),
+                        arrowprops=dict(arrowstyle="<->", color="#34495e", lw=1.2),
+                        zorder=9)
+            ax.text((ct[i] + ct[i + 1]) / 2, ytxt, f" {g:.2f} s ", ha="center",
+                    va="center", fontsize=10.5, color="#1f2d3a", zorder=10,
+                    bbox=dict(fc="white", ec="none", pad=1.4))
+        steps = [max(gaps[i + 1] / gaps[i], gaps[i] / gaps[i + 1])
+                 for i in range(len(gaps) - 1)]
+        short = len(old) != exp
+        ax.set_title(
+            f"{name}     shipping rule {len(old)}/{exp}"
+            f"{'  ✗ SHORT' if short else '  ✓'}"
+            f"          C31a rule {len(new)}/{exp}  ✓",
+            fontsize=12.5, loc="left", pad=17,
+            color=DROP if short else "#1f2d3a", fontweight="bold")
+        ax.text(0, 1.015, f"gaps {', '.join(f'{g:.2f}' for g in gaps)} s"
+                f"          global spread max/min = {gaps.max()/gaps.min():.3f}"
+                f"          worst ADJACENT step = {max(steps):.3f}",
+                transform=ax.transAxes, fontsize=10.5, color="#4a5866")
+        ax.set_ylabel("band-passed\nvertical velocity (m/s)", fontsize=10)
+        ax.set_xlabel("time (s)", fontsize=10, labelpad=1)
+        ax.tick_params(labelsize=9)
+        for s in ("top", "right"): ax.spines[s].set_visible(False)
+
+    # ---------------- panel 4 --------------------------------------------
+    ax = fig.add_subplot(gs[3])
+    old_i, new_i = D["_tol"]["old"], D["_tol"]["new"]
+    X0, X1 = 1.36, 1.66
+    # captures that actually bind anywhere near the decision
+    def binds(k):
+        return any(X0 < e < X1 for src in (old_i, new_i)
+                   for e in src[k][:2] if e is not None)
+    show = sorted([k for k in old_i if binds(k)],
+                  key=lambda k: -(old_i[k][0] or 0))
+    ypos = np.arange(len(show))[::-1]
+    for y, k in zip(ypos, show):
+        for dy, src, col in ((0.20, old_i, "#8f9aa5"), (-0.20, new_i, CHOSE)):
+            lo_, hi_, _ = src[k]
+            if lo_ is None: continue
+            ax.plot([max(lo_, X0 - 0.02), min(hi_, X1 + 0.02)], [y + dy] * 2,
+                    lw=11, color=col, solid_capstyle="butt", alpha=0.93,
+                    zorder=4)
+            if lo_ > X0:
+                ax.plot([lo_], [y + dy], "|", color="white", ms=11, mew=2.2,
+                        zorder=5)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels([k.rsplit("_2026", 1)[0] for k in show], fontsize=10)
+
+    B = "bench_spoto_90x5_1_20260730_125107.csv"
+    S = "squat_pause_140x4_3_20260806_113817.csv"
+    ob_hi, os_lo = old_i[B][1], old_i[S][0]
+    nb_hi, ns_lo = new_i[B][1], new_i[S][0]
+    ax.axvspan(ns_lo, nb_hi, color=CHOSE, alpha=0.12, zorder=0)
+    ax.axvline(1.50, color="#1f2d3a", ls="--", lw=1.4, zorder=6)
+
+    ymax_ = len(show) - 0.30
+    ax.set_ylim(-1.05, ymax_ + 0.95)
+    ax.set_xlim(X0, X1)
+
+    # the gap where NEITHER binding capture is satisfied
+    ax.axvspan(ob_hi, os_lo, color=DROP, alpha=0.30, zorder=1)
+    ax.annotate(f"NO tolerance counts both\nbench ends {ob_hi:.3f}, squat starts {os_lo:.3f}",
+                xy=((ob_hi + os_lo) / 2, ymax_ + 0.10),
+                xytext=(X1 - 0.005, ymax_ + 0.72), ha="right", va="center",
+                fontsize=10.5, color=DROP, fontweight="bold",
+                arrowprops=dict(arrowstyle="-|>", color=DROP, lw=1.6,
+                                connectionstyle="arc3,rad=0.18"))
+    ax.annotate("", xy=(ns_lo, ymax_ + 0.22), xytext=(nb_hi, ymax_ + 0.22),
+                arrowprops=dict(arrowstyle="<->", color=CHOSE, lw=1.8))
+    ax.text((ns_lo + nb_hi) / 2, ymax_ + 0.46,
+            f"C31a plateau {ns_lo:.3f} \u2013 {nb_hi:.3f}  (4.74% wide)",
+            ha="center", va="center", fontsize=10.5, color=CHOSE,
+            fontweight="bold")
+    ax.text(1.50, -0.92, "ships 1.50", fontsize=10.5, ha="center", va="bottom",
+            fontweight="bold", color="#1f2d3a",
+            bbox=dict(fc="white", ec="none", pad=1.5))
+    ax.set_xlabel("cadence tolerance — bar spans every value at which that capture counts "
+                  "correctly", fontsize=10.5)
+    ax.set_title("Why the constant could not be re-tuned. Captures not shown admit every "
+                 "value in this range under both rules.",
+                 fontsize=12.5, loc="left", pad=40, fontweight="bold")
+    ax.tick_params(labelsize=9.5)
+    for s in ("top", "right"): ax.spines[s].set_visible(False)
+    ax.legend(handles=[Patch(fc="#8f9aa5", label="shipping rule — run's global spread, max/min"),
+                       Patch(fc=CHOSE, label="C31a rule — worst step between ADJACENT gaps")],
+              loc="upper left", fontsize=10, frameon=False)
+
+    fig.legend(handles=[
+        Patch(fc=CHOSE, alpha=0.35, label="rep window (both rules agree)"),
+        Patch(fc=DROP, alpha=0.40, hatch="///", label="rep the shipping rule DROPS"),
+        Patch(fc=REJ, alpha=0.25, label="lobe rejected before cadence"),
+        Line2D([], [], marker="v", ls="", color=CHOSE, mec="white",
+               label="concentric peak, in the cluster"),
+        Line2D([], [], marker="v", ls="", color=REJ, mec="white",
+               label="concentric peak, not in the cluster")],
+        loc="upper center", ncol=5, fontsize=10.5, frameon=False,
+        bbox_to_anchor=(0.5, 0.958))
+    fig.suptitle("analysis/47 — the paused squat short-count: `_longest_cadence` drops a real rep\n"
+                 "a paused set's cadence LENGTHENS rep by rep, so its global gap spread is "
+                 "indistinguishable from a post-set movement",
+                 fontsize=15, y=0.99)
+    return fig
+
+
+def plot_bar_path_with_d(data: dict):
+    """C31 — the bar path with step 6 (the wrist lever `R(t).d`) off and on.
+
+    `data` maps stem -> {"off": vs_truth dict, "on": vs_truth dict, "d": (3,)}.
+    Both dicts must come from the SAME tracked video path, so the grey truth
+    curve is one curve and not two; only `pipeline.run`'s `wrist_offset`
+    differs between them.
+
+    Why this figure exists. `d` was unmeasurable for the life of this project —
+    B2 proved it could not be FITTED from the video (leave-one-out returned
+    |d| = 129 cm) — and the owner tape-measured it on 2026-08-06. Step 6 is the
+    only stage that was OFF because a number was missing rather than because it
+    had been rejected, so "what does the path look like with it on" had never
+    been drawn.
+
+    Read the three captures as a disagreement, not a result. `d` helps the
+    acceleration on 6 of 6 benches and the POSITION on only 3 of 6, so the
+    panels are chosen to show both directions: one deadlift, one bench where it
+    clearly helped and one where it clearly hurt. A figure showing only the
+    wins would be the exact failure this project keeps repeating.
+    """
+    stems = list(data)
+    fig, axes = plt.subplots(1, len(stems), figsize=(4.2 * len(stems), 6.4),
+                             squeeze=False)
+    flat = axes.ravel()
+
+    for ax, stem in zip(flat, stems):
+        off, on = data[stem]["off"], data[stem]["on"]
+        goff = [r for r in off["per_rep"] if r.get("covered")]
+        gon = [r for r in on["per_rep"] if r.get("covered")]
+
+        for i, r in enumerate(goff):
+            vid = r["curve_video"] * 100
+            ax.plot(vid[:, 0], vid[:, 1], color="0.55", lw=2.4,
+                    label="video (truth)" if i == 0 else None, zorder=2)
+        for i, r in enumerate(goff):
+            p = r["curve_pipeline"] * 100
+            ax.plot(p[:, 0], p[:, 1], color="#c2410c", lw=1.2, alpha=0.85,
+                    ls="--", label="step 6 OFF (was the default)" if i == 0 else None,
+                    zorder=3)
+        for i, r in enumerate(gon):
+            p = r["curve_pipeline"] * 100
+            ax.plot(p[:, 0], p[:, 1], color="#1d4ed8", lw=1.4, alpha=0.9,
+                    label="step 6 ON (measured d)" if i == 0 else None,
+                    zorder=4)
+
+        ax.set_aspect(1.0 / STRETCH)
+        ho, hn = off["pipeline_h_rms"], on["pipeline_h_rms"]
+        bo, bn = off["beats_null"], on["beats_null"]
+        verdict = "BETTER" if hn < ho else "WORSE"
+        colour = "#166534" if hn < ho else "#b91c1c"
+        d = data[stem]["d"]
+        ax.set_title(
+            f"{stem}\n"
+            f"h rms  {ho:.2f} -> {hn:.2f} cm   {verdict}\n"
+            f"beats_null  {bo:.2f} -> {bn:.2f}\n"
+            f"d = ({d[0]:+.2f}, {d[1]:+.2f}, {d[2]:+.2f}) m,  |d| = "
+            f"{float(np.linalg.norm(d)) * 100:.1f} cm",
+            fontsize=8.5, color=colour)
+        ax.set_xlabel("fore-aft (cm)", fontsize=8)
+        ax.set_ylabel("vertical (cm)", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=7, frameon=False, loc="best")
+
+    fig.suptitle(
+        "analysis/48 — the bar path with the wrist lever R(t).d removed, "
+        "against the video\n"
+        "d is a TAPE MEASUREMENT (owner, 2026-08-06), not a fit. Reps "
+        "start-aligned, fore-aft stretched 4x as step 9 draws it.\n"
+        "It helps the deadlift and one bench and HURTS the paused bench — the "
+        "shipping default stays OFF for exactly that reason.",
+        fontsize=11, y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.90))
+    return fig
+
+
+def plot_pause_attitude(data: dict):
+    """C31 — does a PAUSE let Core Motion re-reference gravity mid-rep?
+
+    `data` carries `ty` (per-capture tilt/yaw ratios, quasi-static and dynamic)
+    and `prof` (per-lift median tilt-correction profiles across the rep).
+
+    The observable needs no video. Core Motion reports an attitude; the gyro
+    reports a rate. The difference between the attitude increment and the gyro's
+    is what the FUSION added — and gravity can only correct TILT, never yaw
+    about gravity, so the tilt/yaw ratio says whether the accelerometer is being
+    trusted. Numerical error has no such preference, which is what makes the
+    ratio the decisive statistic rather than the magnitude.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(16.5, 5.4))
+
+    ax = axes[0]
+    names = list(data["ty"])
+    qs = [data["ty"][n]["ratio_qs"] for n in names]
+    dyn = [data["ty"][n]["ratio_dyn"] for n in names]
+    y = np.arange(len(names))
+    ax.scatter(dyn, y, s=26, color="#c2410c", label="moving")
+    ax.scatter(qs, y, s=26, color="#1d4ed8", label="quasi-static")
+    for i, (a, b) in enumerate(zip(dyn, qs)):
+        ax.plot([a, b], [i, i], color="0.75", lw=0.8, zorder=0)
+    ax.axvline(1.0, color="0.3", ls=":", lw=1)
+    ax.set_yticks(y)
+    ax.set_yticklabels([n[:26] for n in names], fontsize=5.5)
+    ax.set_xlabel("tilt / yaw in the fusion correction", fontsize=8)
+    rose = sum(1 for n in names
+               if data["ty"][n]["ratio_qs"] > data["ty"][n]["ratio_dyn"])
+    ax.set_title(f"Gravity can only correct TILT.\nThe ratio rises when still on "
+                 f"{rose} of {len(names)} —\nso the mechanism is REAL.", fontsize=9)
+    ax.legend(fontsize=7, frameon=False)
+    ax.grid(alpha=0.25, axis="x")
+
+    for ax, lift in zip(axes[1:], ("bench", "squat")):
+        ph = (np.arange(len(data["prof"][lift]["paused"])) + 0.5) / len(
+            data["prof"][lift]["paused"])
+        ax.plot(ph, data["prof"][lift]["paused"], lw=2.2, color="#b91c1c",
+                marker="o", ms=3, label="PAUSED")
+        ax.plot(ph, data["prof"][lift]["continuous"], lw=2.2, color="#166534",
+                marker="s", ms=3, label="continuous")
+        ax.set_xlabel("phase through the rep", fontsize=8)
+        ax.set_ylabel("tilt correction (deg/s)", fontsize=8)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=8, frameon=False)
+        verdict = data["prof"][lift]["verdict"]
+        ax.set_title(f"{lift}\n{verdict}", fontsize=9)
+    axes[1].set_ylim(bottom=0)
+    axes[2].set_ylim(bottom=0)
+
+    fig.suptitle(
+        "analysis/49 — the owner's hypothesis: does a pause let the accelerometer "
+        "find g, so Core Motion corrects tilt MID-REP?\n"
+        "Half right. The mechanism is real and visible, but it separates the two "
+        "lifts rather than the two styles: a paused SQUAT concentrates the "
+        "correction mid-rep, a paused BENCH does not.",
+        fontsize=11, y=0.99)
+    fig.tight_layout(rect=(0, 0, 1, 0.88))
+    return fig
+
+
+def plot_pipeline_now(panels: list):
+    """C31 — what the branch pipeline actually produces, on all three lifts.
+
+    Each entry of `panels` is a dict with `stem`, `paths` (list of (M,2) arrays,
+    along-axis and up, in metres), optional `video` (same shape), and `caption`.
+
+    This is the product view: step 9's output, reps overlaid and start-aligned,
+    fore-aft stretched 4x exactly as the display would. It exists because the
+    numbers in this repo are abstractions until you see the shape they describe
+    — and because the branch changed what the pipeline computes (step 6 is on),
+    so every figure drawn before 2026-08-06 shows a different quantity.
+
+    Squat panels carry no video because `metrics.vs_truth` still refuses squat.
+    That refusal is now STALE rather than wrong-headed — its stated reason is
+    about the old template footage. Note the replacement claim needs care too:
+    only TWO of the four 8-sticker squat clips track cleanly; `squat_170x1` and
+    `squat_pause_140x4_3` report 14.0 and 24.7 cm of travel against 65-70 cm
+    squats (C31, corrected 2026-08-07). And nobody has built a validated squat
+    sync. So the honest thing is to draw the reconstruction alone and say so.
+    """
+    n = len(panels)
+    cols = 3
+    rows = -(-n // cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(4.4 * cols, 6.6 * rows),
+                             squeeze=False)
+    flat = axes.ravel()
+
+    for ax, p in zip(flat, panels):
+        vid = p.get("video")
+        if vid is not None:
+            for i, v in enumerate(vid):
+                ax.plot(v[:, 0] * 100, v[:, 1] * 100, color="0.55", lw=2.4,
+                        label="video (truth)" if i == 0 else None, zorder=2)
+        for i, q in enumerate(p["paths"]):
+            ax.plot(q[:, 0] * 100, q[:, 1] * 100, lw=1.6, alpha=0.9,
+                    color="#1d4ed8" if vid is not None else None,
+                    label=("reconstruction" if vid is not None else f"rep {i+1}")
+                    if i == 0 or vid is None else None, zorder=3)
+        ax.set_aspect(1.0 / STRETCH)
+        ax.set_title(p["caption"], fontsize=8.5)
+        ax.set_xlabel("fore-aft (cm)", fontsize=8)
+        ax.set_ylabel("vertical (cm)", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=6.5, frameon=False, loc="best")
+    for ax in flat[n:]:
+        ax.axis("off")
+
+    fig.suptitle(
+        "analysis/50 — what the branch pipeline produces, all three lifts, "
+        "step 6 ON\n"
+        "Reps overlaid and start-aligned, fore-aft stretched 4x as the display "
+        "would draw it. Grey is the video where a referee exists.\n"
+        "Squat has no referee: vs_truth still refuses it, and only two of the "
+        "four 8-sticker squat clips track cleanly.",
+        fontsize=11, y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return fig
+
+
+def plot_jump_with_d(rows: dict, arms: list):
+    """C31 — do C29's jump correction and step 6's `d` compose, or overlap?
+
+    `rows` maps capture stem -> arm -> (h_rms, beats_null, v_rms, n). `arms` is
+    the ordered list of arm names.
+
+    All four arms use the SAME rest-to-rest windows, so every bar is scored on
+    the same spans and the comparison is internal. The control is C29's own
+    honest baseline — rest windows with no correction — NOT the shipping
+    number, which is measured on different windows entirely.
+    """
+    stems = list(rows)
+    colours = {"control": "0.6", "C29": "#166534", "d": "#c2410c",
+               "both": "#1d4ed8"}
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.6))
+    x = np.arange(len(stems))
+    w = 0.8 / len(arms)
+
+    for j, arm in enumerate(arms):
+        h = [rows[s][arm][0] for s in stems]
+        b = [rows[s][arm][1] for s in stems]
+        off = (j - (len(arms) - 1) / 2) * w
+        axes[0].bar(x + off, h, w, label=arm, color=colours.get(arm))
+        axes[1].bar(x + off, b, w, label=arm, color=colours.get(arm))
+
+    axes[0].set_ylabel("per-rep horizontal rms (cm)", fontsize=9)
+    axes[0].set_title("C29's jump correction does the work.\n"
+                      "`d` on top of it buys nothing.", fontsize=10)
+    axes[1].axhline(1.0, color="0.2", ls="--", lw=1.2)
+    axes[1].set_ylabel("beats_null  (>1 = better than a flat line)", fontsize=9)
+    # C29 reported deadlift_155x6_1 AND deadlift_180x3 crossing 1.0. Re-run
+    # here, only 155x6_1 does (1.21); 180x3 reaches 0.89. Stated rather than
+    # rounded up — C29's control and treatment medians reproduce exactly, so
+    # this is a per-capture difference, not a broken reproduction.
+    axes[1].set_title("ONE capture crosses 1.0 under C29 (155x6_1, 1.21).\n"
+                      "C29 reported 180x3 crossing too; here it reaches 0.89",
+                      fontsize=10)
+    for ax in axes:
+        ax.set_xticks(x)
+        ax.set_xticklabels([s[:20] for s in stems], rotation=20, ha="right",
+                           fontsize=7)
+        ax.legend(fontsize=8, frameon=False)
+        ax.grid(alpha=0.25, axis="y")
+
+    fig.suptitle(
+        "analysis/51 — do the impact-localised correction and the wrist lever "
+        "COMPOSE? No: they correct the same thing.\n"
+        "Median h rms: control 10.66 -> C29 3.93 -> +d 3.89 cm. `d` alone "
+        "reaches only 9.82. Three captures better with `d`, three worse.\n"
+        "Both act at the FLOOR IMPACT: |d/dt(R.d)| peaks there at 7.8x the rep "
+        "median. Not a turnaround — the arms hang near-vertical and nothing "
+        "reorients — but STRAP RINGING, the watch moving after the bar stops.",
+        fontsize=11, y=0.99)
+    fig.tight_layout(rect=(0, 0, 1, 0.86))
+    return fig
+
+
+def plot_deadlift_parabola(dl, bn, arms):
+    """D1 — where the deadlift's invented fore-aft comes from. analysis/52.
+
+    `dl` and `bn` are per-capture dicts built by `run.py --dlparabola`:
+    `name`, `r` (a pipeline result), `vt` (its `vs_truth`), and `per`, one entry
+    per scored rep holding `oracle.parabola_fit` of the reconstruction's path
+    and of the video's. `arms` pairs the shipping row with the rejected
+    parabola-detrend row for panel F.
+
+    Six panels, and the order is the argument:
+
+    A  per-rep fore-aft excursion in rep order. The reconstruction's grows
+       monotonically through the set (7.6 -> 34.8 cm on `deadlift_160x6_1`)
+       while the video's stays flat. Rep 0 is nearly right; the last rep is
+       not. That alone rules out anything that happens identically every rep.
+    B  one rep's path with `c*tau(tau-T)/2` over it. It is a parabola.
+    C  the impact window's share of the excursion, swept over half-widths of
+       0.10 to 0.50 s. It never reaches half on the marker-refereed captures,
+       so the floor impact is NOT where this is generated — which is the
+       measurement D1 set out to make and the hypothesis it killed.
+    D  the reconstruction's parabola coefficient against the video's own. On
+       deadlift 5.0x too big and uncorrelated (r = +0.18, n = 30); on bench
+       0.7x and correlated. The same split C30b found in acceleration.
+    E  the same coefficient as an effective tilt, asin(|c|/g), against C6's
+       0.05-0.27 deg measured at a still HOLD. Sub-degree throughout: a third
+       of a metre of invented travel is a fraction of a degree, times T^2.
+    F  the rejected correction. `beats_null` enters spanning 0.13-5.39 and
+       leaves spanning 0.76-1.16 — it converts every capture into the flat-line
+       null, which is a gain on deadlift and a loss on bench.
+    """
+    from . import oracle
+
+    fig, ax = plt.subplots(2, 3, figsize=(16.5, 9))
+
+    # -- A: per-rep excursion in order, recon vs video -----------------------
+    a = ax[0, 0]
+    cols = plt.cm.viridis(np.linspace(0, .85, len(dl)))
+    for c, row in zip(cols, dl):
+        ks = [p["k"] for p in row["per"]]
+        a.plot(ks, [p["rec"]["excursion_m"] * 100 for p in row["per"]], "o-",
+               color=c, label=row["name"].replace("deadlift_", ""))
+        a.plot(ks, [p["video_exc"] * 100 for p in row["per"]], "s--",
+               color=c, alpha=.45, ms=4)
+    a.set_xlabel("rep index within the set")
+    a.set_ylabel("fore-aft excursion, cm")
+    a.set_title("A  It GROWS through the set\n"
+                "solid = reconstruction, dashed = video (flat)", fontsize=10)
+    a.legend(fontsize=6.5, ncol=2)
+
+    # -- B: one rep, path and the parabola -----------------------------------
+    a = ax[0, 1]
+    row = [r for r in dl if r["name"] == "deadlift_160x6_1"][0]
+    for p, col in ((row["per"][0], "steelblue"), (row["per"][-1], "seagreen")):
+        tau = np.linspace(0, p["T"], len(p["curve"]))
+        fitc = p["rec"]["c"] * tau * (tau - p["T"]) / 2
+        a.plot(tau, p["curve"] * 100, lw=2, color=col,
+               label=f"rep {p['k']} recon  (r2={p['rec']['r2']:.2f}, "
+                     f"{p['rec']['tilt_deg']:.2f} deg)")
+        a.plot(tau, fitc * 100, "k:", lw=1.2)
+        a.plot(tau, p["vcurve"] * 100, lw=1.4, alpha=.6, ls="--", color=col,
+               label=f"rep {p['k']} video")
+    a.set_xlabel("time through the rep, s")
+    a.set_ylabel("fore-aft, cm")
+    a.set_title("B  The path IS a parabola\n"
+                "deadlift_160x6_1, first and last rep; dotted = c*tau(tau-T)/2",
+                fontsize=10)
+    a.legend(fontsize=6.5)
+
+    # -- C: attribution ------------------------------------------------------
+    a = ax[0, 2]
+    widths = [0.10, 0.20, 0.30, 0.50]
+    for c, row in zip(cols, dl):
+        fr = []
+        for hw in widths:
+            mi = oracle.impact_mask(row["r"], hw)
+            pa = oracle.rep_attribution(row["r"], {"i": mi, "e": ~mi},
+                                        row["vt"]["axis"])
+            axis = np.asarray(row["vt"]["axis"], float)[:2]
+            axis = axis / np.linalg.norm(axis)
+            f = []
+            for k in range(len(pa["FULL"])):
+                full = np.ptp(pa["FULL"][k][:, :2] @ axis)
+                imp = np.ptp(pa["i"][k][:, :2] @ axis)
+                f.append(imp / full)
+            fr.append(np.median(f) * 100)
+        a.plot(widths, fr, "o-", color=c)
+    a.axhline(50, color="crimson", ls="--", lw=1)
+    a.text(0.5, 52, "D1's pre-registered 'dominant' line", color="crimson", fontsize=7)
+    a.set_xlabel("half-width of the window around each floor impact, s")
+    a.set_ylabel("% of the per-rep excursion")
+    a.set_ylim(0, 100)
+    a.set_title("C  It is NOT the impact\n"
+                "the ringing window never dominates, at any width", fontsize=10)
+
+    # -- D: recon parabola vs video parabola ---------------------------------
+    a = ax[1, 0]
+    for rows, col, lab in ((dl, "crimson", "deadlift"), (bn, "steelblue", "bench")):
+        x = [p["vid"]["c"] for r in rows for p in r["per"]]
+        y = [p["rec"]["c"] for r in rows for p in r["per"]]
+        rr = np.corrcoef(x, y)[0, 1]
+        ratio = np.sqrt(np.mean(np.square(y))) / np.sqrt(np.mean(np.square(x)))
+        a.scatter(x, y, s=22, color=col, alpha=.75,
+                  label=f"{lab}  n={len(x)}  r={rr:+.2f}  {ratio:.1f}x")
+    lim = 0.2
+    a.plot([-lim, lim], [-lim, lim], "k-", lw=.8, alpha=.5)
+    a.axhline(0, color="k", lw=.5); a.axvline(0, color="k", lw=.5)
+    a.set_xlim(-lim, lim); a.set_ylim(-lim, lim)
+    a.set_xlabel("video's own parabola coefficient, m/s^2")
+    a.set_ylabel("reconstruction's, m/s^2")
+    a.set_title("D  On deadlift the parabola is INVENTED\n"
+                "on bench it tracks the bar (line = agreement)", fontsize=10)
+    a.legend(fontsize=7, loc="upper left")
+
+    # -- E: the effective tilt ------------------------------------------------
+    a = ax[1, 1]
+    for c, row in zip(cols, dl):
+        a.plot([p["k"] for p in row["per"]],
+               [p["rec"]["tilt_deg"] for p in row["per"]], "o-", color=c)
+    a.axhspan(0.05, 0.27, color="grey", alpha=.25)
+    a.text(0.02, 0.005, "C6: attitude error measured at a still HOLD, 0.05-0.27 deg",
+           fontsize=7, color="dimgrey", va="bottom")
+    a.set_ylim(0, None)
+    a.set_xlabel("rep index within the set")
+    a.set_ylabel("effective tilt, degrees")
+    a.set_title("E  A third of a metre is a fraction of a degree\n"
+                "theta = asin(|c|/g); T^2 does the rest", fontsize=10)
+
+    # -- F: the rejected arm --------------------------------------------------
+    a = ax[1, 2]
+    nm = [x[0]["name"] for x in arms]
+    y0 = [x[0]["bn"] for x in arms]
+    y1 = [x[1]["bn"] for x in arms]
+    ypos = np.arange(len(nm))
+    for i, (b0, b1) in enumerate(zip(y0, y1)):
+        a.annotate("", xy=(b1, i), xytext=(b0, i),
+                   arrowprops=dict(arrowstyle="->", lw=1.4,
+                                   color="seagreen" if b1 > b0 else "crimson"))
+    a.scatter(y0, ypos, s=26, color="k", zorder=3, label="shipping")
+    a.scatter(y1, ypos, s=26, facecolor="w", edgecolor="k", zorder=3,
+              label="+ parabola removed")
+    a.axvline(1.0, color="crimson", ls="--", lw=1)
+    a.set_yticks(ypos)
+    a.set_yticklabels([n.replace("deadlift_", "DL ").replace("bench_", "B ")
+                       for n in nm], fontsize=6)
+    a.set_xscale("log")
+    a.set_xticks([0.1, 0.2, 0.5, 1.0, 2.0, 5.0])
+    a.set_xticklabels(["0.1", "0.2", "0.5", "1.0", "2.0", "5.0"])
+    a.minorticks_off()
+    a.set_xlabel("beats_null   (1.0 = a flat vertical line)")
+    a.set_title("F  REJECTED: it collapses everything onto the null\n"
+                "0.13-5.39 in, 0.76-1.16 out. Bench loses what deadlift gains",
+                fontsize=10)
+    a.legend(fontsize=7, loc="lower right")
+
+    for row in ax:
+        for a_ in row:
+            a_.grid(alpha=.25)
+            a_.tick_params(labelsize=8)
+    fig.suptitle(
+        "D1 — the deadlift's invented fore-aft is ONE PARABOLA PER REP, and it grows through the set\n"
+        "not the floor impact, not a constant of the capture: a 0.03-0.94 deg tilt error amplified by T^2",
+        fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return fig
+
+
+def plot_tracking_review(path: dict, stem: str, info: dict | None = None):
+    """C31 — is this track usable? One figure per video, meant to be LOOKED AT.
+
+    `path` is a tracked bar-path dict; `info` is `tracked.review(video)`.
+
+    The figure this project should have had from the start. Two of the four
+    squat clips fed 14 and 24 cm of travel into comparisons for days, because
+    the tracker had locked onto gym furniture and every summary statistic —
+    coverage 96.7%, residual 1.11 px — said healthy. Nobody was ever shown the
+    path. A person glancing at the top-right panel catches that instantly.
+
+    Top row is the whole clip: height against time with the video's own rep
+    windows shaded, and the bar path. Below, one panel per rep, so a track that
+    is fine for four reps and loses the bar on the fifth is visible as such
+    rather than averaged away.
+
+    The rep windows come from `tracked.video_reps`, which uses the video alone.
+    They are trough-to-trough, so half a rep out of phase with
+    `segment.rep_bounds`; that is deliberate and is explained there.
+    """
+    t = np.asarray(path["t"], dtype=float)
+    x = np.asarray(path["x"], dtype=float) * 100
+    h = np.asarray(path["height"], dtype=float) * 100
+    reps = (info or {}).get("reps") or []
+
+    n = len(reps)
+    cols = max(4, min(6, n if n else 4))
+    rep_rows = -(-n // cols) if n else 0
+    fig = plt.figure(figsize=(4.0 * cols, 4.6 + 3.6 * rep_rows))
+    gs = fig.add_gridspec(1 + rep_rows, cols, height_ratios=[1.25] + [1] * rep_rows)
+
+    # --- whole clip: height against time -----------------------------------
+    a = fig.add_subplot(gs[0, :max(2, cols // 2)])
+    a.plot(t, h, lw=1.3, color="#1d4ed8")
+    for i, (i0, i1) in enumerate(reps):
+        a.axvspan(t[i0], t[i1], color="#166534", alpha=0.10)
+        a.text((t[i0] + t[i1]) / 2, np.nanmax(h), str(i + 1), ha="center",
+               va="top", fontsize=8, color="#166534")
+    gaps = ~np.isfinite(h)
+    if gaps.any():
+        a.plot(t[gaps], np.full(gaps.sum(), np.nanmin(h)), "|", color="#b91c1c",
+               ms=8, label="frames with no track")
+        a.legend(fontsize=7, frameon=False)
+    a.set_xlabel("time (s)", fontsize=8)
+    a.set_ylabel("height (cm)", fontsize=8)
+    a.set_title("whole clip — height, with the video's own rep windows",
+                fontsize=9)
+    a.grid(alpha=0.25)
+
+    # --- whole clip: the path ----------------------------------------------
+    b = fig.add_subplot(gs[0, max(2, cols // 2):])
+    b.plot(x, h, lw=1.0, color="0.35")
+    b.set_xlabel("fore-aft (cm)", fontsize=8)
+    b.set_ylabel("height (cm)", fontsize=8)
+    b.set_title("whole clip — the tracked bar path", fontsize=9)
+    b.grid(alpha=0.25)
+
+    # --- one panel per rep --------------------------------------------------
+    for k, (i0, i1) in enumerate(reps):
+        ax = fig.add_subplot(gs[1 + k // cols, k % cols])
+        # NaN-safe throughout: a mis-tracked clip is exactly the case this
+        # figure exists for, and those windows are full of untracked frames.
+        # An empty panel captioned "nan" tells the reader nothing about why.
+        xr, hr = x[i0:i1], h[i0:i1]
+        good = np.isfinite(xr) & np.isfinite(hr)
+        if good.any():
+            x0 = xr[good][0]
+            h0 = hr[good][0]
+            ax.plot(xr - x0, hr - h0, lw=1.5, color="#1d4ed8")
+            ax.plot(0, 0, "o", ms=4, color="#166534")
+            travel = f"{np.nanmax(hr) - np.nanmin(hr):.0f} cm travel"
+        else:
+            travel = "NO TRACK"
+        lost = int((~good).sum())
+        note = f", {lost} frames lost" if lost else ""
+        ax.set_title(f"rep {k + 1}   {travel}{note}", fontsize=8)
+        ax.set_xlabel("fore-aft (cm)", fontsize=7)
+        ax.tick_params(labelsize=6)
+        ax.grid(alpha=0.25)
+
+    if info:
+        want = info.get("expected_reps")
+        reps_note = (f"{info['n_reps']} reps found in the video"
+                     if want is None else
+                     f"{info['n_reps']} reps found in the video, "
+                     f"filename says {want}")
+        flags = []
+        if info.get("implausible"):
+            flags.append("*** TRAVEL IMPLAUSIBLE FOR THIS LIFT — the tracker is "
+                         "very likely not on the bar ***")
+        if not info.get("reps_match", True):
+            flags.append(f"*** FOUND {info['n_reps']} REPS, FILENAME SAYS "
+                         f"{info['expected_reps']} — do not trust this track ***")
+        flag = ("   " + "   ".join(flags)) if flags else ""
+        sub = (f"{stem}      tracker {info.get('tracker', '?')}   "
+               f"lift {info.get('lift', '?')}   camera on the "
+               f"{info.get('camera_side', '?')}, watch on the LEFT wrist\n"
+               f"coverage {info['coverage'] * 100:.1f}%   "
+               f"travel {info['travel_cm']:.1f} cm   "
+               f"fore-aft {info['fore_aft_cm']:.1f} cm   "
+               f"median residual {info['residual_px']:.2f} px   "
+               f"{reps_note}{flag}")
+        bad = info.get("implausible") or not info.get("reps_match", True)
+        fig.suptitle(sub, fontsize=10.5, y=0.995, color="#b91c1c" if bad else "0.1")
+    else:
+        fig.suptitle(stem, fontsize=11, y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     return fig

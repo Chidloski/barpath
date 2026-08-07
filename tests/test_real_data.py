@@ -51,8 +51,17 @@ needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
 # EMPTY as of 2026-07-31 (C5): counting is 72/72. The cause was
 # `segment._longest_cadence`'s tolerance of 1.6, which admitted the 4.50 s gap
 # between the last rep and the re-rack (4.50/2.86 = 1.573) and grew a run of
-# six that beat the true run of five on length. It is 1.45 now, the middle of a
-# plateau that gives 17/17.
+# six that beat the true run of five on length. C5 set it to 1.45, the middle
+# of a plateau that gave 17/17.
+#
+# STILL EMPTY as of 2026-08-06 (C31a), but that constant is gone. The four
+# paused squats of 2026-08-06 closed C5's plateau to nothing — a paused set's
+# cadence lengthens rep by rep, so `squat_pause_140x4_3` needs tol >= 1.574
+# where `bench_spoto_90x5_1` needs tol <= 1.572, DISJOINT. `_longest_cadence`
+# now compares each gap to its NEIGHBOUR rather than to the run's global
+# spread, and breaks length ties on cadence evenness before lateness. Counting
+# is 30/30 labelled captures across both datasets, and every window that was
+# already correct is bit-identical.
 #
 # Kept rather than deleted, with `xfail_if_miscounted`, because the next
 # miscount wants recording the same way. But NOTE this mechanism is NOT strict:
@@ -311,7 +320,9 @@ SLACK_M = 0.02      # the bounds are anatomical, quoted to the nearest cm
 #   bench_spoto_90x5_1 — segmented a 5-rep set into 6 windows; reps 5 and 6
 #   came out 45.7 and 88.7 cm against a 35 cm bench bound. Cause: the cadence
 #   tolerance was 1.6 where admitting the post-set gap needs 1.573. Now 5
-#   windows at 27.6-30.0 cm.
+#   windows at 27.6-30.0 cm. (C31a rewrote the rule behind that tolerance on
+#   2026-08-06; this capture still gives the same 5 windows, bit-identically,
+#   and remains the capture that sets the plateau's CEILING.)
 #
 #   squat_160x1 — reconstructed 18.0 cm for a single at 160 kg at a correct
 #   count of 1 of 1, the first right-count-wrong-window failure any gate here
@@ -978,10 +989,29 @@ def test_horizontal_meets_the_spec(video, csv, reps):
 # fore-aft motion at all. >1 means the reconstruction carries information; <1
 # means a flat line would score better. Measured 2026-07-31 (C10) on every
 # capture with video, and unchanged at C11.
+# **Re-recorded in part on 2026-08-06 (C31), because step 6 went ON by default
+# and that changes the quantity being scored — the BAR path rather than the
+# WATCH path. The values below are C10's except where marked.**
+#
+# Applying the measured `d` cost the two best captures in the corpus:
+#
+#     bench_90x4_2   4.80 -> 3.45      bench_90x4_3   4.03 -> 2.25
+#
+# Those are the only two captures where the horizontal reconstruction had ever
+# demonstrably carried information, so this is a real price and it is recorded
+# rather than absorbed. Both still beat the flat line comfortably, and every
+# other capture stayed inside the 20% headroom below, which is why only these
+# two moved. The owner's ruling stands on a correctness argument, not a metric
+# one: the deliverable is the bar path and the sensor is on the wrist. See
+# `pipeline.run`, and note both benches are filmed from the side OPPOSITE the
+# watch, so their referee tracks the far end of the bar (C31).
+#
+# To compare against any pre-2026-08-06 number in the docs, pass
+# `wrist_offset=None` — otherwise the two are different quantities.
 BEATS_NULL = {
     "bench_90x4_1_20260727": 1.10,
-    "bench_90x4_2_20260727": 4.80,
-    "bench_90x4_3_20260727": 4.03,
+    "bench_90x4_2_20260727": 3.45,      # C31, was 4.80 at C10 (step 6 off)
+    "bench_90x4_3_20260727": 2.25,      # C31, was 4.03 at C10 (step 6 off)
     "bench_92.5x2_20260727": 1.14,
     "bench_spoto_90x5_1_20260730": 0.72,
     "bench_spoto_90x5_2_20260730": 0.80,
@@ -1456,21 +1486,35 @@ def test_wrist_lever_arm_is_centimetres_not_decimetres():
 
 @needs_data
 @pytest.mark.parametrize("path", CAPTURES, ids=lambda p: p.stem)
-def test_step_six_runs_and_is_off_by_default(path):
-    """apply_offset must work when given d, and must not be applied without it.
+def test_step_six_runs_and_is_ON_by_default(path):
+    """apply_offset must be applied by default, and must be defeatable.
 
-    Off by default is a decision, not an oversight: d is unmeasured, B2 showed
-    it cannot be fitted from the video, and a guessed d costs up to 0.8 cm.
+    **This test was inverted on 2026-08-06 (C31) and the inversion is the
+    point.** It used to assert step 6 was OFF by default, and that was right
+    while `d` was unmeasured — B2 had shown it cannot be fitted from the video,
+    so a guessed `d` cost up to 0.8 cm and bought nothing. The owner then
+    tape-measured it (`correct.WRIST_OFFSET_M`) and ruled that it should always
+    be applied, on the ground that this project reconstructs the BAR path and
+    the sensor is on the WRIST: omitting a measured geometric term does not make
+    the answer safer, it answers a different question.
+
+    So what is gated here now is (a) the default really applies the measured
+    vector for this capture's lift, (b) `None` still gets the old watch-path
+    behaviour back, because every number recorded in the docs before 2026-08-06
+    was measured that way and they are not comparable otherwise.
     """
-    from src import pipeline
+    from src import correct, pipeline, truth
 
     plain = pipeline.run(path)
     assert not any("apply_offset" in b for b in plain["blocked"])
-    assert any("step 6 off" in n for n in plain["notes"])
+    assert plain["wrist_offset"] is not None, "step 6 must be on by default"
+    np.testing.assert_allclose(plain["wrist_offset"],
+                               correct.WRIST_OFFSET_M[truth.lift_of(path)])
 
-    offset = pipeline.run(path, wrist_offset=np.array([0.0, -0.14, 0.0]))
-    assert not offset["blocked"] or all("step 6" not in b for b in offset["blocked"])
-    assert not np.allclose(offset["bar_position"], plain["bar_position"])
+    off = pipeline.run(path, wrist_offset=None)
+    assert off["wrist_offset"] is None
+    assert any("step 6 OFF" in n for n in off["notes"])
+    assert not np.allclose(off["bar_position"], plain["bar_position"])
 
 
 # --------------------------------------------------- the noise-floor log --
@@ -2244,3 +2288,132 @@ def test_quality_flags_rejects_only_actual_clipping(path):
         "the strap-resonance flag is back. It rejected 33 of 73 real reps and "
         "fired hardest on the lift with no floor impact; see the docstring "
         "above and segment.quality_flags before reinstating it")
+
+
+# ------------------------------------------- the pause and Core Motion's fusion --
+# C31, 2026-08-06. The owner's hypothesis: a pause holds the watch quasi-static
+# long enough for the accelerometer to serve as a gravity reference, so Core
+# Motion corrects accumulated tilt MID-REP — a step at the same phase every rep,
+# which is P3's signature and is what step 7's boundary-anchored linear detrend
+# cannot remove.
+#
+# It is HALF RIGHT and the half that fails is the interesting one, so both
+# halves are pinned here. See analysis/49, `python run.py --pauseattitude`.
+
+
+# Both datasets: the paused squats live in `data_v2/raw` and `ALL_LOGS` above is
+# `data/raw` only, so the pause tests would silently have no paused squat to
+# look at and would pass on an empty group. Named separately rather than
+# widening ALL_LOGS, which many older tests are calibrated against.
+_RAW_V2 = Path(__file__).resolve().parents[1] / "data_v2" / "raw"
+BOTH_DATASETS = ALL_LOGS + (sorted(_RAW_V2.glob("*.csv")) if _RAW_V2.is_dir() else [])
+
+
+def _fusion_tilt_yaw(log):
+    """Core Motion's attitude increment minus the gyro's, split tilt vs yaw.
+
+    Gravity can correct TILT and is geometrically incapable of correcting yaw
+    about gravity, while numerical error has no such preference — which is what
+    makes the RATIO the decisive statistic rather than the magnitude. Midpoint
+    gyro rule, because a left-endpoint one makes fast motion look like fusion.
+    """
+    from scipy.spatial.transform import Rotation
+
+    q, dt, w = log["quat"], log["dt"], log["gyro"]
+    R = Rotation.from_quat(q, scalar_first=True)
+    wm = 0.5 * (w[:-1] + w[1:])
+    inc = Rotation.from_rotvec(wm * dt[:-1, None]).inv() * (R[:-1].inv() * R[1:])
+    world = R[:-1].apply(inc.as_rotvec())
+    return (np.degrees(np.linalg.norm(world[:, :2], axis=1)) / dt[:-1],
+            np.degrees(np.abs(world[:, 2])) / dt[:-1])
+
+
+def test_the_gravity_correction_mechanism_is_real():
+    """Tilt beats yaw in the fusion correction, and more so when still.
+
+    This is the owner's mechanism, confirmed: Core Motion really does lean on
+    the accelerometer for gravity, and it leans harder when the watch is
+    quasi-static. Measured 22 of 30 captures with the ratio higher when still.
+    """
+    from src import io, pipeline
+
+    rose = total = 0
+    for p in BOTH_DATASETS:
+        if pipeline.expected_reps(p) is None:
+            continue
+        log = io.load_log(p)
+        tilt, yaw = _fusion_tilt_yaw(log)
+        a = np.linalg.norm(log["accel"], axis=1)[:-1]
+        wm = np.degrees(np.linalg.norm(log["gyro"], axis=1))[:-1]
+        q = (wm < 20.0) & (a < 1.5)
+        if not q.any() or not (~q).any():
+            continue
+        total += 1
+        r_qs = np.median(tilt[q]) / max(np.median(yaw[q]), 1e-9)
+        r_dy = np.median(tilt[~q]) / max(np.median(yaw[~q]), 1e-9)
+        # Tilt always dominates: a gravity-referencing filter, not a free gyro.
+        assert r_qs > 1.0, f"{p.name}: tilt/yaw {r_qs:.2f} when still"
+        rose += r_qs > r_dy
+    assert total >= 25
+    assert rose >= 0.6 * total, (
+        f"tilt/yaw rose when still on only {rose} of {total}; the "
+        f"accelerometer-as-gravity-reference mechanism is not visible")
+
+
+def test_the_pause_concentrates_the_correction_on_SQUAT_but_NOT_on_BENCH():
+    """The half of the hypothesis that fails, pinned so it is not re-proposed.
+
+    A paused SQUAT concentrates the tilt correction mid-rep — peak/min 3.84
+    against 2.34 for continuous squats, peaking at phase 0.62, which is the
+    bottom hold. A paused BENCH does not: 2.17 against 2.28, and its absolute
+    correction is LOWER than a touch-and-go bench throughout.
+
+    So the pause does not explain the paused-BENCH behaviour, and anyone
+    reaching for it as the explanation of the `d` dissent (C32 nominated it)
+    should read this first. Continuous lifts already spend 34-57% of their
+    samples quasi-static — between reps, at lockout, in the setup — so a pause
+    adds no gravity-reference opportunity the lift did not already have.
+    """
+    from src import io, pipeline
+
+    NB = 20
+    prof = {}
+    for p in BOTH_DATASETS:
+        if pipeline.expected_reps(p) is None or "deadlift" in p.name:
+            continue
+        log = io.load_log(p)
+        tilt, _ = _fusion_tilt_yaw(log)
+        r = pipeline.run(p)
+        rows = []
+        for i0, i1 in r["bounds"]:
+            i1 = min(i1, len(tilt))
+            if i1 - i0 < NB:
+                continue
+            ph = np.linspace(0, 1, i1 - i0)
+            rows.append([np.median(tilt[i0:i1][(ph >= k / NB) & (ph < (k + 1) / NB)])
+                         for k in range(NB)])
+        if not rows:
+            continue
+        lift = "bench" if "bench" in p.name else "squat"
+        style = "paused" if ("spoto" in p.name or "pause" in p.name) else "continuous"
+        prof.setdefault((lift, style), []).append(
+            np.nanmedian(np.array(rows, dtype=float), axis=0))
+
+    def contrast(key):
+        m = np.median(np.array(prof[key]), axis=0)
+        return float(np.max(m) / np.min(m)), float((np.argmax(m) + 0.5) / NB)
+
+    sq_p, sq_phase = contrast(("squat", "paused"))
+    sq_c, _ = contrast(("squat", "continuous"))
+    bn_p, _ = contrast(("bench", "paused"))
+    bn_c, _ = contrast(("bench", "continuous"))
+
+    assert sq_p > sq_c * 1.4, (
+        f"paused squat no longer concentrates the correction: {sq_p:.2f} vs "
+        f"{sq_c:.2f} continuous")
+    assert 0.45 < sq_phase < 0.80, (
+        f"paused squat's peak moved to phase {sq_phase:.2f}, away from the "
+        f"bottom hold")
+    assert bn_p < bn_c * 1.4, (
+        f"paused bench now DOES concentrate the correction ({bn_p:.2f} vs "
+        f"{bn_c:.2f}); the hypothesis this test refutes may need revisiting")
