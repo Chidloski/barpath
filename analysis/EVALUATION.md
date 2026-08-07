@@ -483,6 +483,252 @@ could then also refuse a `since:` in the future, which would have caught every
 block written today. Recorded rather than done — CLAUDE.md and
 `tests/test_heartbeat.py` are not mine and this is not the task I was given.
 
+---
+
+# Part two — 2026-08-07, the two leads and what came out of them
+
+Everything above is the audit. Below is a second session on an expanded
+mandate: not only find errors but generate ideas. Same rules — decision rules
+written before the numbers (`E1_RULE_LEAD1.md`), per capture, confidence
+labelled.
+
+---
+
+## 11. CERTAIN — "the fore-aft path IS one parabola" is true of the REAL BAR too, on bench. That corrects D1's inference, and it hands us a bound.
+
+D1 measured that the deadlift reconstruction's per-rep fore-aft path is one
+parabola (median r2 0.76-1.00) and concluded: "the deadlift's horizontal
+position output contains one parabola and essentially nothing else — remove it
+and you are at the null, and no estimator can do better."
+
+**The premise is right and the inference over-reads.** Nobody had fitted the
+same basis to the video's own path. Fitted to the tracked bar, closed exactly as
+step 7 closes the reconstruction so the two are the same quantity — median r2
+per capture:
+
+    lift        reconstruction        the REAL BAR
+    bench        0.33 - 0.98  (0.84)   0.82 - 0.96  (0.90)
+    deadlift     0.76 - 1.00  (0.96)   0.12 - 0.38  (0.23)
+
+**On bench the real bar's fore-aft path is one parabola too**, more so than the
+reconstruction's. So "it is a parabola" is a property of a smooth path that
+starts and ends in the same place, not a signature of error, and it cannot on
+its own convict the deadlift. `bench_95x2` has r2 = 0.979 — as parabolic as the
+worst deadlift — and is the best capture in the corpus by `beats_null` (5.39).
+
+**What the deadlift's defect actually is: the reconstruction is 0.96 parabolic
+where the bar is 0.23.** That gap is the finding, and it explains D1's bench
+regression far better than "it converts everything to the null" does — on bench
+the parabola detrend removes a component that is 90% REAL SIGNAL, which is why
+it costs 4 of 6 benches. It is not that the correction is too blunt; it is that
+on bench there is a genuine parabola to keep.
+
+**And it kills a hypothesis of mine before I could get attached to it.** I
+predicted (in writing, before measuring) that `parabola_fraction` would be a
+no-video self-diagnosis — the pipeline deciding for itself whether its fore-aft
+channel is worth drawing. Measured across all 19 captures the reconstruction's
+r2 ranks `beats_null` at Spearman **-0.17, p = 0.50**: no predictive value.
+Within deadlift alone it is -0.89, p = 0.019, but that is n = 6 and bench kills
+the general version outright. **Falsified as stated. Do not ship it.**
+
+---
+
+## 12. NEW, and shipped — the first external bound the horizontal channel has ever had
+
+`truth.FORE_AFT_ACCEL_MAX` and `truth.fore_aft_flags`, added today, gated in
+`tests/test_video_truth.py`. It is `VERTICAL_ROM_M` for the axis the spec is
+actually about, and it falls straight out of finding 11.
+
+The observable is D1's `oracle.parabola_fit(...)["c"]`: what CONSTANT fore-aft
+acceleration would draw this rep, in m/s^2, after step 7. Fitted to the video:
+
+    lift       n reps    min      median   p90      MAX      bound = MAX x 1.5
+    bench        53     0.0100    0.0354   0.0677   0.0983   0.1475
+    deadlift     30     0.0003    0.0073   0.0151   0.0268   0.0402
+
+**A deadlift bar produces about a fifth of the constant fore-aft acceleration a
+bench bar does.** That is the J-curve, quantified, and it is the first number
+this project has for how much fore-aft the bar is *entitled* to.
+
+Against the shipping pipeline, per rep:
+
+    lift        min      median   MAX      flagged
+    bench      0.0023    0.0341   0.0802    0 of 53 reps,  0 of 13 captures
+    deadlift   0.0052    0.0527   0.1602   21 of 30 reps,  6 of  6 captures
+
+**No false positives on the lift where the horizontal reconstruction
+demonstrably works (finding 2), and it fires on 70% of the reps on the lift
+where it demonstrably does not.** Bench clears with 1.8x of margin.
+
+Three things make it worth having beyond the count:
+
+* **It needs no sync.** `c` is a per-rep shape coefficient, not a point-by-point
+  comparison, so a whole-rep timing error cannot move it. CLAUDE.md warns that
+  `vs_truth`'s horizontal rms is nearly blind to gross misalignment; this is not.
+* **It is checked against the referee as well as the pipeline**, the way
+  `rom_flags` is, so a referee whose scale drifts fails its own bound. That is
+  not hypothetical: `truth.plate_diameter` returned the wrong plate for a whole
+  session once (C23).
+* **`squat` raises rather than defaulting**, because no squat capture has ever
+  been refereed and a guessed bound would invent the truth this module supplies.
+
+*It caught me making this project's signature mistake, and I am recording that
+rather than quietly fixing it.* I first set the bound from per-CAPTURE medians
+and then applied it per REP. The gate failed on four captures immediately — an
+aggregate used where it is not applied. The numbers above are all per rep.
+
+**Limits, and they are real.** One lifter, 6 deadlift and 13 bench captures. It
+is a bound, so a rep inside it can still be wrong — and on deadlift that is
+exactly what happens (rep identification at chance). It inherits the
+unadjudicated ~20% referee disagreement. And it misses 9 of 30 deadlift reps,
+because the ceiling is set by `deadlift_160x6_1`'s single most mobile video rep
+at 0.0268, which is 2.8x that capture's own median.
+
+---
+
+## 13. LEAD 1 verdict — a lift gate on the parabola detrend passes my pre-registered rule, and I still recommend against shipping it
+
+Both conditions of the rule fixed in advance were met, so I have to report that
+plainly before saying why I would not ship it.
+
+**(i) On deadlift the parabola arm is no worse on any instrument and better on
+two.** Median per-rep horizontal rms, and the per-rep excursion against the
+video's:
+
+    capture             h_rms          excursion, median per rep
+                     ship -> para      ship   para   VIDEO
+    deadlift_155x6_1  4.57 -> 3.16      7.6    8.0   12.7
+    deadlift_155x6_2  8.99 -> 2.84     10.4    7.2    9.4
+    deadlift_180x3   15.65 -> 1.69     21.4    8.0    8.3
+    deadlift_160x6_1  6.65 -> 1.99     13.5    4.8    5.7
+    deadlift_160x6_2  4.39 -> 1.49      7.9    4.5    4.1
+    deadlift_185x3   10.61 -> 2.08     16.2    5.0    5.4
+
+The PM's reading is right and D1 under-sold this: **the amount of fore-aft
+becomes right on 4 of 6, per rep and not only per set.** And on the criterion
+CLAUDE.md's Spec actually states — beating an oracle that draws one identical
+average path every rep (finding 1) — **the parabola arm passes on 4 of 6
+deadlifts where shipping passes on 0 of 6.**
+
+**(ii) On bench it measurably destroys something real.** Rep identification,
+which is blind to magnitude:
+
+    bench   raw       20 of 53 (p = 0.042)  ->  14 of 53 (p = 0.43)    DESTROYED
+    bench   demeaned  27 of 53 (p = 0.0003) ->  22 of 53 (p = 0.013)   weakened
+    deadlift raw       7 of 30 (p = 0.39)   ->   7 of 30 (p = 0.39)    unchanged
+    deadlift demeaned  7 of 30 (p = 0.39)   ->  10 of 30 (p = 0.086)   unchanged
+
+Bench also loses its excursion: the parabola arm draws 1.9-3.2 cm against the
+video's 3.5-6.8, i.e. **about half the real J-curve**. Finding 11 says why —
+the parabola it removes is 90% real on bench.
+
+**So why not ship it.** Because of what row 3 and 4 of that table say. On
+deadlift the parabola arm adds **no per-rep information whatever** — 7 of 30,
+exactly chance, identical to shipping. It takes the output from *large and
+wrong* to *small and wrong*. `beats_null` for the six deadlifts under it is
+0.76, 1.03, 1.13, 1.14, 1.16, 0.84 — **statistically a flat line**, and on two
+of six still worse than one. D1's trap is real and this measurement is what it
+looks like when it closes.
+
+That leaves a product judgement, and it is the owner's, not mine. Drawing 5 cm
+of fore-aft where the bar moved 5 cm, in the wrong shape, is not obviously
+better than drawing 20-35 cm of fiction — but it is not obviously worse either,
+and on a 4x-stretched display the amplitude is the first thing a lifter sees.
+**What I can say is that neither option shows the lifter anything true about
+that rep, and the honest third option nobody has costed is to draw the vertical
+line and label the fore-aft as unavailable on deadlift.** `truth.fore_aft_flags`
+(finding 12) is the check that would decide it per rep, and it needs no video at
+prediction time — only the bound, which is now a constant.
+
+---
+
+## 14. LEAD 2 verdict — CONFIRMED on one squat clip and REFUTED on the other, and the two failures are different
+
+The owner's hypothesis: `markers.static_points` suppresses detections that recur
+at a fixed pixel in more than `recur_max = 0.7` of sampled frames, and a clip
+whose bar is motionless for most of its length has its own stickers suppressed.
+`static_points`' docstring names exactly this limit and says "nothing here
+detects that happening"; `track`'s docstring already carries a measured
+precedent (`deadlift_190x1`, a heavy single).
+
+**Measured directly** — track each clip at a `recur_max` that follows the plate,
+take the tracked markers' own positions in the sampled frames, and read off the
+recurrence of the bin each lands in. That is the bar's own recurrence, measured
+rather than inferred from how motionless the clip looks:
+
+    clip                       median   p90     max     ABOVE 0.70
+    bench_95x2 (the control)    0.065   0.258   0.258     0 of  93
+    squat_pause_140x4_2 (good)  0.032   0.161   0.484     0 of 182
+    squat_pause_145x4_1 (good)  0.032   0.129   0.645     0 of 205
+    squat_pause_140x4_3 (BAD)   0.032   0.161   0.871     1 of 182
+    squat_170x1        (BAD)    0.774   0.871   0.871   101 of 172
+
+**`squat_170x1`: confirmed, and not marginally.** Its stickers recur at a median
+of 0.77 against a 0.70 threshold — 101 of 172 sticker observations are suppressed
+as furniture. That is the docstring's named failure mode, happening, on the clip
+the owner predicted would be worst, for the reason predicted: unrack, walk out,
+stand, ONE rep, stand, walk back, rack.
+
+**`squat_pause_140x4_3`: refuted.** 1 of 182. Its stickers are not being
+suppressed and its failure is something else — D2's family-selection defect, or
+the clip.
+
+**Neither fix is a `recur_max` change, and the sweep is why.** Whole-clip travel
+against squat's 45-76 cm band:
+
+    recur_max          0.70    0.85    0.95    off
+    squat_170x1        13.0    17.5    30.3     6.4    never in band
+    squat_pause_140x4_3 22.1   19.6    61.2    53.6    fixed at 0.95 and off
+    squat_pause_140x4_2 66.2   48.2    62.9    37.0    BROKEN by raising it
+    squat_pause_145x4_1 61.6     -       -       -     (good at ship)
+
+Raising the threshold rescues one bad clip and **breaks a good one** — 66.2 cm
+to 37.0. So suppression at 0.70 is load-bearing and the constant cannot simply
+move. Two further things follow, both worth recording:
+
+* **The docstring's stated symptom is wrong.** It says this failure "would look
+  like `bar_path` raising 'no sticker constellation found'". It does not raise —
+  it silently returns a track of the furniture with healthy-looking coverage and
+  residual, which is this project's signature failure and exactly what D2 found.
+* **`squat_170x1` is still not fixed by unblocking the seeder.** No setting
+  reaches the 45-76 cm band. So the suppression defect is NECESSARY and NOT
+  SUFFICIENT — the same shape as C21's result — and D2's "unusable as shot"
+  verdict survives, but now with a mechanism rather than a shrug.
+
+**The design the evidence points at** (proposed, not built): generate candidates
+BOTH with and without suppression and let the trial-track verification that
+already chooses between the triangle and conic families choose between them too.
+That is C23's principle — select by what actually follows the bar — applied one
+level up, it introduces no new threshold, and the detections are already cached
+so it costs one more shortlist. `seed_frame` already scores each family
+separately and compares winners, so a third pool fits its existing shape and
+avoids C27's budget-crowding trap. Whether `trial_merit` ranks the two pools
+correctly is the premise it rests on, and that is the one measurement I would
+make next.
+
+---
+
+## 15. What I would do next, in order
+
+1. **Test the dual-pool premise** (finding 14): does `seed_frame`'s existing
+   `trial_merit` prefer the pool that actually tracks the bar? One sweep over
+   the four squats and four working captures. If yes, the marker seeder stops
+   depending on `recur_max` being right and the whole class of failure closes.
+2. **Run the `negd` mutant** (finding 5). It is the only one of the four that
+   breaks the reconstruction while leaving the flag test satisfiable, so it is
+   the sharpest test of whether the suite can see a step-6 DEFECT rather than a
+   step-6 ABSENCE. Nine minutes, plugin already written.
+3. **Re-pin `BEATS_NULL`** at post-step-6 values and add the nine `data_v2`
+   captures to it and to `AS_SHIPPED_H_CM` (finding 4). One dictionary edit
+   converts three non-events into three real gates.
+4. **Ask the owner for one squat re-shoot** with the bar moving through more of
+   the clip, or simply a longer walkout-to-rack ratio (finding 14). It is a
+   capture-protocol item, not code.
+5. **Do not build a per-rep fore-aft estimator on deadlift.** Findings 2, 11 and
+   13 agree from three directions that there is no per-rep signal there to
+   estimate. The next useful deadlift work is a decision about what to DRAW when
+   the channel is empty, not another correction.
+
 ## Method and reproduction
 
 Scratch scripts, session `366a3089`:

@@ -210,6 +210,69 @@ def sticker_plate_diameter(name: str | Path) -> float:
 # SPREAD is partly this rather than the IMU.
 VERTICAL_ROM_M = {"bench": (0.20, 0.35), "squat": (0.45, 0.76), "deadlift": (0.40, 0.61)}
 
+# The HORIZONTAL analogue, and the first external bound the fore-aft channel has
+# ever had (E1, 2026-08-07). Read `VERTICAL_ROM_M`'s block above first: this is
+# the same construction, with the same standing and the same limits.
+#
+# What it bounds. D1's `oracle.parabola_fit` fits `c * tau(tau - T)/2` to one
+# rep's along-axis path after step 7's endpoint line has been removed, so `c` is
+# "what CONSTANT fore-aft acceleration would draw this rep", in m/s^2. Fitted to
+# the VIDEO's own path — closed exactly as step 7 closes the reconstruction, so
+# the two are the same quantity — the real bar gives, PER REP:
+#
+#     lift       n    min      median   p90      MAX      bound = MAX x 1.5
+#     bench     53   0.0100    0.0354   0.0677   0.0983   0.1475
+#     deadlift  30   0.0003    0.0073   0.0151   0.0268   0.0402
+#
+# **A deadlift bar produces about a fifth of the constant fore-aft acceleration
+# a bench bar does** — median 0.0073 against 0.0354. That is the J-curve, and it
+# is the first time this project has put a number on how much fore-aft the bar
+# is entitled to.
+#
+# *Per REP the two lifts OVERLAP* (bench reaches down to 0.0100, deadlift up to
+# 0.0268) even though per CAPTURE they do not — bench's smallest capture median
+# is 2.1x deadlift's largest. Everything below is stated per rep, because that is
+# how `fore_aft_flags` applies it; an earlier draft of this block set the bound
+# from per-capture medians and then checked every rep against it, which is the
+# aggregate-versus-where-it-is-used mistake this project keeps making, and the
+# gate in tests/test_video_truth.py caught it on four captures.
+#
+# What the reconstruction does against it, per rep:
+#
+#     lift        min      median   MAX      flagged
+#     bench      0.0023    0.0341   0.0802    0 of 53 reps,  0 of 13 captures
+#     deadlift   0.0052    0.0527   0.1602   21 of 30 reps,  6 of  6 captures
+#
+# **No false positives on the lift where the horizontal reconstruction
+# demonstrably works, and it fires on 70% of the reps on the lift where it
+# demonstrably does not.** Bench clears the bound with 1.8x of margin. It also
+# separates the lifts WITHOUT A SYNC — `c` is a per-rep shape coefficient, not a
+# point-by-point comparison, so a whole-rep timing error cannot move it. That
+# matters because CLAUDE.md warns that `vs_truth`'s horizontal rms is nearly
+# blind to gross misalignment.
+#
+# FIVE LIMITS. The first four are the ones `VERTICAL_ROM_M` carries.
+#
+# 1. It is a BOUND, not a measurement. A rep inside it can still be wrong — the
+#    coefficient can be right while the shape and timing are not, which is
+#    exactly what E1 measured happening on deadlift (rep identification at
+#    chance). Passing says only "this much fore-aft acceleration is physically
+#    possible for this lift".
+# 2. One lifter, one gym, 6 deadlift and 13 bench captures. `squat` has NO entry
+#    rather than a guessed one, because no squat capture in this project has ever
+#    been refereed. A missing key raises; see `fore_aft_flags`.
+# 3. It inherits the referee. These pool `truth.py`'s template on `data/video`
+#    and `markers.py`'s conic on `data_v2`, and those two disagree by ~20% on ROM
+#    (C24) with no adjudication. Pooling is deliberate, so the spread includes
+#    the disagreement rather than hiding it.
+# 4. The ceiling is the observed per-rep maximum plus 50%. Tighten it only when
+#    more captures exist, and never to make a result appear.
+# 5. NEW, and specific to this one: it does not catch 9 of 30 deadlift reps. The
+#    bound is set by `deadlift_160x6_1`'s worst video rep at 0.0268, which is
+#    2.8x that capture's own median — so one unusually mobile real rep sets the
+#    ceiling for the whole lift. More deadlift footage would probably lower it.
+FORE_AFT_ACCEL_MAX = {"bench": 0.1475, "deadlift": 0.0402}
+
 # Hand-placed seeds, one per bench capture: (frame, centre y, centre x, radius).
 #
 # Coordinates are in the DECODED frame at the default `scale=0.5`, so they are
@@ -293,6 +356,44 @@ def rom_flags(lift: str, roms_m) -> list[str]:
                        f"{lo*100:.0f} cm sanity floor for {lift} — probably not "
                        f"a whole rep")
     return out
+
+
+def fore_aft_flags(lift: str, coeffs) -> list[str]:
+    """One message per rep whose fore-aft parabola coefficient is unphysical. E1.
+
+    `coeffs` are `oracle.parabola_fit(...)["c"]` per rep, in m/s^2, from the
+    along-axis path AFTER step 7. See `FORE_AFT_ACCEL_MAX` for where the bound
+    comes from and for the four limits it carries.
+
+    Deliberately mirrors `rom_flags`, including the two properties that make
+    that function worth having. It returns messages rather than raising, and it
+    is meant to be run on BOTH the reconstruction and the video — the referee
+    has no standing to be exempt from the check it applies. Run against the
+    videos it flags nothing, which is what a bound derived from them should do
+    and is therefore a consistency check rather than evidence.
+
+    One-sided on purpose. There is no floor: a rep with NO fore-aft acceleration
+    is physically fine (it is what a perfect deadlift looks like) and flagging it
+    would be flagging the null. Compare `rom_flags`, which needs a floor because
+    a too-small vertical ROM means a window that missed part of a rep. Nothing
+    equivalent is true here.
+
+    `squat` raises rather than defaulting, and that is the point of the table
+    being explicit — no squat capture in this project has ever been refereed, so
+    there is no honest bound to apply and a guessed one would be worse than a
+    refusal. That is `lift_of`'s rule applied one level up.
+    """
+    if lift not in FORE_AFT_ACCEL_MAX:
+        raise ValueError(
+            f"no fore-aft acceleration bound for {lift!r}. Only "
+            f"{sorted(FORE_AFT_ACCEL_MAX)} have been measured against video; a "
+            f"guessed bound would invent the ground truth this module supplies. "
+            f"See FORE_AFT_ACCEL_MAX.")
+    hi = FORE_AFT_ACCEL_MAX[lift]
+    return [f"rep {i}: fore-aft acceleration {abs(c):.4f} m/s^2 exceeds the "
+            f"{hi:.3f} {lift} bound — {abs(c)/hi:.1f}x more fore-aft than the "
+            f"bar can produce on this lift"
+            for i, c in enumerate(coeffs, start=1) if abs(c) > hi]
 
 
 # ----------------------------------------------------------------- decode --

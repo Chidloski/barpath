@@ -890,3 +890,166 @@ def test_the_sync_route_is_tracker_agnostic_on_real_marker_footage():
     assert len(landings) == 5, (
         f"5 reps labelled, {len(landings)} landings found at {landings}")
     assert np.all(np.diff(landings) > 1.5), "landings must not double-fire"
+
+
+# ------------------------------------- the fore-aft acceleration bound (E1) --
+# `truth.FORE_AFT_ACCEL_MAX`, added 2026-08-07. The horizontal analogue of
+# `VERTICAL_ROM_M`: how much CONSTANT fore-aft acceleration the real bar produces
+# on each lift, measured from the video with `oracle.parabola_fit`.
+#
+# These gates live in THIS file rather than in test_real_data.py on purpose. The
+# bound is derived from the referee, so the first thing that has to hold is that
+# the referee still satisfies its own bound — the same reason `rom_flags` is run
+# against the videos as well as against the reconstruction. The second gate,
+# which is about the pipeline, is here for the same reason: it is the bound's
+# discrimination that is being tested, not the pipeline's accuracy.
+
+
+def _fore_aft_c(video_stem: str, csv_stem: str, v2: bool = False):
+    """(|c| per rep for the reconstruction, and for the video). E1.
+
+    Both after step 7's closure, so they are the same quantity — the video is
+    closed through `metrics._close`, which routes to `correct.detrend_rep`, so
+    if step 7 ever changes this follows it rather than drifting.
+    """
+    import warnings
+
+    from src import metrics, oracle, pipeline
+
+    vroot, rroot = (V2_VIDEO, V2_RAW) if v2 else (VIDEO, RAW)
+    clip = vroot / f"{video_stem}.mov"
+    csv = next(rroot.glob(f"{csv_stem}_*.csv"), None) if rroot.is_dir() else None
+    if not clip.exists() or csv is None:
+        pytest.skip(f"{video_stem} not present")
+
+    result = pipeline.run(csv)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        m = metrics.vs_truth(result, clip)
+
+    t = result["log"]["t"]
+    recon, vid = [], []
+    for (a, b), rep in zip(result["bounds"], m["per_rep"]):
+        if not rep["covered"]:
+            continue
+        T = float(t[b - 1] - t[a])
+        recon.append(oracle.parabola_fit(rep["curve_pipeline"][:, 0], T)["c"])
+        vid.append(oracle.parabola_fit(
+            metrics._close(rep["curve_video"], t[a:b])[:, 0], T)["c"])
+    return recon, vid
+
+
+# (video stem, csv stem, lift, in data_v2?) — every capture the bound was
+# measured on, so a change to it is visible on all of them at once.
+FORE_AFT_CAPTURES = [
+    ("deadlift_155x6_1_20260728", "deadlift_155x6_1_20260728", "deadlift", False),
+    ("deadlift_155x6_2_20260728", "deadlift_155x6_2_20260728", "deadlift", False),
+    ("deadlift_180x3_20260728", "deadlift_180x3_20260728", "deadlift", False),
+    ("deadlift_160x6_1_20260804", "deadlift_160x6_1_20260804", "deadlift", True),
+    ("deadlift_160x6_2_20260804", "deadlift_160x6_2_20260804", "deadlift", True),
+    ("deadlift_185x3_20260804", "deadlift_185x3_20260804", "deadlift", True),
+    ("bench_90x4_1_20260727", "bench_90x4_1_20260727", "bench", False),
+    ("bench_90x4_2_20260727", "bench_90x4_2_20260727", "bench", False),
+    ("bench_90x4_3_20260727", "bench_90x4_3_20260727", "bench", False),
+    ("bench_92.5x2_20260727", "bench_92.5x2_20260727", "bench", False),
+    ("bench_spoto_90x5_1_20260730", "bench_spoto_90x5_1_20260730", "bench", False),
+    ("bench_spoto_90x5_2_20260730", "bench_spoto_90x5_2_20260730", "bench", False),
+    ("bench_spoto_90x5_3_20260730", "bench_spoto_90x5_3_20260730", "bench", False),
+    ("bench_92.5x4_1_20260803", "bench_92.5x4_1_20260803", "bench", True),
+    ("bench_92.5x4_2_20260803", "bench_92.5x4_2_20260803", "bench", True),
+    ("bench_92.5x4_3_20260803", "bench_92.5x4_3_20260803", "bench", True),
+    ("bench_95x2_20260803", "bench_95x2_20260803", "bench", True),
+    ("bench_spoto_95x5_1_20260806", "bench_spoto_95x5_1_20260806", "bench", True),
+    ("bench_spoto_95x5_2_20260806", "bench_spoto_95x5_2_20260806", "bench", True),
+]
+
+
+@pytest.mark.parametrize("video,csv,lift,v2", FORE_AFT_CAPTURES,
+                         ids=[c[0] for c in FORE_AFT_CAPTURES])
+def test_the_referee_satisfies_its_own_fore_aft_bound(video, csv, lift, v2):
+    """The video's own bar must clear the bound derived from it. E1.
+
+    This is the consistency check, not evidence — a bound set at the observed
+    maximum plus 50% cannot fail on the data it was set from, and saying so is
+    the point. What it DOES catch is the bound being edited without the captures
+    being re-measured, and a referee whose scale drifts: `|c|` scales with the
+    pixels-to-metres factor, so a 50% scale error on any capture fails here.
+
+    That failure mode is not hypothetical. `truth.plate_diameter` returned the
+    wrong plate for a whole session once (C23) and `truth.find_plate`
+    mis-detects the rim on all six `data_v2` benches (C32).
+    """
+    from src import truth
+
+    _, vid = _fore_aft_c(video, csv, v2)
+    assert vid, f"{video}: no rep compared"
+    flags = truth.fore_aft_flags(lift, vid)
+    assert not flags, (
+        f"{video}: the REFEREE breaks the bound derived from it — "
+        + "; ".join(flags))
+
+
+@pytest.mark.parametrize("video,csv,lift,v2", FORE_AFT_CAPTURES,
+                         ids=[c[0] for c in FORE_AFT_CAPTURES])
+def test_the_fore_aft_bound_separates_bench_from_deadlift(video, csv, lift, v2):
+    """The bound's whole claim, asserted per capture. E1.
+
+    **Bench must pass and deadlift must fail**, and both halves are the gate.
+    Bench passing is what says the bound is not simply "refuse everything" — the
+    horizontal reconstruction demonstrably carries per-rep information on bench
+    (E1 finding 2: 20 of 53 reps identify their own video rep against 13 by
+    chance, p = 0.042) and a bound that flagged it would be measuring nothing.
+    Deadlift failing is what says the bound has teeth: 26 of 30 deadlift reps
+    exceed it, on the lift where rep identification sits exactly at chance
+    (7 of 30 against 6, p = 0.39).
+
+    Written as an assertion about the CURRENT pipeline, so if a future
+    correction fixes deadlift's fore-aft this test fails and must be rewritten
+    with the new numbers. That is intended: the failure is the news.
+    """
+    from src import truth
+
+    recon, _ = _fore_aft_c(video, csv, v2)
+    assert recon, f"{video}: no rep compared"
+    flags = truth.fore_aft_flags(lift, recon)
+    if lift == "bench":
+        assert not flags, (
+            f"{video}: a bench capture broke the fore-aft bound. Either the "
+            f"reconstruction regressed or the bound is too tight — check "
+            f"E1 finding 2 before loosening it. " + "; ".join(flags))
+    else:
+        assert flags, (
+            f"{video}: no deadlift rep exceeds the fore-aft bound. If this is "
+            f"a real fix, re-measure FORE_AFT_ACCEL_MAX and rewrite this test; "
+            f"do not delete it.")
+
+
+def test_squat_has_no_fore_aft_bound_and_says_so():
+    """A missing lift raises rather than defaulting. E1.
+
+    The same rule as `truth.lift_of`, one level up, and for the same reason: no
+    squat capture in this project has ever been refereed, so there is no honest
+    bound and a guessed one would invent the ground truth this module exists to
+    supply. A silent default is how a 450 mm squat plate came to referee bench
+    footage.
+    """
+    from src import truth
+
+    assert "squat" not in truth.FORE_AFT_ACCEL_MAX
+    with pytest.raises(ValueError, match="no fore-aft acceleration bound"):
+        truth.fore_aft_flags("squat", [0.001])
+
+
+def test_the_fore_aft_bound_is_one_sided():
+    """No floor: a rep with NO fore-aft acceleration is physically fine. E1.
+
+    Deliberately unlike `rom_flags`, which needs a floor because a too-small
+    vertical ROM means a window that missed part of a rep. Nothing equivalent is
+    true horizontally — zero fore-aft acceleration is what a perfect deadlift
+    looks like, and flagging it would be flagging the flat-line null that
+    `metrics.vs_truth` scores against.
+    """
+    from src import truth
+
+    assert truth.fore_aft_flags("deadlift", [0.0, 1e-9, -1e-9]) == []
+    assert len(truth.fore_aft_flags("deadlift", [0.05, -0.05])) == 2
