@@ -965,6 +965,41 @@ def static_points(stack: np.ndarray, n_sample: int = 30, radius: float = 3.0,
     with obviously visible markers is what it would look like; the response is
     to raise `recur_max`, not to lower it. A hand-held camera breaks the
     premise outright and this whole function with it.
+
+    **That limit is REAL, it is what breaks the squats, and it CANNOT be fixed
+    by raising `recur_max` (C31, 2026-08-07).** Both halves are measured.
+
+    Real: whole-clip travel on the 8-sticker squats, against a true ~65-70 cm.
+
+        clip                    0.70    0.90    1.01
+        squat_170x1             14.8    78.9    25.4
+        squat_pause_140x4_3     26.1    21.8    55.7
+        squat_pause_145x4_1     62.9   194.4      -    <- the one that WORKS
+
+    The outcome swings by 5x with this one number, so suppression is squarely
+    implicated. But **there is no constant to move to**: 0.70 is right for the
+    capture that works and wrong for both that do not, 0.90 rescues one and
+    DESTROYS the working one, 1.01 rescues the other. Disjoint, exactly as
+    C31a found for the cadence tolerance one module over.
+
+    And the obvious generalisation FAILS for an interesting reason. Making
+    suppression a hypothesis — try several `recur_max`, let `_trial_merit`
+    pick, as C23 made it pick between families — was built and measured:
+    `bench_92.5x4_1` went from 27.8 cm of travel to **0.6**, and two more
+    benches moved. **`_trial_merit` cannot referee this choice, because it
+    rewards RIGIDITY and furniture is maximally rigid.** A rack upright gives a
+    perfect full-marker fraction, a near-zero residual and a zero apparent-size
+    spread — the three things the merit is built from — so as soon as
+    suppression is relaxed the merit's favourite object is the thing
+    suppression existed to remove. The merit was written on the assumption that
+    static points were already gone, and it is only valid inside that
+    assumption.
+
+    So a fix has to give the merit a MOVEMENT requirement before it can be
+    trusted at low suppression — "the bar is the thing in a gym that moves" is
+    already this module's stated principle and `_trial_merit` is the one place
+    that does not apply it. Do not re-propose a `recur_max` ladder without
+    that; it has been measured and it regresses three benches.
     """
     stride = max(1, len(stack) // n_sample)
     idx = list(range(0, len(stack), stride))

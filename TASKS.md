@@ -14,6 +14,61 @@ Related, and deliberately not duplicated here:
 ---
 
 
+## C31 — the squat tracker: mechanism found, obvious fix measured and rejected (2026-08-07)
+
+The referee IS the video tracker, so this sits upstream of every number measured
+against it. Six of eleven squat clips are unusable and squat has never once been
+refereed in this project.
+
+**The mechanism is `static_points`, and it is the limit its own docstring
+already named.** C21 added suppression of detections that recur at a fixed pixel
+— the camera is on a tripod, so furniture projects to the same pixel and the bar
+does not. `recur_max = 0.7` was tuned on `bench_95x2`, whose three real stickers
+recur at 0.19 / 0.23 / **0.48**, the 0.48 "because the bar sits racked for much
+of the clip". A squat single is motionless for far more of its clip than that.
+The docstring says outright that a capture whose bar is still for more than
+`recur_max` of its length has ITS OWN STICKERS suppressed and that nothing
+detects it happening.
+
+Measured directly, whole-clip travel against a true ~65-70 cm squat:
+
+    clip                    0.70    0.90    1.01
+    squat_170x1             14.8    78.9    25.4
+    squat_pause_140x4_3     26.1    21.8    55.7
+    squat_pause_145x4_1     62.9   194.4      -    <- the one that WORKS
+
+A 5x swing from one number, so suppression is squarely implicated. **But there
+is no constant to re-tune to.** 0.70 is right for the capture that works and
+wrong for both that do not; 0.90 rescues one and destroys the working one; 1.01
+rescues the other. Disjoint, exactly as C31a found for the cadence tolerance.
+
+**The obvious generalisation was built, measured and REJECTED, and why it fails
+is the useful part.** Making suppression strength a hypothesis — try several
+`recur_max` and let `_trial_merit` choose, exactly as C23 made it choose between
+the triangle and conic families — regressed three benches, `bench_92.5x4_1`
+going from 27.8 cm of travel to **0.6**.
+
+**`_trial_merit` cannot referee this choice, because it rewards RIGIDITY and
+furniture is maximally rigid.** A rack upright gives a perfect full-marker
+fraction, a near-zero residual and a zero apparent-size spread — the three
+things the merit is built from. So the moment suppression is relaxed, the
+merit's favourite object is the thing suppression existed to remove. The merit
+was written on the assumption that static points were already gone and is only
+valid inside it. A short-circuit that only explored when the default seeding
+scored below `MERIT_OK` did not save it either: the regressing benches score
+below any threshold that also admits the failing squats.
+
+**What a fix has to do.** Give `_trial_merit` a MOVEMENT requirement before it
+can be trusted at low suppression. "The bar is the thing in a gym that moves" is
+already this module's stated principle, and `_trial_merit` is the one place that
+does not apply it — it measures rigidity, residual and scale stability, all of
+which furniture satisfies perfectly. Do not re-propose a `recur_max` ladder
+without that; it is measured and it regresses three benches.
+
+Recorded in `markers.static_points`'s docstring so it is read by whoever
+next touches suppression. `markers.py` is otherwise unchanged; test_markers
+78 passed.
+
 ## C31 — the tracking protocol, and the owner's two-class model (2026-08-07)
 
 **Track once, cache to CSV, render a review figure, and LOOK AT IT.**
