@@ -1945,3 +1945,102 @@ def plot_deadlift_parabola(dl, bn, arms):
         fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     return fig
+
+
+def plot_tracking_review(path: dict, stem: str, info: dict | None = None):
+    """C31 — is this track usable? One figure per video, meant to be LOOKED AT.
+
+    `path` is a tracked bar-path dict; `info` is `tracked.review(video)`.
+
+    The figure this project should have had from the start. Two of the four
+    squat clips fed 14 and 24 cm of travel into comparisons for days, because
+    the tracker had locked onto gym furniture and every summary statistic —
+    coverage 96.7%, residual 1.11 px — said healthy. Nobody was ever shown the
+    path. A person glancing at the top-right panel catches that instantly.
+
+    Top row is the whole clip: height against time with the video's own rep
+    windows shaded, and the bar path. Below, one panel per rep, so a track that
+    is fine for four reps and loses the bar on the fifth is visible as such
+    rather than averaged away.
+
+    The rep windows come from `tracked.video_reps`, which uses the video alone.
+    They are trough-to-trough, so half a rep out of phase with
+    `segment.rep_bounds`; that is deliberate and is explained there.
+    """
+    t = np.asarray(path["t"], dtype=float)
+    x = np.asarray(path["x"], dtype=float) * 100
+    h = np.asarray(path["height"], dtype=float) * 100
+    reps = (info or {}).get("reps") or []
+
+    n = len(reps)
+    cols = max(4, min(6, n if n else 4))
+    rep_rows = -(-n // cols) if n else 0
+    fig = plt.figure(figsize=(4.0 * cols, 4.6 + 3.6 * rep_rows))
+    gs = fig.add_gridspec(1 + rep_rows, cols, height_ratios=[1.25] + [1] * rep_rows)
+
+    # --- whole clip: height against time -----------------------------------
+    a = fig.add_subplot(gs[0, :max(2, cols // 2)])
+    a.plot(t, h, lw=1.3, color="#1d4ed8")
+    for i, (i0, i1) in enumerate(reps):
+        a.axvspan(t[i0], t[i1], color="#166534", alpha=0.10)
+        a.text((t[i0] + t[i1]) / 2, np.nanmax(h), str(i + 1), ha="center",
+               va="top", fontsize=8, color="#166534")
+    gaps = ~np.isfinite(h)
+    if gaps.any():
+        a.plot(t[gaps], np.full(gaps.sum(), np.nanmin(h)), "|", color="#b91c1c",
+               ms=8, label="frames with no track")
+        a.legend(fontsize=7, frameon=False)
+    a.set_xlabel("time (s)", fontsize=8)
+    a.set_ylabel("height (cm)", fontsize=8)
+    a.set_title("whole clip — height, with the video's own rep windows",
+                fontsize=9)
+    a.grid(alpha=0.25)
+
+    # --- whole clip: the path ----------------------------------------------
+    b = fig.add_subplot(gs[0, max(2, cols // 2):])
+    b.plot(x, h, lw=1.0, color="0.35")
+    b.set_xlabel("fore-aft (cm)", fontsize=8)
+    b.set_ylabel("height (cm)", fontsize=8)
+    b.set_title("whole clip — the tracked bar path", fontsize=9)
+    b.grid(alpha=0.25)
+
+    # --- one panel per rep --------------------------------------------------
+    for k, (i0, i1) in enumerate(reps):
+        ax = fig.add_subplot(gs[1 + k // cols, k % cols])
+        # NaN-safe throughout: a mis-tracked clip is exactly the case this
+        # figure exists for, and those windows are full of untracked frames.
+        # An empty panel captioned "nan" tells the reader nothing about why.
+        xr, hr = x[i0:i1], h[i0:i1]
+        good = np.isfinite(xr) & np.isfinite(hr)
+        if good.any():
+            x0 = xr[good][0]
+            h0 = hr[good][0]
+            ax.plot(xr - x0, hr - h0, lw=1.5, color="#1d4ed8")
+            ax.plot(0, 0, "o", ms=4, color="#166534")
+            travel = f"{np.nanmax(hr) - np.nanmin(hr):.0f} cm travel"
+        else:
+            travel = "NO TRACK"
+        lost = int((~good).sum())
+        note = f", {lost} frames lost" if lost else ""
+        ax.set_title(f"rep {k + 1}   {travel}{note}", fontsize=8)
+        ax.set_xlabel("fore-aft (cm)", fontsize=7)
+        ax.tick_params(labelsize=6)
+        ax.grid(alpha=0.25)
+
+    if info:
+        flag = ("   *** TRAVEL IMPLAUSIBLE FOR THIS LIFT — the tracker is very "
+                "likely not on the bar ***" if info.get("implausible") else "")
+        sub = (f"{stem}      tracker {info.get('tracker', '?')}   "
+               f"lift {info.get('lift', '?')}   camera on the "
+               f"{info.get('camera_side', '?')}, watch on the LEFT wrist\n"
+               f"coverage {info['coverage'] * 100:.1f}%   "
+               f"travel {info['travel_cm']:.1f} cm   "
+               f"fore-aft {info['fore_aft_cm']:.1f} cm   "
+               f"median residual {info['residual_px']:.2f} px   "
+               f"{info['n_reps']} reps found in the video{flag}")
+        fig.suptitle(sub, fontsize=10.5, y=0.995,
+                     color="#b91c1c" if info.get("implausible") else "0.1")
+    else:
+        fig.suptitle(stem, fontsize=11, y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    return fig

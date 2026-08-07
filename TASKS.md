@@ -13,6 +13,55 @@ Related, and deliberately not duplicated here:
 
 ---
 
+
+## C31 — the tracking protocol, and the owner's two-class model (2026-08-07)
+
+**Track once, cache to CSV, render a review figure, and LOOK AT IT.**
+`src/tracked.py`, `python run.py --track`. Two problems that turned out to be
+one.
+
+*Re-tracking was the dominant cost of every analysis* — 1-2 minutes of ffmpeg
+per clip, paid afresh on every `metrics.resolve_path` call. The CSVs live in
+`<dataset>/tracked/` and are COMMITTED, so the cost is paid once for the life of
+the repo. A cached read is ~2 ms against 1-2 minutes and reproduces a fresh
+track to 1e-8 m (12 significant figures; at 6 it drifted 1.6e-3 cm, which is
+negligible against the spec and still wrong to ship in a repo that checks
+regressions by bit-identity).
+
+*And nobody had ever looked at the tracking.* That is the half that mattered.
+Running the protocol over the whole corpus found **six unusable squat clips**:
+
+    squat_140x4_3, squat_160x1      REFUSED by the tracker (0.2 and 0.4 cm travel)
+    squat_140x4_1, squat_140x4_2    12.5 and 12.7 cm travel
+    squat_170x1                     14.0 cm
+    squat_pause_140x4_3             24.7 cm
+
+against squats of 65-70 cm, all behind coverage of 96-100% and healthy
+residuals. Of eleven squat clips in the corpus, six are unusable and the three
+template ones that do track do so at NCC 0.39-0.41. `tracked.review` flags
+`implausible` when whole-clip travel falls under the lift's own
+`VERTICAL_ROM_M` — the one statistic that catches it — and it is gated on both
+the known-bad clips and known-good ones, because a flag that fires on everything
+says nothing.
+
+**Two costs of the cache, both real and both documented:** it does not carry the
+tracker's own diagnostics, and a cached read does not run `markers.validate`, so
+its per-capture warnings do not fire. Re-track with `--track --force` after ANY
+change to `markers.py` or `truth.py`.
+
+**The owner's two-class model — IMPACT vs SMOOTH — with the measurement behind
+it.** Per-rep fore-aft excursion growth, IMU only:
+
+    deadlift (impact)   n=6    +29.2 %/rep median   6 of 6 POSITIVE
+    bench (smooth)      n=11    +0.3 %/rep
+    squat (smooth)      n=9     +1.9 %/rep
+
+The invented fore-aft compounds on impact lifts and scatters around zero on
+smooth ones, and it resets between sets. The step-by-step allocation — which
+steps are shared, which have a premise that breaks at the impact, and which
+supplementary steps are measured to help — is in CLAUDE.md under the pipeline
+list. Full suite 600 passed / 1 skipped / 8 xfailed / 7 xpassed.
+
 ## Done
 
 ### B1 — stop applying the pause-derived gyro bias `17d5eee`

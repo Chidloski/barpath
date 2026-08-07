@@ -636,7 +636,8 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
 TRACKERS = ("plate", "markers")
 
 
-def resolve_path(video: str | Path | dict, tracker: str | None = None) -> dict:
+def resolve_path(video: str | Path | dict, tracker: str | None = None,
+                 use_cache: bool = True) -> dict:
     """Get a tracked bar path, from either referee, or accept a ready-made one.
 
     THIS PROJECT HAS TWO VIDEO REFEREES AND WHICH ONE APPLIES IS DECIDED BY THE
@@ -670,9 +671,31 @@ def resolve_path(video: str | Path | dict, tracker: str | None = None) -> dict:
     if isinstance(video, dict):
         return video
 
-    tracker = infer_tracker(video) if tracker is None else tracker
+    inferred = infer_tracker(video)
+    tracker = inferred if tracker is None else tracker
     if tracker not in TRACKERS:
         raise ValueError(f"tracker must be one of {TRACKERS}, got {tracker!r}")
+
+    # A cached track, if one exists and was made by the tracker being asked for
+    # (C31, 2026-08-07). Tracking a clip costs 1-2 minutes of ffmpeg and this
+    # function was called afresh every time, so a comparison that scored one
+    # capture two ways paid twice. See `tracked.ensure` for the protocol.
+    #
+    # **Two costs of reading the cache, and neither is hypothetical.** The CSV
+    # carries the per-frame arrays and the scalars, NOT the tracker's own
+    # diagnostics (`hub`, `centre_px`, `calibration`) — ask for those and you
+    # must re-track. And a cached read does not run `markers.validate`, so the
+    # per-capture warnings it raises — the sticker-ratio warning that C32 chased,
+    # the top-of-travel warning C12 added — DO NOT FIRE. Pass `use_cache=False`
+    # or `tracked.ensure(force=True)` when you want the tracker to speak up.
+    #
+    # An explicit `tracker=` that differs from the inferred one never reads the
+    # cache, because the cache is keyed by clip and not by tracker.
+    if use_cache and tracker == inferred:
+        from . import tracked as _tracked
+        hit = _tracked.read(video)
+        if hit is not None:
+            return hit
 
     return markers.bar_path(video) if tracker == "markers" else truth.bar_path(video)
 

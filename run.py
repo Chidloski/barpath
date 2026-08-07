@@ -1619,6 +1619,61 @@ def draw_deadlift_parabola() -> int:
     return 0
 
 
+def track_all(force: bool = False) -> int:
+    """C31 — the tracking protocol: track once, cache to CSV, render the review.
+
+    `python run.py --track` caches every clip that is not cached yet;
+    `--track --force` re-tracks everything, which is what you do after changing
+    `markers.py` or `truth.py`, because a cached path is only valid for the
+    tracker code that produced it.
+
+    Writes `<dataset>/tracked/<stem>.csv` and `analysis/tracking/<stem>.png`.
+    The CSVs are committed: tracking a clip costs 1-2 minutes of ffmpeg and this
+    pays it once for the life of the repo instead of once per analysis.
+
+    **Look at the figures.** That is the other half and it is the half that
+    matters. Six squat clips have been feeding travel figures of 0.2 to 24.7 cm
+    into comparisons — for 65-70 cm squats — behind coverage of 96-100% and
+    healthy residuals, because the tracker had locked onto gym furniture. Every
+    summary statistic said fine. The path, drawn, is obviously not a barbell.
+    """
+    import warnings
+    from src import tracked
+
+    clips = sorted(list((ROOT / "data" / "video").glob("*.mov"))
+                   + list((ROOT / "data_v2" / "video").glob("*.mov")))
+    if not clips:
+        print("no clips found")
+        return 1
+
+    ok = failed = flagged = 0
+    for clip in clips:
+        cached = tracked.csv_path(clip).is_file()
+        if cached and not force:
+            r = tracked.review(clip)
+        else:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    tracked.ensure(clip, force=force)
+                r = tracked.review(clip)
+            except Exception as exc:
+                failed += 1
+                print(f"  REFUSED  {clip.stem:34s} {type(exc).__name__}: "
+                      f"{str(exc).split(':')[-1].strip()[:56]}")
+                continue
+        ok += 1
+        flag = "  <-- IMPLAUSIBLE, tracker is not on the bar" if r["implausible"] else ""
+        flagged += bool(r["implausible"])
+        print(f"  {clip.stem:34s} cov {r['coverage'] * 100:5.1f}%  "
+              f"travel {r['travel_cm']:5.1f} cm  reps {r['n_reps']}{flag}")
+
+    print(f"\n{ok} cached, {failed} refused by the tracker, "
+          f"{flagged} flagged implausible")
+    print(f"figures in analysis/tracking/ — look at them before trusting a number")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -1660,6 +1715,8 @@ def main(argv: list[str]) -> int:
         return draw_pipeline_now()
     if "--jumpd" in argv:
         return draw_jump_with_d()
+    if "--track" in argv:
+        return track_all(force="--force" in argv)
     if "--dlparabola" in argv:
         return draw_deadlift_parabola()
 

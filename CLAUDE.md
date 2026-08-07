@@ -181,6 +181,93 @@ Nine steps, one module each, numbered to match.
 8. `project.py` — PCA on horizontal displacement picks the display axis.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
 
+### Two classes of lift: IMPACT and SMOOTH (owner, 2026-08-07)
+
+The owner's framing, and the measurement behind it is the sharpest lift-level
+split in the project. **Deadlift is an IMPACT lift — the bar is dropped to the
+floor between reps. Bench and squat are SMOOTH.** Both classes run the same
+nine steps; impact lifts need supplementary ones. Per-rep fore-aft excursion,
+growth per rep as a percentage of the set mean, IMU only, no video:
+
+    class                 n    median growth   range
+    deadlift (impact)     6      +29.2 %/rep   +4.4 to +65.2, 6 of 6 POSITIVE
+    bench (smooth)       11       +0.3 %/rep   -25.9 to +12.0
+    squat (smooth)        9       +1.9 %/rep   -10.5 to +22.8
+
+**The invented fore-aft compounds monotonically on impact lifts and scatters
+around zero on smooth ones.** `deadlift_160x6_1` runs 8, 10, 13, 14, 19, 35 cm
+across its six reps while the video's stays flat. It resets between sets — every
+deadlift starts with a small rep-0 excursion — so whatever accumulates is
+re-anchored at the opening hold.
+
+**Steps shared by both classes:** 0 `io`, 1 `calibrate`, 2 attitude, 3
+`to_world`, 4 `integrate`, 8 `project`, 9 `plot`. These are algebra or
+bookkeeping and carry no lift assumption. Note step 4 is not where impact damage
+happens — its INPUT is corrupted, which is a different thing and decides where
+you intervene.
+
+**Step 5 `segment` is already split, and the polarity is the opposite of what
+you would guess.** Deadlift segments on `impact_anchors`, from raw acceleration
+alone, matching video to 13.5 ms with phase verified; smooth lifts segment on
+integrated velocity and **squat's phase is still unverified** for want of any
+external anchor. The impact is a liability for reconstruction and simultaneously
+the best-instrumented moment in the project.
+
+**Steps shared but whose premise breaks on impact:**
+
+- **6 `apply_offset`** assumes `d` is rigid in body coordinates. During strap
+  ringing the watch is not rigidly indexed to the wrist, and `|d/dt(R.d)|` peaks
+  at the impact at 7.8x the rep median with ~90% of the angular motion being
+  oscillation rather than reorientation. The premise fails exactly where the
+  term is largest, on impact lifts only.
+- **7 `detrend`** is the real fault line. On smooth lifts it is nearly adequate —
+  B3's oracle puts the best per-rep quadratic at **0.25-0.55 cm on bench, inside
+  spec**. On impact lifts **no per-rep line beats the flat-line null on any
+  deadlift**, whoever estimates it. Same code, opposite verdict.
+
+**Supplementary steps for impact lifts, ranked by what is measured:**
+
+1. **Rest-to-rest detrend windows (C29).** Move step 7's boundaries off the
+   impacts so the impact falls INSIDE a window as a kink rather than at its edge
+   as a slope. 10.66 -> 3.93 cm, `beats_null` 0.21 -> 0.69. Deadlift-only by
+   construction: smooth lifts have no raw-signal rest anchor and cannot be given
+   one.
+2. **Per-rep parabola detrend (D1).** All six deadlifts improve and excursion
+   lands within ~1 cm of the video on the three marker-refereed ones. Must be
+   gated to impact lifts — it costs four of six benches. See `oracle.parabola_detrend`
+   for the argument that it may be removing fiction rather than recovering truth.
+3. **Not these**, all measured and rejected: constant-bias estimation (C28),
+   velocity splice (B6), quadratic detrend (C19), impact position anchor (B7),
+   constant-per-interval (C28b).
+
+**The wrinkle, recorded rather than smoothed:** the three paused squats show
++11.5 to +22.8 %/rep, the highest of any smooth capture. n=3, so possibly noise —
+but a pause is not an impact, and if it survives more data the discriminator is
+not impact per se.
+
+### The tracking protocol (C31, 2026-08-07)
+
+**The moment a video is supplied: track it, cache the path to CSV beside the
+capture, and render a review figure. Then LOOK at the figure.** `src/tracked.py`,
+`python run.py --track`. The CSVs are committed, so a clip is tracked once for
+the life of the repo rather than once per analysis — `metrics.resolve_path`
+reads the cache and a scored comparison went from minutes to milliseconds.
+
+The second half is the half that mattered. **Six squat clips had been feeding
+travel figures of 0.2 to 24.7 cm — for 65-70 cm squats — into comparisons behind
+coverage of 96-100% and healthy residuals**, because the tracker had locked onto
+gym furniture (D2). Every summary statistic said fine. `tracked.review` flags
+`implausible` when whole-clip travel falls below the lift's own
+`VERTICAL_ROM_M`, which is the one statistic that catches it, and the figure
+shows a path no human would mistake for a barbell.
+
+Two costs of reading the cache, both real: the CSV carries per-frame arrays and
+scalars but **not** the tracker's own diagnostics, and **a cached read does not
+run `markers.validate`, so its per-capture warnings do not fire.** Use
+`resolve_path(use_cache=False)` or `run.py --track --force` when you want the
+tracker to speak up, and after ANY change to `markers.py` or `truth.py`, because
+a cached path is only valid for the tracker code that produced it.
+
 **STEP 6 IS ON BY DEFAULT (C31, 70b2a63, 2026-08-06), AND THAT INVALIDATES
 EVERY HORIZONTAL AND VERTICAL NUMBER RECORDED IN THIS FILE, IN `TASKS.md` AND
 IN `analysis/README.md`.** `pipeline.run(wrist_offset=)` defaults to `"auto"`,
