@@ -889,3 +889,189 @@ def jump_rest_windows(result: dict, width_s: float | None = 0.0,
     out["reps"] = correct.detrend_set(position, bounds, t) if bounds else []
     out["bar_position"] = position
     return out
+
+
+# ------------------------------------------------------------------- D1 -----
+#
+# D1 (2026-08-07) asked where the deadlift's invented fore-aft is GENERATED,
+# and the four functions below are the measurement. The answer changed the
+# question: it is not generated anywhere in particular WITHIN a rep, and it is
+# not generated at the floor impact. It is one number per rep — a constant
+# horizontal acceleration — and that number grows through the set.
+
+
+def rep_attribution(result: dict, masks: dict, axis, flipped: bool = False):
+    """Attribute each detrended rep path to disjoint sets of samples. EXACT.
+
+    Step 7's output is a LINEAR functional of the world acceleration: two
+    cumulative trapezoids, an endpoint line removed, a start alignment. Step 6's
+    lever `-R(t).d` is an additive term that does not involve `a` at all. So for
+    any partition of the samples into disjoint masks,
+
+        rep_k  =  sum_bins detrend_k(integrate2(a * mask_bin))  +  detrend_k(-R.d)
+
+    holds identically, and `attribution_error` below checks it to ~1e-13 m. That
+    is what makes this an attribution rather than an ablation: nothing is
+    re-integrated with a hole in it, no bin interacts with any other, and the
+    parts provably sum to the whole.
+
+    **A fact that fell out of it and is worth keeping.** Samples BEFORE a rep
+    contribute `p(t0) + v(t0)*(t - t0)` inside it — exactly a line — so the
+    endpoint detrend removes them completely, and samples after it cannot reach
+    it at all. Measured: a bin holding every sample outside the rep windows
+    contributes 4e-13 cm. **A detrended rep depends only on the acceleration
+    inside its own window, plus the lever.** All the drift this project worries
+    about is therefore already gone by the time step 7 has run, and what is left
+    is generated inside 3 seconds.
+
+    Returns {bin_name: [per-rep (M,3) partial paths]} with "lever" (when step 6
+    ran) and "FULL" added. `axis`/`flipped` are `vs_truth`'s, so the caller can
+    project a partial path onto the same display axis the score uses.
+    """
+    log = result["log"]
+    t, dt = log["t"], log["dt"]
+    world = np.asarray(result["world_accel"], dtype=float)
+    bounds = result["bounds"]
+
+    out = {}
+    for name, m in masks.items():
+        masked = np.where(np.asarray(m, bool)[:, None], world, 0.0)
+        _, p = integrate.integrate(masked, dt)
+        out[name] = correct.detrend_set(p, bounds, t)
+
+    d = result.get("wrist_offset")
+    if d is not None:
+        lever = -Rotation.from_quat(result["quat"], scalar_first=True).apply(
+            np.asarray(d, dtype=float))
+        out["lever"] = correct.detrend_set(lever, bounds, t)
+
+    out["FULL"] = correct.detrend_set(result["bar_position"], bounds, t)
+    return out
+
+
+def attribution_error(parts: dict) -> float:
+    """Max |sum of the bins - the whole| over every rep, in metres.
+
+    The self-check for `rep_attribution`. If this is not ~1e-13 the partition
+    was not disjoint or not covering, and no number derived from it is quotable.
+    """
+    keys = [k for k in parts if k != "FULL"]
+    worst = 0.0
+    for k in range(len(parts["FULL"])):
+        total = sum(parts[name][k] for name in keys)
+        worst = max(worst, float(np.abs(total - parts["FULL"][k]).max()))
+    return worst
+
+
+def impact_mask(result: dict, half_s: float = 0.10) -> np.ndarray:
+    """Samples within `half_s` of a floor impact. C6's window is 0.10."""
+    t = result["log"]["t"]
+    m = np.zeros(len(t), dtype=bool)
+    for i in result.get("impacts") or []:
+        m |= np.abs(t - t[i]) <= half_s
+    return m
+
+
+def parabola_fit(curve: np.ndarray, duration: float) -> dict:
+    """Fit `c * tau(tau - T)/2` to one rep's along-axis path. D1.
+
+    That basis is the position response to a CONSTANT acceleration `c` after
+    step 7's endpoint line has been removed, and it is zero at both endpoints —
+    so `c` is exactly "what constant horizontal acceleration would draw this
+    path", and removing it preserves the rep's closure.
+
+    Returns `c` in m/s^2, `r2` (the fraction of the path's variance it
+    explains), `excursion_m`, and `tilt_deg` = asin(|c|/g): the attitude error
+    that would leak this much gravity into the horizontal.
+
+    **What it measures, on the six deadlifts (D1, 2026-08-07).** The
+    reconstruction's per-rep fore-aft path IS this parabola: median r2 of
+    0.76, 0.95, 0.95, 0.97, 0.98 and 1.00. So the entire fore-aft output of the
+    deadlift pipeline is one number per rep, and that number is 0.005-0.16
+    m/s^2 — an effective tilt of 0.03-0.94 degrees. A third of a metre of
+    invented travel is a fraction of a degree of attitude, amplified by T^2.
+
+    The same fit against the VIDEO's own path is what convicts it. Pooled over
+    30 deadlift reps the reconstruction's `c` is **5.0x** the bar's in rms and
+    **uncorrelated** with it, r = +0.18. Over 24 bench reps it is **0.7x** and
+    correlated, r = 0.49-0.97 within each capture. That is C30b's bench/deadlift
+    split measured in the position domain instead of the acceleration one.
+    """
+    y = np.asarray(curve, dtype=float)
+    tau = np.linspace(0.0, float(duration), len(y))
+    T = tau[-1]
+    basis = tau * (tau - T) / 2.0
+    den = float(basis @ basis)
+    c = float(basis @ y) / den if den > 0 else 0.0
+    resid = y - c * basis
+    var = float(y @ y)
+    return {"c": c,
+            "r2": 1.0 - float(resid @ resid) / var if var > 0 else 0.0,
+            "excursion_m": float(np.ptp(y)),
+            "tilt_deg": float(np.degrees(np.arcsin(min(1.0, abs(c) / 9.80665))))}
+
+
+def parabola_detrend(reps: list, bounds: list, t: np.ndarray,
+                     axes: tuple = (0, 1)) -> list:
+    """Remove each rep's own best-fit parabola. MEASURED AND REJECTED. D1.
+
+    An ADDITION to step 7, not a replacement: the basis `tau(tau - T)/2` is zero
+    at both endpoints, so the closure step 7 asserts is untouched and the only
+    thing removed is the constant-acceleration component. One coefficient per
+    rep per axis, fitted to the rep's OWN path — no video, no anchor, nothing
+    external. Horizontal only, so the vertical cannot regress.
+
+    It is the correction D1's diagnosis implies, and on deadlift it works:
+
+        capture            h_rms          beats_null     excursion   video
+        deadlift_160x6_1   6.65 -> 1.99   0.25 -> 0.84   13.7 -> 5.1   6.0
+        deadlift_160x6_2   4.39 -> 1.49   0.35 -> 1.03    8.1 -> 4.6   4.1
+        deadlift_185x3    10.61 -> 2.08   0.15 -> 0.76   16.3 -> 5.0   5.4
+        deadlift_155x6_1   4.57 -> 3.16   0.78 -> 1.13    7.9 -> 8.2  12.8
+        deadlift_155x6_2   8.99 -> 2.84   0.36 -> 1.14   10.5 -> 7.4   9.4
+        deadlift_180x3    15.65 -> 1.69   0.13 -> 1.16   21.5 -> 8.3   8.4
+
+    Six of six improve on horizontal rms and six of six move toward the video's
+    excursion. **It is still REJECTED, on the bench regression, and the reason
+    is the finding rather than a tuning failure.**
+
+        bench_95x2         0.80 -> 4.27   5.39 -> 1.01
+        bench_92.5x4_2     1.18 -> 2.85   2.32 -> 0.96
+        bench_92.5x4_1     1.23 -> 2.17   1.78 -> 1.02
+        bench_92.5x4_3     1.92 -> 2.30   1.19 -> 0.99
+        bench_spoto_95x5_1 3.54 -> 2.95   0.88 -> 1.05
+        bench_spoto_95x5_2 4.45 -> 3.07   0.72 -> 1.05
+
+    Four of six benches get worse and two fall from beating the null to losing
+    to it. Look at what `beats_null` does across all twelve captures: it enters
+    spanning 0.13 to 5.39 and leaves spanning 0.76 to 1.16. **This correction
+    converts every capture into approximately the flat-line null.** It does not
+    add information; it removes the channel. On deadlift that is a gain because
+    the channel was 3-7x worse than nothing. On bench it is a loss because the
+    channel was up to 5x better than nothing.
+
+    So the honest reading is not "a fix that needs gating by lift". It is that
+    **the deadlift's horizontal position output contains one parabola and
+    essentially nothing else** — remove it and you are at the null, and no
+    estimator can do better than the null with what is left. That is the
+    position-domain counterpart of C30/C31's acceleration-domain dispute, and
+    it is why five localised corrections (B7, B6, C19, C28b, C29) all failed:
+    they were rearranging a signal that carries one bit.
+
+    It also explains C28's negative result rather than contradicting it. C28
+    fitted ONE constant per capture and found the family capped at the null with
+    nothing transferring. The constant is real — it is right here — but it is
+    per REP and it grows 2.2-4.2x across a set, so no per-capture constant could
+    ever have fitted it.
+    """
+    out = []
+    for rep, (a, b) in zip(reps, bounds):
+        tau = np.asarray(t[a:b], dtype=float) - t[a]
+        basis = tau * (tau - tau[-1]) / 2.0
+        den = float(basis @ basis)
+        p = np.asarray(rep, dtype=float).copy()
+        if den > 0:
+            for ax in axes:
+                p[:, ax] -= (float(basis @ p[:, ax]) / den) * basis
+        out.append(p - p[0])
+    return out

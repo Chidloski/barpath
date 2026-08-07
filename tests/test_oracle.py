@@ -358,3 +358,171 @@ def test_jump_rest_windows_applies_the_wrist_offset_it_is_given():
     assert np.allclose(
         on["bar_position"],
         correct.apply_offset(off["bar_position"], quat, d0), atol=1e-12)
+
+
+# ------------------------------------------------------------------- D1 --
+#
+# D1 (2026-08-07) asked where the deadlift's invented fore-aft is generated.
+# Two of these are algebra and could be nothing else; the rest are real-data
+# pins on the numbers the answer rests on, because a diagnosis that nothing
+# re-checks is how this project has repeatedly kept a claim past its evidence.
+
+import sys as _sys
+from pathlib import Path as _Path
+
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+
+_ROOT = _Path(__file__).resolve().parents[1]
+_DL = (sorted((_ROOT / "data_v2" / "raw").glob("deadlift_*.csv"))
+       + sorted((_ROOT / "data" / "raw").glob("deadlift_*.csv")))
+_needs_deadlifts = pytest.mark.skipif(not _DL, reason="no deadlift captures")
+
+
+def test_parabola_fit_recovers_an_injected_constant_acceleration():
+    """Algebra. A constant `c`, endpoint-line removed, IS `c*tau(tau-T)/2`.
+
+    That identity is the whole reason the fit is interpretable: `c` is not a
+    curve-fitting coefficient, it is the constant horizontal acceleration that
+    would draw the path. If this drifts, `tilt_deg` stops meaning degrees.
+    """
+    T = 3.0
+    tau = np.linspace(0.0, T, 300)
+    for c in (0.02, -0.15, 0.0):
+        curve = c * tau * (tau - T) / 2.0
+        got = oracle.parabola_fit(curve, T)
+        assert got["c"] == pytest.approx(c, abs=1e-12)
+        if c:
+            assert got["r2"] == pytest.approx(1.0, abs=1e-12)
+            assert got["tilt_deg"] == pytest.approx(
+                np.degrees(np.arcsin(abs(c) / 9.80665)), abs=1e-9)
+
+
+def test_parabola_detrend_leaves_the_rep_ENDPOINTS_untouched():
+    """It must be an ADDITION to step 7, never a replacement for it.
+
+    `tau(tau - T)/2` is zero at both endpoints, so removing any multiple of it
+    cannot change where the rep starts or finishes and step 7's closure
+    survives exactly. If that stopped holding, the arm measured in
+    `oracle.parabola_detrend`'s docstring would be confounded with a change to
+    the closure and its rejection would be about the wrong thing.
+    """
+    n = 400
+    t = np.linspace(0.0, 3.0, n)
+    rng = np.random.default_rng(3)
+    rep = np.cumsum(rng.normal(size=(n, 3)) * 0.001, axis=0)
+    rep = rep - np.linspace(0.0, 1.0, n)[:, None] * (rep[-1] - rep[0]) - rep[0]
+
+    out = oracle.parabola_detrend([rep], [(0, n)], t)[0]
+    # closure preserved on the corrected axes, and the vertical untouched
+    assert out[-1, :2] == pytest.approx(rep[-1, :2], abs=1e-12)
+    assert out[:, 2] == pytest.approx(rep[:, 2], abs=1e-12)
+    # and it really did remove the parabolic content it claims to
+    T = t[-1]
+    basis = t * (t - T) / 2.0
+    for ax in (0, 1):
+        assert abs(float(basis @ out[:, ax])) < 1e-12 * float(basis @ basis) + 1e-15
+
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_rep_attribution_parts_sum_to_the_whole(csv):
+    """The self-check that makes D1's attribution an attribution.
+
+    Step 7's output is linear in the world acceleration, so any disjoint,
+    covering partition of the samples must decompose it EXACTLY. This is not a
+    tolerance to be relaxed: if the parts stop summing to the whole, some bin is
+    interacting with another and every percentage D1 quotes is meaningless.
+    """
+    from src import pipeline
+
+    res = pipeline.run(csv)
+    mask = oracle.impact_mask(res, 0.10)
+    parts = oracle.rep_attribution(res, {"impact": mask, "elsewhere": ~mask},
+                                   axis=np.array([1.0, 0.0]))
+    assert oracle.attribution_error(parts) < 1e-9
+
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_a_detrended_rep_depends_ONLY_on_its_own_samples(csv):
+    """The fact that fell out of the attribution, and it is worth a gate.
+
+    Acceleration before a rep reaches it as `p(t0) + v(t0)*(t - t0)` — exactly a
+    line — so step 7's endpoint detrend removes it completely; acceleration
+    after it cannot reach it at all. So a bin holding every sample OUTSIDE the
+    rep windows contributes nothing, measured at ~1e-13 cm.
+
+    The consequence is the reason to pin it: all the integrator drift this
+    project worries about is already gone once step 7 has run, and everything
+    left in a rep is generated inside its own three seconds. Any future
+    correction that claims to fix a rep by acting outside it is claiming
+    something this test says is impossible.
+    """
+    from src import pipeline
+
+    res = pipeline.run(csv)
+    inside = np.zeros(len(res["log"]["t"]), dtype=bool)
+    for a, b in res["bounds"]:
+        inside[a:b] = True
+    parts = oracle.rep_attribution(res, {"inside": inside, "outside": ~inside},
+                                   axis=np.array([1.0, 0.0]))
+    worst = max(float(np.abs(p).max()) for p in parts["outside"])
+    assert worst < 1e-9, f"samples outside the rep contribute {worst*100:.2e} cm"
+
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_the_deadlift_fore_aft_path_IS_one_parabola(csv):
+    """D1's headline, pinned on every deadlift the project holds.
+
+    The reconstruction's per-rep fore-aft output is the response to a single
+    constant horizontal acceleration: median r2 of 0.76, 0.95, 0.95, 0.97, 0.98
+    and 1.00 across the six. The floor is 0.70 rather than the observed minimum
+    because the point is qualitative — the channel carries ONE NUMBER per rep —
+    and a tight pin would fail on a change that does not touch the finding.
+
+    If this ever drops materially, the deadlift horizontal has acquired
+    structure it did not have, and `parabola_detrend`'s rejection (which rests
+    on there being nothing else in there) needs re-measuring.
+    """
+    from src import pipeline, project
+
+    res = pipeline.run(csv)
+    axis = project.principal_axis(res["reps"])[0]
+    t = res["log"]["t"]
+    r2 = []
+    for rep, (a, b) in zip(res["reps"], res["bounds"]):
+        along = np.asarray(rep, float)[:, :2] @ axis
+        r2.append(oracle.parabola_fit(along, t[b - 1] - t[a])["r2"])
+    assert np.median(r2) > 0.70, f"median r2 {np.median(r2):.2f}, per rep {r2}"
+
+
+@_needs_deadlifts
+def test_the_invented_parabola_GROWS_through_the_set():
+    """The other half of D1, and the half that rules out a per-capture constant.
+
+    The effective tilt runs 0.03-0.94 degrees and rises monotonically through a
+    set on 4 of the 6 captures (Spearman rho of |c| against rep index 1.00,
+    1.00, 0.94, 0.50), while the video's per-rep fore-aft stays flat. That is
+    why C28's ladder — one constant fitted per CAPTURE — capped at the null and
+    transferred nothing: the constant is real but it is per REP and it moves.
+
+    Gated as "the last rep's tilt exceeds the first's on at least 4 of 6",
+    which is the claim, rather than on any one capture's ratio.
+    """
+    from src import pipeline, project
+
+    grew = []
+    for csv in _DL:
+        res = pipeline.run(csv)
+        if len(res["reps"]) < 3:
+            continue
+        axis = project.principal_axis(res["reps"])[0]
+        t = res["log"]["t"]
+        tilt = []
+        for rep, (a, b) in zip(res["reps"], res["bounds"]):
+            along = np.asarray(rep, float)[:, :2] @ axis
+            tilt.append(oracle.parabola_fit(along, t[b - 1] - t[a])["tilt_deg"])
+        grew.append(tilt[-1] > tilt[0])
+        assert max(tilt) < 2.0, f"{csv.stem}: {max(tilt):.2f} deg is not a tilt"
+    assert sum(grew) >= 4, f"grew on {sum(grew)} of {len(grew)}"

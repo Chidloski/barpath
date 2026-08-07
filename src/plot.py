@@ -1779,3 +1779,169 @@ def plot_jump_with_d(rows: dict, arms: list):
         fontsize=11, y=0.99)
     fig.tight_layout(rect=(0, 0, 1, 0.86))
     return fig
+
+
+def plot_deadlift_parabola(dl, bn, arms):
+    """D1 — where the deadlift's invented fore-aft comes from. analysis/52.
+
+    `dl` and `bn` are per-capture dicts built by `run.py --dlparabola`:
+    `name`, `r` (a pipeline result), `vt` (its `vs_truth`), and `per`, one entry
+    per scored rep holding `oracle.parabola_fit` of the reconstruction's path
+    and of the video's. `arms` pairs the shipping row with the rejected
+    parabola-detrend row for panel F.
+
+    Six panels, and the order is the argument:
+
+    A  per-rep fore-aft excursion in rep order. The reconstruction's grows
+       monotonically through the set (7.6 -> 34.8 cm on `deadlift_160x6_1`)
+       while the video's stays flat. Rep 0 is nearly right; the last rep is
+       not. That alone rules out anything that happens identically every rep.
+    B  one rep's path with `c*tau(tau-T)/2` over it. It is a parabola.
+    C  the impact window's share of the excursion, swept over half-widths of
+       0.10 to 0.50 s. It never reaches half on the marker-refereed captures,
+       so the floor impact is NOT where this is generated — which is the
+       measurement D1 set out to make and the hypothesis it killed.
+    D  the reconstruction's parabola coefficient against the video's own. On
+       deadlift 5.0x too big and uncorrelated (r = +0.18, n = 30); on bench
+       0.7x and correlated. The same split C30b found in acceleration.
+    E  the same coefficient as an effective tilt, asin(|c|/g), against C6's
+       0.05-0.27 deg measured at a still HOLD. Sub-degree throughout: a third
+       of a metre of invented travel is a fraction of a degree, times T^2.
+    F  the rejected correction. `beats_null` enters spanning 0.13-5.39 and
+       leaves spanning 0.76-1.16 — it converts every capture into the flat-line
+       null, which is a gain on deadlift and a loss on bench.
+    """
+    from . import oracle
+
+    fig, ax = plt.subplots(2, 3, figsize=(16.5, 9))
+
+    # -- A: per-rep excursion in order, recon vs video -----------------------
+    a = ax[0, 0]
+    cols = plt.cm.viridis(np.linspace(0, .85, len(dl)))
+    for c, row in zip(cols, dl):
+        ks = [p["k"] for p in row["per"]]
+        a.plot(ks, [p["rec"]["excursion_m"] * 100 for p in row["per"]], "o-",
+               color=c, label=row["name"].replace("deadlift_", ""))
+        a.plot(ks, [p["video_exc"] * 100 for p in row["per"]], "s--",
+               color=c, alpha=.45, ms=4)
+    a.set_xlabel("rep index within the set")
+    a.set_ylabel("fore-aft excursion, cm")
+    a.set_title("A  It GROWS through the set\n"
+                "solid = reconstruction, dashed = video (flat)", fontsize=10)
+    a.legend(fontsize=6.5, ncol=2)
+
+    # -- B: one rep, path and the parabola -----------------------------------
+    a = ax[0, 1]
+    row = [r for r in dl if r["name"] == "deadlift_160x6_1"][0]
+    for p, col in ((row["per"][0], "steelblue"), (row["per"][-1], "seagreen")):
+        tau = np.linspace(0, p["T"], len(p["curve"]))
+        fitc = p["rec"]["c"] * tau * (tau - p["T"]) / 2
+        a.plot(tau, p["curve"] * 100, lw=2, color=col,
+               label=f"rep {p['k']} recon  (r2={p['rec']['r2']:.2f}, "
+                     f"{p['rec']['tilt_deg']:.2f} deg)")
+        a.plot(tau, fitc * 100, "k:", lw=1.2)
+        a.plot(tau, p["vcurve"] * 100, lw=1.4, alpha=.6, ls="--", color=col,
+               label=f"rep {p['k']} video")
+    a.set_xlabel("time through the rep, s")
+    a.set_ylabel("fore-aft, cm")
+    a.set_title("B  The path IS a parabola\n"
+                "deadlift_160x6_1, first and last rep; dotted = c*tau(tau-T)/2",
+                fontsize=10)
+    a.legend(fontsize=6.5)
+
+    # -- C: attribution ------------------------------------------------------
+    a = ax[0, 2]
+    widths = [0.10, 0.20, 0.30, 0.50]
+    for c, row in zip(cols, dl):
+        fr = []
+        for hw in widths:
+            mi = oracle.impact_mask(row["r"], hw)
+            pa = oracle.rep_attribution(row["r"], {"i": mi, "e": ~mi},
+                                        row["vt"]["axis"])
+            axis = np.asarray(row["vt"]["axis"], float)[:2]
+            axis = axis / np.linalg.norm(axis)
+            f = []
+            for k in range(len(pa["FULL"])):
+                full = np.ptp(pa["FULL"][k][:, :2] @ axis)
+                imp = np.ptp(pa["i"][k][:, :2] @ axis)
+                f.append(imp / full)
+            fr.append(np.median(f) * 100)
+        a.plot(widths, fr, "o-", color=c)
+    a.axhline(50, color="crimson", ls="--", lw=1)
+    a.text(0.5, 52, "D1's pre-registered 'dominant' line", color="crimson", fontsize=7)
+    a.set_xlabel("half-width of the window around each floor impact, s")
+    a.set_ylabel("% of the per-rep excursion")
+    a.set_ylim(0, 100)
+    a.set_title("C  It is NOT the impact\n"
+                "the ringing window never dominates, at any width", fontsize=10)
+
+    # -- D: recon parabola vs video parabola ---------------------------------
+    a = ax[1, 0]
+    for rows, col, lab in ((dl, "crimson", "deadlift"), (bn, "steelblue", "bench")):
+        x = [p["vid"]["c"] for r in rows for p in r["per"]]
+        y = [p["rec"]["c"] for r in rows for p in r["per"]]
+        rr = np.corrcoef(x, y)[0, 1]
+        ratio = np.sqrt(np.mean(np.square(y))) / np.sqrt(np.mean(np.square(x)))
+        a.scatter(x, y, s=22, color=col, alpha=.75,
+                  label=f"{lab}  n={len(x)}  r={rr:+.2f}  {ratio:.1f}x")
+    lim = 0.2
+    a.plot([-lim, lim], [-lim, lim], "k-", lw=.8, alpha=.5)
+    a.axhline(0, color="k", lw=.5); a.axvline(0, color="k", lw=.5)
+    a.set_xlim(-lim, lim); a.set_ylim(-lim, lim)
+    a.set_xlabel("video's own parabola coefficient, m/s^2")
+    a.set_ylabel("reconstruction's, m/s^2")
+    a.set_title("D  On deadlift the parabola is INVENTED\n"
+                "on bench it tracks the bar (line = agreement)", fontsize=10)
+    a.legend(fontsize=7, loc="upper left")
+
+    # -- E: the effective tilt ------------------------------------------------
+    a = ax[1, 1]
+    for c, row in zip(cols, dl):
+        a.plot([p["k"] for p in row["per"]],
+               [p["rec"]["tilt_deg"] for p in row["per"]], "o-", color=c)
+    a.axhspan(0.05, 0.27, color="grey", alpha=.25)
+    a.text(0.02, 0.005, "C6: attitude error measured at a still HOLD, 0.05-0.27 deg",
+           fontsize=7, color="dimgrey", va="bottom")
+    a.set_ylim(0, None)
+    a.set_xlabel("rep index within the set")
+    a.set_ylabel("effective tilt, degrees")
+    a.set_title("E  A third of a metre is a fraction of a degree\n"
+                "theta = asin(|c|/g); T^2 does the rest", fontsize=10)
+
+    # -- F: the rejected arm --------------------------------------------------
+    a = ax[1, 2]
+    nm = [x[0]["name"] for x in arms]
+    y0 = [x[0]["bn"] for x in arms]
+    y1 = [x[1]["bn"] for x in arms]
+    ypos = np.arange(len(nm))
+    for i, (b0, b1) in enumerate(zip(y0, y1)):
+        a.annotate("", xy=(b1, i), xytext=(b0, i),
+                   arrowprops=dict(arrowstyle="->", lw=1.4,
+                                   color="seagreen" if b1 > b0 else "crimson"))
+    a.scatter(y0, ypos, s=26, color="k", zorder=3, label="shipping")
+    a.scatter(y1, ypos, s=26, facecolor="w", edgecolor="k", zorder=3,
+              label="+ parabola removed")
+    a.axvline(1.0, color="crimson", ls="--", lw=1)
+    a.set_yticks(ypos)
+    a.set_yticklabels([n.replace("deadlift_", "DL ").replace("bench_", "B ")
+                       for n in nm], fontsize=6)
+    a.set_xscale("log")
+    a.set_xticks([0.1, 0.2, 0.5, 1.0, 2.0, 5.0])
+    a.set_xticklabels(["0.1", "0.2", "0.5", "1.0", "2.0", "5.0"])
+    a.minorticks_off()
+    a.set_xlabel("beats_null   (1.0 = a flat vertical line)")
+    a.set_title("F  REJECTED: it collapses everything onto the null\n"
+                "0.13-5.39 in, 0.76-1.16 out. Bench loses what deadlift gains",
+                fontsize=10)
+    a.legend(fontsize=7, loc="lower right")
+
+    for row in ax:
+        for a_ in row:
+            a_.grid(alpha=.25)
+            a_.tick_params(labelsize=8)
+    fig.suptitle(
+        "D1 — the deadlift's invented fore-aft is ONE PARABOLA PER REP, and it grows through the set\n"
+        "not the floor impact, not a constant of the capture: a 0.03-0.94 deg tilt error amplified by T^2",
+        fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return fig

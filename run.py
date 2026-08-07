@@ -9,6 +9,7 @@
     python run.py --rom                # per-rep vertical ROM against the bounds
     python run.py --v2rom              # C24: per-rep ROM on the paired benches
     python run.py --dlconic            # C27: 8-sticker deadlifts, conic vs pipeline
+    python run.py --dlparabola         # D1: where the deadlift fore-aft is generated
     python run.py --anchors            # C6: attitude before and after a set
     python run.py --bias               # B6: constant-bias corrections vs the video
     python run.py --closure            # C11: vertical momentum, bench vs deadlift
@@ -1513,6 +1514,111 @@ def draw_jump_with_d() -> int:
     return 0
 
 
+def draw_deadlift_parabola() -> int:
+    """D1 — where is the deadlift's invented fore-aft GENERATED?
+
+    Writes `analysis/52_deadlift_excursion_origin.png`.
+
+    The question was the owner's: the reconstruction sweeps 20-35 cm of fore-aft
+    on deadlift where the video says the bar moved 4.3-6.2, which is not merely
+    inaccurate but impossible. The hypothesis on the table was the floor impact
+    — B6 measured the watch ringing on its strap there, and step 6 assumes `d`
+    is rigid in body coordinates exactly where it demonstrably is not.
+
+    **The impact is not it, and the answer is simpler and worse.** Attributing
+    each detrended rep path to disjoint sets of samples — an EXACT linear
+    decomposition, `oracle.rep_attribution`, self-checking to 1e-13 m — the
+    window around every floor impact contributes 9-49% of the per-rep excursion
+    at any half-width from 0.10 to 0.50 s, and by phase decile the contribution
+    is spread 1-8 cm across all ten deciles. Nothing is localised.
+
+    What IS there is one number per rep. The reconstruction's per-rep fore-aft
+    path is a PARABOLA — median r2 0.76 to 1.00 over the six deadlifts against
+    `c*tau(tau-T)/2`, the response to a constant horizontal acceleration after
+    step 7's endpoint line — with `c` between 0.005 and 0.16 m/s^2, an effective
+    tilt of 0.03-0.94 degrees. Pooled over 30 deadlift reps that `c` is 5.0x the
+    video's own and uncorrelated with it (r = +0.18); over 24 bench reps it is
+    0.7x and correlated. And it GROWS through the set on 4 of 6 captures
+    (Spearman rho of |c| against rep index 1.00, 1.00, 0.94, 0.50) while the
+    video's per-rep fore-aft stays flat.
+
+    Slow: it decodes every deadlift and bench clip that scores.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import metrics, oracle, pipeline, plot
+
+    def gather(csvs):
+        rows = []
+        for csv in csvs:
+            res = pipeline.run(csv)
+            video = pipeline.find_video(csv)
+            if video is None:
+                continue
+            path = metrics.resolve_path(video)
+            try:
+                vt = metrics.vs_truth(res, path)
+            except (ValueError, FileNotFoundError) as e:
+                print(f"  {csv.stem.split('_2026')[0]}: refused ({e})")
+                continue
+            t = res["log"]["t"]
+            per = []
+            for k, p in enumerate(vt["per_rep"]):
+                if not p["covered"]:
+                    continue
+                a, b = res["bounds"][k]
+                span = t[b - 1] - t[a]
+                per.append(dict(k=k, T=span,
+                                rec=oracle.parabola_fit(p["curve_pipeline"][:, 0], span),
+                                vid=oracle.parabola_fit(p["curve_video"][:, 0], span),
+                                curve=p["curve_pipeline"][:, 0],
+                                vcurve=p["curve_video"][:, 0],
+                                video_exc=p["video_fore_aft_cm"] / 100))
+            rows.append(dict(name=csv.stem.split("_2026")[0], r=res, vt=vt, per=per,
+                             path=path))
+            print(f"  {rows[-1]['name']:22s} median r2 "
+                  f"{np.median([p['rec']['r2'] for p in per]):.2f}, "
+                  f"tilt {per[0]['rec']['tilt_deg']:.2f} -> "
+                  f"{per[-1]['rec']['tilt_deg']:.2f} deg")
+        return rows
+
+    dls = (sorted((ROOT / "data_v2" / "raw").glob("deadlift_*.csv"))
+           + sorted((ROOT / "data" / "raw").glob("deadlift_*.csv")))
+    bns = (sorted((ROOT / "data_v2" / "raw").glob("bench*.csv"))
+           + sorted((ROOT / "data" / "raw").glob("bench*.csv")))
+    print("deadlift:")
+    dl = gather(dls)
+    print("bench:")
+    bn = gather(bns)
+    if not dl:
+        print("nothing to draw")
+        return 1
+
+    # The rejected arm, for panel F. `parabola_detrend` is an ADDITION to
+    # step 7 and is scored through the same `vs_truth`, so the two rows differ
+    # in exactly one thing.
+    arms = []
+    print("\nshipping -> + parabola removed:")
+    for row in dl + bn:
+        res = row["r"]
+        alt = dict(res)
+        alt["reps"] = oracle.parabola_detrend(res["reps"], res["bounds"],
+                                              res["log"]["t"])
+        vt0, vt1 = row["vt"], metrics.vs_truth(alt, row["path"])
+        arms.append(({"name": row["name"], "bn": vt0["beats_null"]},
+                     {"name": row["name"], "bn": vt1["beats_null"]}))
+        print(f"  {row['name']:22s} h {vt0['pipeline_h_rms']:5.2f} -> "
+              f"{vt1['pipeline_h_rms']:5.2f} cm   beats_null "
+              f"{vt0['beats_null']:.2f} -> {vt1['beats_null']:.2f}")
+
+    fig = plot.plot_deadlift_parabola(dl, bn, arms)
+    out = ROOT / "analysis" / "52_deadlift_excursion_origin.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -1554,6 +1660,8 @@ def main(argv: list[str]) -> int:
         return draw_pipeline_now()
     if "--jumpd" in argv:
         return draw_jump_with_d()
+    if "--dlparabola" in argv:
+        return draw_deadlift_parabola()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
     if not paths:
