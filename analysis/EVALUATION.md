@@ -219,28 +219,64 @@ captures to both tables. See §5 for why it matters right now.
 
 ---
 
-## 5. CERTAIN — the suite does not notice step 6 being turned off
+## 5. CERTAIN — every ACCURACY gate passes with step 6 reverted; the only thing that fails is a test that asserts the flag
 
-Ran `tests/test_real_data.py`, `test_pipeline.py`, `test_projection.py` and
-`test_segmentation.py` under a pytest plugin that reverts
+**Corrected 2026-08-07, after this file was committed.** The first version of
+this section claimed flatly that "the suite does not notice step 6 being turned
+off", and left two unfilled placeholders (`RESULT_NOD`, `MUTANT_TABLE`) where
+the measurement should have been — I was terminated between writing the
+prediction and reading the result. **The prediction was wrong, and the real
+answer is more useful.** Recorded here rather than quietly replaced, because a
+claim that outlived its evidence for one commit is exactly what this project's
+same-commit rule exists to stop, and this one was mine.
+
+The measurement. `tests/test_real_data.py` under a pytest plugin that reverts
 `pipeline.run(wrist_offset=)` to `None` — i.e. undoes the branch's headline
-change.
+change — against the control run immediately before it:
 
-    RESULT_NOD
+    arm                       passed   failed   xfailed   xpassed   time
+    control (step 6 ON)         291       0        8         7      8m36s
+    step 6 reverted to None     274      17       11         4      8m57s
 
-Baseline (`E1_MUTANT=none`, `test_real_data.py` alone): **291 passed, 1 skipped,
-8 xfailed, 7 xpassed** in 8 m 35 s.
+**Seventeen tests fail, and all seventeen are the same test**:
+`test_step_six_runs_and_is_ON_by_default`, parametrised over the seventeen
+rep-labelled `data/raw` captures. Read its body — it asserts that
+`result["wrist_offset"]` equals `correct.WRIST_OFFSET_M[lift]` and that passing
+`None` restores the old behaviour. **It is a test of the flag, not of the
+reconstruction.** It would pass unchanged if `d` were replaced by any other
+vector, and it would fail identically if `d` were correct and the default
+merely off.
 
-This follows directly from §4: the only two-sided accuracy assertions are the
-three deadlift ceilings, and `d` improves those, so removing it stays inside
-them. The `xfail` on `test_the_reconstruction_beats_drawing_nothing` is
-`strict=False`, so the three benches that stopped XPASSing report as plain
-xfail and nothing fails.
+`274 + 17 = 291`, so **not one accuracy assertion changed verdict.** What did
+move is invisible by construction: `xfailed` 8 -> 11 and `xpassed` 7 -> 4, i.e.
+**exactly the three paused benches that step 6 lifted over `beats_null = 1.0`
+fell back below it — and `test_the_reconstruction_beats_drawing_nothing` is
+`strict=False`, so an XPASS reverting to xfail is not a failure.** The three
+captures that `pipeline.run` calls "the strongest single piece of evidence" for
+this default can lose that property and the suite reports a green run.
 
-Three further mutants, each aimed at a claim the docs make about what would be
-invisible:
+So the honest claim, narrower than my draft's and sharper:
 
-    MUTANT_TABLE
+* The default is gated. Deleting the line would be caught, seventeen times.
+* **Its justification is not gated.** Every reason given for the default —
+  three captures crossing the null, 3 of 3 deadlifts improving, bench vertical
+  improving on 6 of 6 — could evaporate and the suite would stay green, because
+  the accuracy tables have 1.9-2.6x of one-sided slack (§4) and the only test
+  that can see a crossing is non-strict.
+
+That distinction matters for whoever tightens this: re-pinning `BEATS_NULL` at
+the post-step-6 values (§4) converts three non-events into three real gates, and
+costs one dictionary edit.
+
+**The other three mutants were not run.** `negd` (the `d` sign flipped, which
+`correct.py` says is "invisible — a plausible curve of the right size pointing
+the wrong way"), `fixdt` (per-sample `dt` replaced by its median, which
+CLAUDE.md calls "an invisible scale error") and `quatswap` (w-x-y-z read as
+x-y-z-w) are implemented in the plugin and each costs ~9 minutes. `negd` is the
+one I would run first: it is the only mutant that changes the reconstruction
+while leaving `test_step_six_runs_and_is_ON_by_default`'s equality assertion
+satisfiable, so it is the sharpest available test of whether the suite can see a
+step-6 defect as opposed to a step-6 absence.
 
 *Reproduce:* `PYTHONPATH=<scratch> E1_MUTANT=nod python -m pytest
 tests/test_real_data.py -p e1_mut -q`, plugin in `e1_mut.py`.
