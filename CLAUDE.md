@@ -249,7 +249,9 @@ not impact per se.
 
 **The moment a video is supplied: track it, cache the path to CSV beside the
 capture, and render a review figure. Then LOOK at the figure.** `src/tracked.py`,
-`python run.py --track`. The CSVs are committed, so a clip is tracked once for
+`python run.py --track`. Figures land in `analysis/tracking/v1` (the plate
+template's corpus) and `analysis/tracking/v2` (the markers' corpus), split
+because the two are scored by different referees. The CSVs are committed, so a clip is tracked once for
 the life of the repo rather than once per analysis — `metrics.resolve_path`
 reads the cache and a scored comparison went from minutes to milliseconds.
 

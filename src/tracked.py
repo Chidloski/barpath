@@ -89,10 +89,25 @@ def csv_path(video: str | Path) -> Path:
     return _dataset(video) / "tracked" / f"{Path(video).stem}.csv"
 
 
+# Which subdirectory of `analysis/tracking/` a dataset's figures go in. The two
+# datasets are refereed by DIFFERENT TRACKERS — `data/` by truth.py's plate
+# template, `data_v2/` by markers.py's conic — so interleaving their figures in
+# one directory puts two incomparable things side by side under names that sort
+# by lift. Split so that browsing a directory means browsing one referee.
+DATASET_DIR = {"data": "v1", "data_v2": "v2"}
+
+
 def figure_path(video: str | Path, root: Path | None = None) -> Path:
-    """Where the review figure for `video` lives."""
+    """Where the review figure for `video` lives, `analysis/tracking/<v1|v2>/`.
+
+    Split by dataset (C31, 2026-08-07) because the two datasets are scored by
+    different referees and a shared directory hid that. A dataset not in
+    `DATASET_DIR` falls back to its own directory name rather than guessing, so
+    a third corpus lands somewhere obvious instead of silently joining v1.
+    """
     root = root or Path(__file__).resolve().parents[1] / "analysis" / "tracking"
-    return Path(root) / f"{Path(video).stem}.png"
+    name = _dataset(video).name
+    return Path(root) / DATASET_DIR.get(name, name) / f"{Path(video).stem}.png"
 
 
 def _git_commit() -> str:

@@ -1627,7 +1627,10 @@ def track_all(force: bool = False) -> int:
     `markers.py` or `truth.py`, because a cached path is only valid for the
     tracker code that produced it.
 
-    Writes `<dataset>/tracked/<stem>.csv` and `analysis/tracking/<stem>.png`.
+    Writes `<dataset>/tracked/<stem>.csv` and
+    `analysis/tracking/<v1|v2>/<stem>.png` — split by dataset, because the
+    two corpora are scored by different referees and one shared directory
+    put two incomparable things side by side.
     The CSVs are committed: tracking a clip costs 1-2 minutes of ffmpeg and this
     pays it once for the life of the repo instead of once per analysis.
 
@@ -1670,7 +1673,8 @@ def track_all(force: bool = False) -> int:
 
     print(f"\n{ok} cached, {failed} refused by the tracker, "
           f"{flagged} flagged implausible")
-    print(f"figures in analysis/tracking/ — look at them before trusting a number")
+    print("figures in analysis/tracking/v1 (plate template) and v2 (markers)"
+          " — look at them before trusting a number")
     return 0
 
 
