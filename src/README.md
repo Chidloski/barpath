@@ -588,3 +588,82 @@ fail and no spacing term to be biased by. The 18.4% and 8.6% offsets become
 
 Both squat captures were deleted on the owner's instruction, 2026-08-03 — video
 and IMU log, gitignored and unrecoverable. `data_v2` is four bench captures now.
+
+# The eight-sticker tracker — `src/vtrack/`
+
+**This is the referee for `data_v2/` as of 2026-08-14 (F1).** It replaces
+`markers.py` there, and `markers.py` above is untouched, undeleted, and still
+reachable by passing `tracker="markers"` — everything recorded for it stands.
+
+## Why it exists
+
+`markers.py` was not good enough on this footage, and the way it failed is this
+project's recurring shape: **six of eleven squat clips were unusable while every
+summary statistic said fine.** `squat_170x1` and `squat_pause_140x4_3` reported
+14.0 and 24.7 cm of whole-clip travel for 60-70 cm squats, behind coverage of
+96-100% and healthy residuals, because the constellation had locked rigidly onto
+gym furniture (C31, D2). Coverage and residual cannot see that. Travel against
+the lift's own range of motion can, which is why it is the gate.
+
+## What is actually different
+
+**The owner's prior — eight stickers on a circle at even spacing — is used in
+the SEARCH, not only in the fit.** C26 established that a conic fit "never asks
+how the stickers are spaced" and read that as the whole advantage of the layout.
+True of the fit, false of the search: a gym frame is full of bright points, and
+8-fold rotational symmetry is the strongest thing separating a plate from rack
+holes, ceiling strips and the lifter's shoes. See `geom.symmetry8`.
+
+Three more, each forced by a measured failure:
+
+  * **Detection is on whiteness, `value * (1 - saturation)`, not brightness.**
+    The stickers are white and every plate they sit on is coloured or black, so
+    on brightness alone only 4-6 of 8 stickers survive ranking. `markers.py`
+    decodes greyscale and cannot make the distinction at all.
+  * **Loss of lock is recovered from, not coasted through.** The deadlift
+    dropouts ran ~85 frames each from a rep's descent, and the plate was never
+    hard to find there — a restricted search returns it top-ranked with 6-8
+    slots throughout. `track._reacquire`.
+  * **A hypothesis proves itself by trial-tracking, never by per-frame score.**
+    C23's lesson, applied to re-acquisition *and* to the multi-start seeds. The
+    second is what removed a 14 cm fore-aft artifact on `deadlift_150x4_1`,
+    whose worst frame was the last frame of the clip, reached from a start
+    planted where the lifter is already re-racking. `track._start_ok`.
+
+## State
+
+16 of 16 clips track at 0.97-1.00 coverage, eight filled slots median on every
+one, none flagged implausible, 16 of 16 rep counts match the label. Per-rep
+video fore-aft is **4.4-6.0 cm on all six deadlifts** against C27's independent
+4.3-6.2, three of them captures C27 never saw.
+
+## The three things to know before quoting a number
+
+  * **`STICKER_RATIO = 0.858` is transferred, not measured** — the same
+    limitation `markers.py` has, and every metre figure scales linearly with it.
+    A tape across the sticker circle settles all sixteen clips at once.
+  * **`PLATE_M` and `ROM` are the module's own**, deliberately not routed
+    through `truth.sticker_plate_diameter` and `truth.VERTICAL_ROM_M`. The
+    reasons are in `path.py` beside each constant: the first has no 2026-08-06
+    entry and would silently rescale the newest captures, and the second is a
+    wide per-capture gate where this needs a discriminating scoring prior.
+    Reconciling them is open work and cannot be done quietly.
+  * **No per-frame perspective scale.** `markers.bar_path` applies one and
+    measured it at 0.6-1.4 cm on deadlift, 0.1-0.4 on bench. This module holds
+    one scale for the clip, because its centre comes from a lattice fit at a
+    held radius on most frames, so a per-frame apparent size is not
+    independently measured.
+
+## Usage
+
+    from src import vtrack
+    path = vtrack.bar_path("data_v2/video/deadlift_160x6_1_20260804.mov")
+    # key-compatible with truth.bar_path and markers.bar_path:
+    #   t, x, height, residual_px, m_per_px, m_per_px_t, travel_m, coverage
+
+`metrics.resolve_path` reaches it automatically for anything under `data_v2/`.
+A cached CSV is only reused when its header records the same tracker, so the
+paths `markers.py` wrote are re-tracked rather than silently reused.
+
+Evidence, figures and the full comparison against the IMU pipeline:
+`analysis/tracking/v2_rebuild/REPORT.md`.

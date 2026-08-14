@@ -1,0 +1,7 @@
+INDICATIVE ONLY — bench_sync is unvalidated on squat and squat has no phase anchor.
+
+capture                          reps   h_rms    null   beats   v_rms  sign  vidROM  imuROM  vidFA
+squat_170x1_20260806            REFUSED ValueError: bench sync: needs the rep cadence to tell a whole-rep ambiguity from a real one, and this capture has fewer than two reps. A bench single therefore cannot be synced by this route.
+squat_pause_140x4_2_20260806    3/3      2.70    3.33    1.23    4.62     0    63.4    65.7    7.1
+squat_pause_140x4_3_20260806    3/3      3.95    3.86    0.98    7.52     0    64.1    70.1    8.6
+squat_pause_145x4_1_20260806    4/4      3.44    3.97    1.16    7.67     0    60.2    68.5    7.3

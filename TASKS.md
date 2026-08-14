@@ -14,6 +14,99 @@ Related, and deliberately not duplicated here:
 ---
 
 
+## F1 — `src/vtrack/`, a new referee for `data_v2/` (2026-08-14)
+
+Owner's task, over three rounds: fix the `data_v2` video tracking, then land it.
+`markers.py` is untouched and still reachable as `tracker="markers"`.
+
+**What was wrong, and it was never detection.** C31/D2 left six of eleven squat
+clips unusable, two reporting 14.0 and 24.7 cm of whole-clip travel for 60-70 cm
+squats behind 96-100% coverage and healthy residuals. Rounds 1-2 found the
+deadlift dropouts were runs of ~85 frames from each rep's descent, with the
+plate ranking **top-1 on a restricted search throughout** — the tracker let go
+at the drop and never asked again — and that `squat_170x1` walked off the plate
+at 1.000 coverage because a circle fitted through a clipped 180-degree arc has a
+free centre along the arc's perpendicular, which is the fore-aft axis.
+
+**Round 3 is the one worth reading, because both of my own round-2 fixes were
+the problem.** The owner reported remaining artifacts and signal drops.
+
+*The gaps were my own residual post-filter.* Genuine track loss was 14 and 2
+frames on the two clips; the filter dropped 34 and 26 more. And it did not
+work: on `deadlift_150x4_1` the fit residual correlates with the actual fore-aft
+error at **r = +0.007**, dropping 14 frames deviating under 2 cm while leaving
+the worst frame in the clip (14.0 cm, residual under the cap). On
+`deadlift_160x4_2` the same correlation is +0.505 — coincidence on one clip, not
+a mechanism. Removing it improved coverage on **8 of 8** clips, travel unchanged
+to 0.3 cm.
+
+*The artifacts were unverified multi-start seeds.* `_reacquire` proves itself by
+trial-tracking; the starts never did, though a start is trusted for a whole
+direction of travel. `deadlift_150x4_1`'s worst frame is the LAST frame of the
+clip, reached from a start planted where the lifter is re-racking. `_start_ok`
+applies the same test: worst frame **14.0 -> 5.5 cm**, inert on every clip that
+did not need it.
+
+**Two fixes measured and REJECTED, both recorded in `track.py`:**
+
+- *Radius pinning.* Artifact frames sit at a radius inflated 3-4% and the guard
+  only fires outside 0.75-1.33x the lock, so it never fires; legitimate
+  variation is 1.05-1.25%. But pinning left the worst frame **unmoved at 14.6
+  cm** — clutter simply drags the centre at the locked radius — and cost
+  residual on every clip, `bench_spoto_95x5_1` 0.56 -> 2.85 px on a path it did
+  not change at all. Radius inflation is a CORRELATE of clutter admission.
+- *An appearance veto.* Admitted clutter really is dimmer (worst-inlier sector
+  contrast 0.036 against 0.164, 4.5x). But at a 0.10 cut the artifact frames
+  retain 2 inliers of 6, below the 4 a fit needs, so it DELETES them rather than
+  repairing them — the post-filter's mistake with a better statistic — and costs
+  16-19% of motion-blurred frames. The usable discriminator it did expose, not
+  built: **blur dims all eight stickers together, clutter produces a mixed
+  constellation** (33% bright against 100%).
+
+**State: 16 of 16 clips track**, 0.97-1.00 coverage, eight slots median, none
+implausible, **16 of 16 rep counts match the label**. Per-rep video fore-aft is
+**4.4-6.0 cm on all six deadlifts** against C27's independent 4.3-6.2, three of
+them captures C27 never saw. That replication is the strongest evidence here.
+
+**What re-refereeing did to the pipeline, and the negative half matters more.**
+Scored through `metrics.vs_truth` on `c29-jump-state` (step 6 on, C31a's
+segmenter):
+
+    capture              CLAUDE.md d ON     vtrack referee
+    bench_spoto_95x5_1     3.54 / 0.88        3.64 / 0.89   unchanged, still under
+    bench_spoto_95x5_2     4.45 / 0.72        2.41 / 1.52   CROSSES THE NULL
+    deadlift_160x6_1       6.65 / 0.25        7.52 / 0.20
+    deadlift_160x6_2       4.39 / 0.35        4.40 / 0.35
+    deadlift_185x3        10.61 / 0.15       10.72 / 0.14
+
+So **half of P2's referee-versus-pause dissent was a referee artefact and half
+is real**, which names `bench_spoto_95x5_1` as the single capture to explain.
+Deadlift is untouched — a better referee did not rescue it, so P2's deadlift
+horizontal problem is in the reconstruction, exactly where P2 puts it.
+
+**Squat, INDICATIVE ONLY** (`vs_truth` still refuses it; bypassed in
+`analysis/tracking/v2_rebuild/code/squatcheck.py`): `beats_null` 0.95-1.31 over
+three paused squats, between deadlift's 0.13-0.38 and bench's best.
+`squat_pause_140x4_3` is newly scoreable at all — C31's bypass could not use it,
+the old tracker putting it at 24.7 cm. `bench_sync` remains unvalidated on squat
+and squat still has no phase anchor, so none of it is a result.
+
+**One defect this surfaced and did NOT fix**, since it is the segmenter's:
+`deadlift_150x4_1` segments **5 reps against a labelled and video-confirmed 4**
+under C31a's rule, with 30.11 cm vertical rms; `deadlift_170x4_3` reads 12.14
+against 1.7-4.9 elsewhere. Both 2026-08-08 captures, postdating P1's 124/124.
+
+**A trap fixed in passing:** `metrics.resolve_path`'s cache is keyed by clip and
+not by tracker, which was safe only while a directory's inferred tracker never
+changed. It changed. A cached read now checks the CSV header's own
+`# tracker =` field, so `markers.py`'s paths are re-tracked rather than handed
+back as `vtrack`'s.
+
+*Evidence:* `analysis/tracking/v2_rebuild/REPORT.md` and its `code/`,
+`tests/test_vtrack.py`, `src/vtrack/path.py`.
+
+---
+
 ## C31 — the squat tracker: mechanism found, obvious fix measured and rejected (2026-08-07)
 
 The referee IS the video tracker, so this sits upstream of every number measured

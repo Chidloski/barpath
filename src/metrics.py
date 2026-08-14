@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import butter, filtfilt, savgol_filter
 
-from . import correct, markers, orient, project, segment, truth
+from . import correct, markers, orient, project, segment, truth, vtrack
 
 GRID = 100          # samples per rep on the normalised-time grid
 
@@ -633,7 +633,7 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
 
 
 # ---------------------------------------------------------------- vs truth --
-TRACKERS = ("plate", "markers")
+TRACKERS = ("plate", "markers", "vtrack")
 
 
 def resolve_path(video: str | Path | dict, tracker: str | None = None,
@@ -691,12 +691,22 @@ def resolve_path(video: str | Path | dict, tracker: str | None = None,
     #
     # An explicit `tracker=` that differs from the inferred one never reads the
     # cache, because the cache is keyed by clip and not by tracker.
+    # A cache is only this tracker's if it SAYS it is (2026-08-14). The comment
+    # above notes the cache is keyed by clip and not by tracker, which was safe
+    # while the inferred tracker for a directory never changed. It does now:
+    # `data_v2/` moved from `markers` to `vtrack`, so every CSV written before
+    # that would otherwise be handed back as though `vtrack` had produced it —
+    # silently scoring the new referee's captures with the old referee's paths,
+    # including the six squat clips it exists to fix. `tracked.write` has always
+    # recorded `# tracker = ...`; this reads it.
     if use_cache and tracker == inferred:
         from . import tracked as _tracked
         hit = _tracked.read(video)
-        if hit is not None:
+        if hit is not None and hit.get("tracker", tracker) == tracker:
             return hit
 
+    if tracker == "vtrack":
+        return vtrack.bar_path(video)
     return markers.bar_path(video) if tracker == "markers" else truth.bar_path(video)
 
 
@@ -705,9 +715,17 @@ def infer_tracker(video: str | Path) -> str:
 
     Split out from `resolve_path` so it can be tested without decoding a video,
     which is the only reason it is separate.
+
+    **`data_v2/` resolves to `vtrack`, not `markers`, as of 2026-08-14.**
+    `markers.py` was not good enough on that footage — six of eleven squat clips
+    unusable, two of them reporting 14.0 and 24.7 cm of whole-clip travel for
+    60-70 cm squats behind healthy coverage and residuals. `vtrack` tracks 16 of
+    16 and counts 16 of 16. `markers.py` is untouched and still reachable by
+    passing `tracker="markers"` explicitly. See `vtrack/path.py` and
+    `analysis/tracking/v2_rebuild/REPORT.md`.
     """
     parts = {p.lower() for p in Path(video).resolve().parts}
-    return "markers" if any(p.startswith("data_v2") for p in parts) else "plate"
+    return "vtrack" if any(p.startswith("data_v2") for p in parts) else "plate"
 
 
 def _video_quality(path: dict) -> dict:
@@ -728,8 +746,14 @@ def _video_quality(path: dict) -> dict:
     good enough to referee a 1 cm target.
     """
     if "residual_px" in path:
+        # `top_of_travel_residual` is geometry over `height`, `residual_px` and
+        # `m_per_px_t`, so it reads a `vtrack` path as happily as a `markers`
+        # one. Only the LABEL has to distinguish them, and a path that knows its
+        # own tracker says so — including one read back from the CSV cache,
+        # whose header carries the same field.
         top = markers.top_of_travel_residual(path)
-        return {"tracker": "markers", "top_ncc": float("nan"),
+        return {"tracker": path.get("tracker", "markers"),
+                "top_ncc": float("nan"),
                 "top_residual_cm": top["median_cm"]}
     return {"tracker": "plate", "top_ncc": truth.top_of_travel_score(path),
             "top_residual_cm": float("nan")}

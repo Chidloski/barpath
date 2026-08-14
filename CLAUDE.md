@@ -317,10 +317,40 @@ module docstring before quoting a number from it — `dispersion` needs no truth
 and is blind to exactly the error that dominates, so the two are not
 interchangeable.
 
-There are **two video referees**, and which one applies is decided by the
+**THERE ARE NOW THREE VIDEO REFEREES, AND `data_v2/` CHANGED HANDS ON
+2026-08-14 (F1).** `src/vtrack/` replaces `markers.py` as the referee for
+`data_v2/`; `metrics.infer_tracker` returns `"vtrack"` there. `markers.py` is
+**not deleted, not edited, and still reachable** by passing `tracker="markers"`,
+and everything recorded under it below stands as history.
+
+Why it changed hands: `markers.py` was not good enough on that footage. Six of
+eleven squat clips were unusable, `squat_170x1` and `squat_pause_140x4_3`
+reporting **14.0 and 24.7 cm of whole-clip travel for 60-70 cm squats** behind
+coverage of 96-100% and healthy residuals (C31, D2). `vtrack` tracks **16 of 16
+clips** at 0.97-1.00 coverage with eight filled lattice slots median on every
+one, and **16 of 16 rep counts match the label**.
+
+**The strongest evidence for it is a replication rather than a self-report.**
+Per-rep video fore-aft comes out **4.4-6.0 cm on all six deadlifts** against
+C27's independently measured 4.3-6.2 — and three of those six are 2026-08-08
+captures C27 never saw.
+
+**What it did NOT do, recorded so nobody infers it:** re-refereeing did not
+rescue deadlift's horizontal, which stays at `beats_null` 0.14-0.38 against the
+0.14-0.35 recorded here. It moved **one** of P2's two dissenting paused benches
+— `bench_spoto_95x5_2` 0.72 -> 1.52, crossing the null — while
+`bench_spoto_95x5_1` reproduced the old referee to 0.01 (0.88 -> 0.89) and still
+loses. So half of P2's referee-versus-pause tension was a referee artefact and
+half is real, which names `bench_spoto_95x5_1` as the capture to explain.
+*Evidence:* `analysis/tracking/v2_rebuild/REPORT.md`, `src/vtrack/path.py`.
+
+*The paragraph below is kept as written and describes the arrangement before
+2026-08-14.*
+
+There were **two video referees**, and which one applies is decided by the
 footage, not by preference. `truth.py` tracks the plate as a dark disc and is
 the referee for everything in `data/video/`. `markers.py` (C15, 2026-08-01)
-tracks retroreflective stickers and is the referee for `data_v2/`, which is
+tracks retroreflective stickers and was the referee for `data_v2/`, which is
 filmed from a tripod with markers on the plate. **The four bench captures of
 2026-08-03 are refereed by `markers.py` as of C23, and the three 8-sticker
 deadlifts of 2026-08-04 as of C27**; everything else is scored by `truth.py`,

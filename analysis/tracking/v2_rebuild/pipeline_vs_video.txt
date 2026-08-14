@@ -1,0 +1,17 @@
+capture                            lift  reps   h_rms    null   beats   v_rms  sign  vidROM  vidFA    cov
+bench_117.5x1_20260808            bench  SCORE ValueError: bench sync: no lag gives enough overlap to correlate
+bench_92.5x6_1_20260808           bench  6/6     1.09    3.75    3.43    2.92     0    25.8    7.2  1.000
+bench_92.5x6_2_20260808           bench  6/6     1.76    4.11    2.34    2.34     0    26.2    8.0  0.982
+bench_spoto_95x5_1_20260806       bench  5/5     1.28    3.23    2.53    2.91     0    24.6    5.8  1.000
+bench_spoto_95x5_2_20260806       bench  5/5     3.19    3.67    1.15    2.89     0    23.9    6.3  1.000
+deadlift_150x4_1_20260808      deadlift  4/5     5.26    1.78    0.34   27.56     2    53.6    6.0  0.974
+deadlift_160x4_2_20260808      deadlift  4/4     4.17    1.50    0.36    4.91     1    51.9    4.9  0.997
+deadlift_160x6_1_20260804      deadlift  6/6     8.12    1.54    0.19    3.59     1    54.6    4.9  0.998
+deadlift_160x6_2_20260804      deadlift  6/6     4.56    1.54    0.34    3.66     1    54.3    4.4  0.997
+deadlift_170x4_3_20260808      deadlift  4/4     5.46    1.39    0.26   11.99     1    51.5    4.8  0.997
+deadlift_185x3_20260804        deadlift  3/3    11.55    1.55    0.13    1.74     0    53.8    6.0  0.986
+deadlift_200x1_20260808        deadlift  SCORE ValueError: cannot sync: 1 video landings against 1 IMU impacts, need >=2 of each
+squat_170x1_20260806              squat     -                     refused by vs_truth     1.000
+squat_pause_140x4_2_20260806      squat     -                     refused by vs_truth     1.000
+squat_pause_140x4_3_20260806      squat     -                     refused by vs_truth     1.000
+squat_pause_145x4_1_20260806      squat     -                     refused by vs_truth     1.000

@@ -811,14 +811,28 @@ def test_tracker_is_inferred_from_where_the_clip_lives():
     """Directory layout records the answer; do not sniff the footage.
 
     Algebraic — no decode, which is why `infer_tracker` is a separate function.
+
+    **`data_v2/` returns `vtrack`, not `markers`, from 2026-08-14 (F1).** This
+    assertion read `markers` until then. It was not wrong; the referee for that
+    footage changed, because `markers.py` left six of eleven squat clips
+    unusable — two of them reporting 14.0 and 24.7 cm of whole-clip travel for
+    60-70 cm squats behind healthy coverage and residuals. `markers.py` is
+    untouched and still reachable by passing `tracker="markers"` explicitly,
+    which the next assertion pins.
+
+    The line below it is the one that has not moved and must not: anything
+    outside `data_v2/` still resolves to the template tracker, or every number
+    in `CLAUDE.md` silently changes meaning.
     """
     from src import metrics
 
     assert metrics.infer_tracker("data/video/deadlift_180x3_20260728.mov") == "plate"
-    assert metrics.infer_tracker("data_v2/video_only/deadlift_150x5.mov") == "markers"
-    assert metrics.infer_tracker(ROOT / "data_v2" / "video" / "x.mov") == "markers"
+    assert metrics.infer_tracker("data_v2/video_only/deadlift_150x5.mov") == "vtrack"
+    assert metrics.infer_tracker(ROOT / "data_v2" / "video" / "x.mov") == "vtrack"
     # A bare name is not marker footage. data/video/ predates data_v2 entirely.
     assert metrics.infer_tracker("x.mov") == "plate"
+    # The old referee is demoted, not removed.
+    assert "markers" in metrics.TRACKERS
 
 
 def test_resolve_path_passes_a_ready_made_path_straight_through():
