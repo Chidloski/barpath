@@ -1595,8 +1595,11 @@ def plot_bar_path_with_d(data: dict):
         "against the video\n"
         "d is a TAPE MEASUREMENT (owner, 2026-08-06), not a fit. Reps "
         "start-aligned, fore-aft stretched 4x as step 9 draws it.\n"
-        "It helps the deadlift and one bench and HURTS the paused bench — the "
-        "shipping default stays OFF for exactly that reason.",
+        "It helps the deadlift and one bench and HURTS the paused bench — that "
+        "mixed metric was the argument for shipping OFF when this figure was "
+        "made (7bc4bcb). The owner shipped it ON anyway hours later (70b2a63) "
+        "on the geometry argument in pipeline.run's docstring, not on this "
+        "metric — read the title's verdicts as history, not as the default.",
         fontsize=11, y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.90))
     return fig
