@@ -11,11 +11,23 @@ protocol**.
 
 ## Where the work is — READ THIS BEFORE ANYTHING ELSE
 
-**Everything below is on branch `c29-jump-state`, which is PUSHED to origin and
-is NOT merged.** `main` is still at `ae14c40` (C27) and has none of it. That is
-deliberate — `segment.py`, `correct.py` and `pipeline.py` all changed, which is
-branch work under CLAUDE.md's reconstruction-modules rule, and **the owner lands
-it.** Do not merge on their behalf and do not push `main`.
+**ALL OF IT IS ON `main` NOW, AND THE BRANCHES ARE GONE (2026-08-14).** The
+owner merged `c29-jump-state` via PR #6 and then deleted every working branch —
+`c29-jump-state`, `c34-tidy` and `c28-imu-video-oracle`. `main` is the only
+branch, local and remote. Anything below that tells you to look on a branch is
+telling you where the work was DONE, not where it is.
+
+Two things landed on top of that merge and are described nowhere below, because
+they postdate this file: **`src/vtrack/`** replaced `markers.py` as the referee
+for `data_v2/`, and **v1 was deleted outright** — `data/raw/`, `data/video/`,
+`data/synthetic/`, `truth.py`'s plate-template tracker and `analysis/tracking/v1/`.
+`src/capture.py` holds what survived `truth.py`. See `TASKS.md` entries F1.
+
+*This paragraph replaced one saying everything was on `c29-jump-state`, unmerged,
+with `main` at `ae14c40`. The rule it stated still holds and is worth repeating:
+`segment.py`, `correct.py` and `pipeline.py` are branch work under CLAUDE.md's
+reconstruction-modules rule, and **the owner lands it** — do not merge on their
+behalf and do not push `main`.*
 
 Seven commits, oldest first: `a2494b4` `7bc4bcb` `bc66fb1` `18501a3` `70b2a63`
 `cba3e1b` `cc86651` `ff89c41` (eight, counting `ff89c41`).

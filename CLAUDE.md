@@ -1500,8 +1500,12 @@ off-pipeline version. Note the "66–253 cm" figure in the A4 section of
 
 **P3 — The error sits at rep frequency, where no filter or line can reach it.**
 
-**C28 measured the ceiling on 2026-08-04 and it is at the null (branch
-`c28-imu-video-oracle`, not landed).** Every physically-named CONSTANT error
+**C28 measured the ceiling on 2026-08-04 and it is at the null.** *(This read
+"branch `c28-imu-video-oracle`, not landed" until 2026-08-14. It DID land —
+`d329a2a` reached `main` via `c29-jump-state` — and all three working branches
+have since been deleted. Every "Branch ..." line in `TASKS.md` is provenance for
+where work was done, not a place you can still check out; the commits are on
+`main`.)* Every physically-named CONSTANT error
 model — body-frame accel bias, world-frame tilt, accelerometer scale, the step-6
 lever arm `d`, and an attitude error growing with |a| — fitted directly against
 C27's marker paths, i.e. against the answer:
