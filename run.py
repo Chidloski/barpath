@@ -1294,7 +1294,7 @@ def track_all(force: bool = False) -> int:
               f"travel {r['travel_cm']:5.1f} cm  reps {r['n_reps']}{want}{flag}")
 
     print(f"\n{ok} cached, {failed} refused by the tracker, {flagged} flagged")
-    print("figures in analysis/tracking/v1 (plate template) and v2 (markers)"
+    print("figures in analysis/tracking/v2 (vtrack)"
           " — look at them before trusting a number")
     return 0
 
