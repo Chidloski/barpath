@@ -45,7 +45,7 @@ from pathlib import Path
 import numpy as np
 
 from . import (calibrate, correct, integrate, io, metrics, orient, project,
-               segment, truth)
+               segment, capture)
 
 # The optional middle token is a lift variant — bench_spoto_90x5. Without it
 # `expected_reps` returned None for all three of the 2026-07-30 benches, so the
@@ -144,7 +144,7 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     The SCALE was checked and is NOT it: C32 swept `bench_spoto_95x5_1`'s
     referee scale over a 47% span and `d` made it worse at every point, so the
     dissent is scale-invariant. That capture's 0.68-of-plate-radius warning is
-    `truth.find_plate` mis-detecting the rim, not the stickers, and the capture
+    `capture.find_plate` mis-detecting the rim, not the stickers, and the capture
     is fit to referee.
 
     B2's finding is not superseded and should not be re-tried: `d` cannot be
@@ -246,7 +246,7 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     # back — every pre-C31 number in the docs was measured that way.
     if isinstance(wrist_offset, str) and wrist_offset == "auto":
         try:
-            wrist_offset = correct.WRIST_OFFSET_M[truth.lift_of(path)]
+            wrist_offset = correct.WRIST_OFFSET_M[capture.lift_of(path)]
         except (ValueError, KeyError):
             # Drop tests and stationary logs are not a lift and have no d.
             wrist_offset = None
@@ -280,11 +280,11 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     # this check does not vouch for anything upstream of it.
     result["rep_rom_m"] = [float(r[:, 2].max() - r[:, 2].min()) for r in reps]
     try:
-        lift = truth.lift_of(path)
+        lift = capture.lift_of(path)
     except ValueError:
         result["notes"].append("no ROM check: cannot tell which lift this is")
     else:
-        result["warnings"].extend(truth.rom_flags(lift, result["rep_rom_m"]))
+        result["warnings"].extend(capture.rom_flags(lift, result["rep_rom_m"]))
 
     # 8 --- display axis -----------------------------------------------------
     #

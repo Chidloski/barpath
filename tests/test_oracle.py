@@ -373,8 +373,10 @@ from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 
 _ROOT = _Path(__file__).resolve().parents[1]
-_DL = (sorted((_ROOT / "data_v2" / "raw").glob("deadlift_*.csv"))
-       + sorted((_ROOT / "data" / "raw").glob("deadlift_*.csv")))
+# One glob, not two. This used to concatenate `data/raw` and `data_v2/raw`;
+# with v1 deleted (F1, 2026-08-14) both halves resolved to the same directory
+# and every deadlift ran twice.
+_DL = sorted((_ROOT / "data_v2" / "raw").glob("deadlift_*.csv"))
 _needs_deadlifts = pytest.mark.skipif(not _DL, reason="no deadlift captures")
 
 

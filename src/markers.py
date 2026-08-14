@@ -1,17 +1,17 @@
 """
 Video ground truth, mark two — tracking retroreflective stickers.
 
-`truth.py` tracks the plate as a dark disc and matches a template against it.
+`capture.py` tracks the plate as a dark disc and matches a template against it.
 That referee has two measured defects, and this module exists because both are
 defects of the *feature*, not of the code around it:
 
   - **It is lost at lockout.** 97-100% of the frames in the top 10 cm of a
-    deadlift score below `truth.GOOD_SCORE`, against 0% at the floor, and it
+    deadlift score below `capture.GOOD_SCORE`, against 0% at the floor, and it
     invents ~10 cm of fore-aft motion there. A black plate against a dark gym
-    ceiling has no contrast to match on. See `truth.top_of_travel_score`.
+    ceiling has no contrast to match on. See `capture.top_of_travel_score`.
   - **Its scale is calibrated once, at the bottom of frame.** Per-rep video ROM
     on three deadlifts came out 59.1 / 66.8 / 47.6 cm for one lifter whose
-    anatomy fixes it near 61. See `truth.VERTICAL_ROM_M`.
+    anatomy fixes it near 61. See `capture.VERTICAL_ROM_M`.
 
 A sticker fixes the first by construction: it is bright where the plate is dark,
 so it is the one feature whose contrast does *not* depend on what is behind the
@@ -114,8 +114,8 @@ cannot drift into a claim.
 The bias is bounded and the bound is computed, not hoped for. If the model
 centroid sits `e` from the true plate centre in plate coordinates, then as the
 plate rotates through an angle the reported centre traces an arc of radius `e`
-about the truth. `calibration_report` measures `e` directly, by comparing the
-rim centroid against `truth.find_plate`'s independently detected rim circle, and
+about the capture. `calibration_report` measures `e` directly, by comparing the
+rim centroid against `capture.find_plate`'s independently detected rim circle, and
 measures the rotation swing the clip actually contains. A capture with a small
 `e`, or with little rotation, is unaffected either way; a capture with both is
 the one to distrust. **This is the falsifier for the equal-spacing assumption
@@ -126,7 +126,7 @@ Limits, honestly
 - **No absolute scale of its own, and this is the weakest part of the module.**
   The constellation measures how its size *changes*; something else must say how
   big it is in metres. That is `STICKER_RATIO`, one constant measured on the
-  three deadlifts, times `truth.PLATE_DIAMETER_M`. No per-capture rim detection
+  three deadlifts, times `capture.PLATE_DIAMETER_M`. No per-capture rim detection
   is in the path at all — read `STICKER_RATIO` for why, and for the three rim
   detectors that were tried and rejected. On bench the constant is
   **transferred rather than measured**, because that is a different plate
@@ -157,7 +157,7 @@ Limits, honestly
   dimmer at the top of frame and its centroid is noisier for it. In metres that
   worst case is 0.33 cm against a 1 cm spec, so the tracker never stops being
   usable — where the template's top-of-travel frames are 100% below
-  `truth.GOOD_SCORE`, i.e. past the point `truth.py` itself says to stop
+  `capture.GOOD_SCORE`, i.e. past the point `capture.py` itself says to stop
   believing it. **Do not restate this as "no height dependence"**; that caption
   was written once, on `analysis/37`, and the scatter falsified it.
   `top_of_travel_residual` measures it and `validate` reports it.
@@ -174,7 +174,7 @@ Limits, honestly
   apparent shape, and this module reads shape change as scale change. On a
   deadlift the plate stays near its plane; on a lift where it does not, the
   scale would absorb the error silently.
-- Lens distortion is uncorrected, exactly as in `truth.py`.
+- Lens distortion is uncorrected, exactly as in `capture.py`.
 
 Requires `ffmpeg` on PATH. No new Python dependencies.
 """
@@ -188,7 +188,7 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import grey_opening, maximum_filter
 
-from . import truth
+from . import capture
 
 
 # --------------------------------------------------------------- decoding --
@@ -196,11 +196,11 @@ def _grey(frame: np.ndarray) -> np.ndarray:
     """A frame as float in [0, 1], whatever it arrived as.
 
     Every threshold in this module — `MIN_RESPONSE`, `candidates`' `dark_max`,
-    `truth.find_plate`'s scores — is written in [0, 1], so the conversion has to
+    `capture.find_plate`'s scores — is written in [0, 1], so the conversion has to
     happen somewhere. It happens here, per frame, rather than once over the
     whole clip, and that is a memory decision rather than a stylistic one: see
     `_frames_u8`. Public functions therefore accept either dtype and scratch
-    scripts holding a `truth.frames` float stack keep working unchanged.
+    scripts holding a `capture.frames` float stack keep working unchanged.
     """
     return frame.astype(np.float32) / 255.0 if frame.dtype == np.uint8 else frame
 
@@ -208,14 +208,14 @@ def _grey(frame: np.ndarray) -> np.ndarray:
 def _frames_u8(path: str | Path, scale: float) -> tuple[np.ndarray, float]:
     """Decode the whole clip to greyscale **uint8** (N, H, W), and the fps.
 
-    `truth.frames` does the same thing and returns float32 in [0, 1]. This
+    `capture.frames` does the same thing and returns float32 in [0, 1]. This
     module cannot use it, and the reason is worth recording because it cost the
     owner a machine.
 
     This tracker needs full resolution — the stickers are ~5 px at 360x640 and
     halving that throws away the sub-pixel accuracy the module rests on — and it
     holds the whole clip while it tracks. Measured on `deadlift_150x5`, 759
-    frames at 640x360: the float32 stack is 699 MB, and `truth.frames` peaks at
+    frames at 640x360: the float32 stack is 699 MB, and `capture.frames` peaks at
     **1936 MB** producing it, 2.8x the array it returns. The raw bytes, the
     `astype` copy and the `/255` temporary are all live at once. Several such
     tracks running side by side exhaust an 8 GB machine, which is not a
@@ -228,7 +228,7 @@ def _frames_u8(path: str | Path, scale: float) -> tuple[np.ndarray, float]:
     downstream sees uint8; `_grey` converts at each of the three places that
     read pixel values.
     """
-    w, h, fps = truth.probe(path)
+    w, h, fps = capture.probe(path)
     W, H = int(w * scale) // 2 * 2, int(h * scale) // 2 * 2
     raw = subprocess.run(
         ["ffmpeg", "-loglevel", "error", "-i", str(path),
@@ -242,20 +242,20 @@ def _frames_u8(path: str | Path, scale: float) -> tuple[np.ndarray, float]:
 # comes from and what it is worth.
 #
 # Measured on the three 2026-08-01 deadlifts, by detecting the plate rim with
-# `truth.find_plate` and dividing the tracked constellation's circumradius by
+# `capture.find_plate` and dividing the tracked constellation's circumradius by
 # it: **0.862, 0.878, 0.834** — mean 0.858, spread +/-2.6%. Each was checked by
 # eye, by drawing the detected circle back over the frame; the rim detection sits
 # on the rim on both deadlifts in `analysis/35`.
 #
-# Why a constant rather than a per-capture detection, which is what `truth.py`
+# Why a constant rather than a per-capture detection, which is what `capture.py`
 # does. Because the detection is not reliable enough to be worth the risk, and
 # that was measured rather than assumed. Three ways of finding the rim were
 # tried on this footage:
 #
-#   `truth.find_plate`, globally. Correct on deadlift, verified visually. On
+#   `capture.find_plate`, globally. Correct on deadlift, verified visually. On
 #   bench it returns r=124 px against a plate of about 94, because a dark-disc
 #   matched filter against a DARK background grows without limit — the same
-#   failure `truth.py` records for its own bench seeding.
+#   failure `capture.py` records for its own bench seeding.
 #   A radial intensity-gradient rim search. Beautifully consistent on deadlift
 #   at a ratio of 0.928/0.938/0.929 — and wrong: it locks onto the bumper's
 #   inner step, not its outer edge, which the overlay shows plainly. Consistency
@@ -302,7 +302,7 @@ def _frames_u8(path: str | Path, scale: float) -> tuple[np.ndarray, float]:
 # the reconstruction, with "~0.92 would close it exactly" — but it is nothing
 # like enough to confirm the size, and C27's warning that the number must not be
 # adopted by fitting still stands. **Nothing here is changed.** `STICKER_RATIO`
-# and `truth.sticker_plate_diameter` cancel one another on the older captures
+# and `capture.sticker_plate_diameter` cancel one another on the older captures
 # and moving one alone silently rescales all of them. The answer is a tape
 # across the sticker circle into `bar_path(sticker_diameter_m=)`, which retires
 # the constant per capture instead of re-tuning it for everybody.
@@ -463,8 +463,8 @@ def candidates(frame: np.ndarray, dets: np.ndarray | None = None,
     """The best few sticker-triangle hypotheses in one frame, unaided.
 
     Unaided is the point. The first version of this anchored the search to the
-    plate `truth.find_plate` detects, and `truth.find_plate` does not find the
-    plate on bench footage — `truth.py`
+    plate `capture.find_plate` detects, and `capture.find_plate` does not find the
+    plate on bench footage — `capture.py`
     says so outright and records four auto-seeders that all preferred the
     lifter-and-bench silhouette. Anchoring to it on `bench_110x1` seeded the
     tracker on the bench frame and the floor shadow, 40 cm below a plate that
@@ -880,7 +880,7 @@ def plate_radius_near(frame: np.ndarray, centre: np.ndarray,
     Returns `(centre_y, centre_x, radius_px, score)` in **full-frame**
     coordinates.
 
-    `truth.find_plate` searching a whole frame is a global argmax over a gym,
+    `capture.find_plate` searching a whole frame is a global argmax over a gym,
     and on bench it loses. Searching a window centred on a constellation we have
     already found is a different and much easier problem — the plate is the only
     dark disc in the box, and its radius is known to within a small band before
@@ -906,7 +906,7 @@ def plate_radius_near(frame: np.ndarray, centre: np.ndarray,
     crop = _grey(frame[y0:y1, x0:x1])
     lo = max(8, int(0.90 * circumradius))
     hi = max(lo + 2, int(1.45 * circumradius))
-    py, px, r, sc = truth.find_plate(crop, radii=range(lo, hi, 2))
+    py, px, r, sc = capture.find_plate(crop, radii=range(lo, hi, 2))
     return float(py + y0), float(px + x0), int(r), float(sc)
 
 
@@ -1169,7 +1169,7 @@ def seed_frame(stack: np.ndarray, n_sample: int = 30,
     separation and for the racked-bar limit it carries.
 
     The plate radius is then measured locally, by `plate_radius_near`, around
-    the winning constellation — not by a global `truth.find_plate`, which is
+    the winning constellation — not by a global `capture.find_plate`, which is
     the step that failed on bench in the first place.
     """
     stride = max(1, len(stack) // n_sample)
@@ -1308,7 +1308,7 @@ def _reacquire(frame: np.ndarray, dets: np.ndarray, centre: np.ndarray,
     """Find the constellation afresh within `search` px of `centre`. (3, 2) or None.
 
     The same geometry as `candidates`, but anchored on the model's own size
-    rather than on `truth.find_plate` — which cannot be re-run per frame at
+    rather than on `capture.find_plate` — which cannot be re-run per frame at
     any sensible cost, and which is unreliable once the bar leaves the floor
     anyway. The known circumradius does the work the plate radius does there,
     and by this point it is known well: it holds to a few percent all clip.
@@ -1598,7 +1598,7 @@ def track(stack: np.ndarray, seed: int, model: dict, gate: float = 14.0,
 
     `score` is the fit quality in [0, 1]: the fraction of the three rim markers
     matched, attenuated by the fit residual. **It is not an NCC and it must not
-    be compared with `truth.GOOD_SCORE`.**
+    be compared with `capture.GOOD_SCORE`.**
     """
     n = len(stack)
     rim0 = model["rim"]
@@ -1864,7 +1864,7 @@ def calibration_report(stack: np.ndarray, seed: int, model: dict,
     back over the seed frame the detected circle misses the plate on all six
     `data_v2` bench captures — displaced 32-94 px from the plate centre and
     oversized — worst on the two 2026-08-06 ones, which report 0.68 and 0.69.
-    So on bench read `sticker_ratio` as a statement about `truth.find_plate`,
+    So on bench read `sticker_ratio` as a statement about `capture.find_plate`,
     not about the stickers. It does sit on the plate on deadlift, which is
     where `STICKER_RATIO` was calibrated and why the check is worth keeping
     there (C32, 2026-08-06).
@@ -1910,16 +1910,16 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
              sticker_diameter_m: float | None = None) -> dict:
     """Track the stickers and return the bar path in metres.
 
-    The returned dict is deliberately key-compatible with `truth.bar_path` — it
+    The returned dict is deliberately key-compatible with `capture.bar_path` — it
     carries `t`, `x`, `height`, `score`, `fps`, `m_per_px` and `travel_m` — so
     `metrics.vs_truth` and the plotting can consume either referee without
     knowing which they were handed. Note that `score` means something different
-    here and does not compare with `truth.GOOD_SCORE`; see `track`.
+    here and does not compare with `capture.GOOD_SCORE`; see `track`.
 
     Beyond those it adds the things the old referee could not measure:
 
     `x_flat` / `height_flat` are the path under a single fixed scale, the way
-    `truth.bar_path` computes it. `x` / `height` are the same path with the
+    `capture.bar_path` computes it. `x` / `height` are the same path with the
     per-frame scale applied. **Both are returned on purpose**, so that the size
     of the correction is visible from the output rather than asserted here.
     `perspective_shift_cm` is how far apart they end up.
@@ -1931,7 +1931,7 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
 
     `calibration` is `calibration_report` — read it before quoting anything.
 
-    Full resolution by default, unlike `truth.bar_path`'s `scale=0.5`. The
+    Full resolution by default, unlike `capture.bar_path`'s `scale=0.5`. The
     stickers are ~5 px at full size in `data_v2`'s 360x640 footage and halving
     that would throw away the sub-pixel accuracy that is the entire point. That
     is why the clip is held as uint8 and converted per frame — see `_frames_u8`.
@@ -1952,15 +1952,15 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
     # which is the 2026-08-04 deadlifts: stickers on a 425 mm notched plate
     # loaded outboard of the 445 mm bumper that sets the bar height. It falls
     # through to `plate_diameter` everywhere else, so nothing before that
-    # session moves. See `truth.STICKER_PLATE_DIAMETER_M`.
+    # session moves. See `capture.STICKER_PLATE_DIAMETER_M`.
     diam = (diameter_m if diameter_m is not None
-            else truth.sticker_plate_diameter(video))
+            else capture.sticker_plate_diameter(video))
     # The absolute scale, and note what it does NOT depend on: any per-capture
     # rim detection. The sticker circle's size in metres follows from the plate's
     # known diameter and one measured constant (`STICKER_RATIO`); its size in
     # pixels is measured in every frame by the tracker. The rim detector is still
     # run, but only to be reported in `calibration` as a cross-check — it sets
-    # nothing. That is a deliberate reversal of `truth.py`, where the rim
+    # nothing. That is a deliberate reversal of `capture.py`, where the rim
     # detection IS the scale and a bad one is silent.
     # `sticker_diameter_m` is the tape-measured diameter of the circle the
     # sticker CENTRES sit on. Given it, `STICKER_RATIO` is not consulted at all
@@ -2049,17 +2049,17 @@ def bar_path(video: str | Path, scale: float = 1.0, check: bool = True,
 MAX_TOP_RESIDUAL_CM = 0.5   # the referee's own fit error, where it is worst
 
 
-def top_of_travel_residual(path: dict, frac: float = truth.TOP_FRAC) -> dict:
+def top_of_travel_residual(path: dict, frac: float = capture.TOP_FRAC) -> dict:
     """How well the rigid model fits WHERE THE FIT IS WORST, not on average.
 
-    The exact counterpart of `truth.top_of_travel_score`, and it exists for the
+    The exact counterpart of `capture.top_of_travel_score`, and it exists for the
     same reason that one does. This project has now been bitten five times by an
     aggregate that passes while the thing fails exactly where it matters —
     milestones 1-6, C8's peak-height threshold, C10's clip-composition artefact,
     C12's whole-clip NCC median, and this. **A referee needs checking where it
     is used.**
 
-    `frac` matches `truth.TOP_FRAC` deliberately, so "at lockout" means the same
+    `frac` matches `capture.TOP_FRAC` deliberately, so "at lockout" means the same
     span of travel for both trackers and the two remain comparable.
 
     What it found, measured 2026-08-02 over all five `data_v2` captures. The
@@ -2085,7 +2085,7 @@ def top_of_travel_residual(path: dict, frac: float = truth.TOP_FRAC) -> dict:
     tracker is still comfortably inside tolerance — which is exactly the
     distinction C15 drew against the template, and it survives being measured
     properly. The template does not degrade, it *fails*: 100% of its top-10 cm
-    frames fall below `truth.GOOD_SCORE`.
+    frames fall below `capture.GOOD_SCORE`.
 
     Why the residual degrades with height at all: the marker is further from the
     camera at lockout and subtends fewer pixels, so its centroid is noisier.
@@ -2124,7 +2124,7 @@ def top_of_travel_residual(path: dict, frac: float = truth.TOP_FRAC) -> dict:
 def validate(path: dict, video: str | Path = "") -> None:
     """Raise or warn on the ways a sticker track can be wrong.
 
-    Modelled on `truth.validate`, and for the same reason: a tracker that fails
+    Modelled on `capture.validate`, and for the same reason: a tracker that fails
     silently is worse than one that fails loudly, and this project has been
     caught by a confident 0.907 median NCC on a motionless piece of background.
 
@@ -2138,7 +2138,7 @@ def validate(path: dict, video: str | Path = "") -> None:
     if not ok.any():
         raise ValueError(f"{name}: constellation never tracked.")
 
-    if path["travel_m"] < truth.MIN_TRAVEL_M:
+    if path["travel_m"] < capture.MIN_TRAVEL_M:
         raise ValueError(
             f"{name}: tracked bar moved only {path['travel_m']*100:.1f} cm over "
             f"the whole clip. The constellation was found but it is not on a "
@@ -2197,13 +2197,13 @@ def validate(path: dict, video: str | Path = "") -> None:
 
     # Where the fit is worst, not on average. A whole-clip median cannot see a
     # failure confined to part of the movement, and that is the exact defect
-    # this module was written to fix in `truth.py` — so it must not be the only
+    # this module was written to fix in `capture.py` — so it must not be the only
     # thing checked here. See `top_of_travel_residual`.
     top = top_of_travel_residual(path)
     if np.isfinite(top["median_cm"]) and top["median_cm"] > MAX_TOP_RESIDUAL_CM:
         warnings.warn(
             f"{name}: the constellation fit residual over the top "
-            f"{truth.TOP_FRAC:.0%} of travel is {top['median_cm']:.2f} cm "
+            f"{capture.TOP_FRAC:.0%} of travel is {top['median_cm']:.2f} cm "
             f"({top['median_px']:.2f} px), above the {MAX_TOP_RESIDUAL_CM} cm "
             f"this module treats as usable, against {top['whole_cm']:.2f} cm "
             f"over the whole clip. Distances near lockout carry that error. "
@@ -2211,16 +2211,16 @@ def validate(path: dict, video: str | Path = "") -> None:
     elif np.isfinite(top["ratio"]) and top["ratio"] > 4.0:
         warnings.warn(
             f"{name}: the fit residual is {top['ratio']:.1f}x worse over the "
-            f"top {truth.TOP_FRAC:.0%} of travel ({top['median_px']:.2f} px) "
+            f"top {capture.TOP_FRAC:.0%} of travel ({top['median_px']:.2f} px) "
             f"than over the whole clip ({top['whole_px']:.2f} px). Still inside "
             f"tolerance at {top['median_cm']:.2f} cm, so this is a note rather "
             f"than a fault — but the whole-clip figure is not representative of "
             f"this capture and should not be quoted alone.", stacklevel=2)
 
     try:
-        lift = truth.lift_of(video)
+        lift = capture.lift_of(video)
     except ValueError:
         return
-    for flag in truth.rom_flags(lift, [path["travel_m"]]):
+    for flag in capture.rom_flags(lift, [path["travel_m"]]):
         warnings.warn(f"{name}: {flag.split(': ', 1)[1]} (whole-clip travel).",
                       stacklevel=2)

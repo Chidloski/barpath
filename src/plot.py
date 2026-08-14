@@ -111,7 +111,7 @@ def plot_stages(results: dict, truth_paths: dict | None = None):
     """One column per lift, one row per stage. The pipeline, end to end.
 
     `results` maps a label to a `pipeline.run` dict; `truth_paths` optionally
-    maps the same labels to `(t_imu, height)` from `truth.py`. Everything comes
+    maps the same labels to `(t_imu, height)` from `capture.py`. Everything comes
     out of the result dict rather than being recomputed — that dict is
     deliberately fat so that a reader can see every intermediate, and this is
     the thing it was fat for.
@@ -283,7 +283,7 @@ def plot_truth_comparison(recovered, truth, title=""):
     """Recovered against known truth, per axis.
 
     This used to say truth was "only possible on synthetic data". Not since
-    A2 — src/truth.py tracks the plate from footage and gives an external
+    A2 — src/capture.py tracks the plate from footage and gives an external
     horizontal reference on deadlift, which is what src/metrics.py compares
     against. Both sources work here: pass a synthetic pos_true, or a video path
     resampled onto the IMU clock.
@@ -315,7 +315,7 @@ def plot_rom_bounds(reconstructed: dict, video: dict | None = None):
     Bands are drawn with the measured ceiling solid and the inferred floor
     dashed, because they are not the same kind of claim.
     """
-    from . import truth
+    from . import capture
 
     have_video = bool(video)
     fig, axes = plt.subplots(2 if have_video else 1, 1,
@@ -325,7 +325,7 @@ def plot_rom_bounds(reconstructed: dict, video: dict | None = None):
     def panel(ax, data, title):
         x = 0
         for stem, (lift, roms) in data.items():
-            lo, hi = truth.VERTICAL_ROM_M[lift]
+            lo, hi = capture.VERTICAL_ROM_M[lift]
             xs = np.arange(x, x + len(roms))
             l, r = xs[0] - 0.5, xs[-1] + 0.5
             # Shade only this capture's span — the bands differ by lift, so one
@@ -351,9 +351,9 @@ def plot_rom_bounds(reconstructed: dict, video: dict | None = None):
           "Reconstruction, per rep, after step 7. Band = measured ceiling "
           "(solid) and inferred floor (dashed). Red = outside.")
     if have_video:
-        vid = {k: (truth.lift_of(k), v) for k, v in video.items()}
+        vid = {k: (capture.lift_of(k), v) for k, v in video.items()}
         panel(axes[1], vid,
-              "The same bounds applied to the VIDEO ground truth. One lifter, "
+              "The same bounds applied to the VIDEO ground capture. One lifter, "
               "one lift, 19 cm of spread — the referee's vertical scale is "
               "wrong per capture.")
     fig.tight_layout()
@@ -558,7 +558,7 @@ def plot_vs_truth_paths(results: dict, stretch: bool = True):
 
     fig.suptitle(
         "The reconstruction (colour) against the video (grey), every capture "
-        "that has truth. Reps start-aligned, fore-aft stretched 4x as step 9 "
+        "that has capture. Reps start-aligned, fore-aft stretched 4x as step 9 "
         "draws it.\nSquat is absent because vs_truth refuses it. Bench "
         "distances carry ~4% from a hand-placed seed; read metrics.bench_sync "
         "before quoting them.", fontsize=10)
@@ -706,7 +706,7 @@ def plot_scorecard(results: dict, truths: dict, roms: dict):
     row carries what it is allowed to conclude, and the bottom row is entirely
     about what is NOT known — which is most of it.
     """
-    from . import truth as truth_mod
+    from . import capture as truth_mod
 
     labels = list(results)
     fig, axes = plt.subplots(3, len(labels), figsize=(5.0 * len(labels), 11.5),
@@ -1011,7 +1011,7 @@ def plot_overview(results: dict, spec_cm: float = 1.0):
     and reading them next to the drift that produced them is the point.
 
     **Put a `data_v2` bench in the columns.** The two referees then sit side by
-    side on the same lift: `truth.py` matching a dark plate template, and
+    side on the same lift: `capture.py` matching a dark plate template, and
     `markers.py` tracking stickers. They are not the same quality of evidence
     and the figure should not let anyone forget it — the marker column is the
     one where the referee tracks 100% of frames rather than losing the bar at
@@ -1245,7 +1245,7 @@ def plot_v2_deadlift_conic(data: dict):
 
     Row 2 is per-rep vertical ROM, pipeline against video. This is the axis the
     reconstruction has always been decent on, and it is here as the control:
-    agreement here is necessary, not sufficient, and `truth.VERTICAL_ROM_M`
+    agreement here is necessary, not sufficient, and `capture.VERTICAL_ROM_M`
     admits both instruments even when they disagree by 20% (C24).
 
     Row 3 is HORIZONTAL, per rep, video against pipeline, with the flat-line
@@ -1257,7 +1257,7 @@ def plot_v2_deadlift_conic(data: dict):
 
     Row 4 is the referee's own health, which C12 is the reason for. It plots
     markers matched against decile of travel. The plate TEMPLATE loses the bar
-    at lockout — 166/166 frames below `truth.GOOD_SCORE` — so every deadlift
+    at lockout — 166/166 frames below `capture.GOOD_SCORE` — so every deadlift
     number in P2 is measured through a referee that fails exactly where the
     measurement is taken. The conic tracker's failure is at the FLOOR instead,
     which is the opposite end and matters for a different reason: ROM is

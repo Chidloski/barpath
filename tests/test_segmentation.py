@@ -29,9 +29,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src import calibrate, correct, integrate, io, orient, segment, truth  # noqa: E402
+from src import calibrate, correct, integrate, io, orient, segment, capture  # noqa: E402
 
-RAW = Path(__file__).resolve().parents[1] / "data" / "raw"
+RAW = Path(__file__).resolve().parents[1] / "data_v2" / "raw"
 RAW_V2 = Path(__file__).resolve().parents[1] / "data_v2" / "raw"
 REP_COUNT = re.compile(r"^(bench|squat|deadlift)(?:_[a-z]+)*_[\d.]+x(\d+)")
 CAPTURES = ([p for p in sorted(RAW.glob("*.csv")) if REP_COUNT.match(p.name)]
@@ -104,7 +104,7 @@ def test_bench_spoto_does_not_count_the_re_rack():
     log, bounds = windows(path)
     assert len(bounds) == 5
 
-    lo, hi = truth.VERTICAL_ROM_M["bench"]
+    lo, hi = capture.VERTICAL_ROM_M["bench"]
     for n, rom in enumerate(roms_cm(path, bounds), 1):
         assert lo * 100 <= rom <= hi * 100, (
             f"rep {n} spans {rom:.1f} cm, outside the "
@@ -140,7 +140,7 @@ def test_squat_single_lands_on_the_rep_not_the_re_rack():
 
     (a, b), = bounds
     rom = roms_cm(path, bounds)[0]
-    lo, hi = truth.VERTICAL_ROM_M["squat"]
+    lo, hi = capture.VERTICAL_ROM_M["squat"]
     assert lo * 100 <= rom <= hi * 100, (
         f"window spans {rom:.1f} cm, outside the {lo*100:.0f}-{hi*100:.0f} cm "
         f"squat bound — 18.0 cm was the re-rack")
@@ -339,7 +339,7 @@ def test_every_window_spans_a_physically_possible_rep(path):
     expected = int(REP_COUNT.match(path.name).group(2))
     assert len(bounds) == expected
 
-    lo, hi = truth.VERTICAL_ROM_M[truth.lift_of(path)]
+    lo, hi = capture.VERTICAL_ROM_M[capture.lift_of(path)]
     slack = 0.02                    # bounds are anatomical, quoted to the cm
     for n, rom in enumerate(roms_cm(path, bounds), 1):
         assert (lo - slack) * 100 <= rom <= (hi + slack) * 100, (

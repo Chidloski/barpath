@@ -1,6 +1,6 @@
 """`bar_path` for eight-sticker footage — the third video referee.
 
-`truth.bar_path` matches a template to the dark plate and referees
+`capture.bar_path` matches a template to the dark plate and referees
 `data/video/`. `markers.bar_path` fits a rigid constellation and refereed
 `data_v2/`. This is the referee for `data_v2/` now, and it exists because
 `markers.py` was not good enough on that footage: six of eleven squat clips were
@@ -62,7 +62,7 @@ from .track import track_clip as _follow
 
 # Per-rep vertical range of motion used to RANK candidate constellations.
 #
-# **Deliberately tighter than `truth.VERTICAL_ROM_M`, and it must not be widened
+# **Deliberately tighter than `capture.VERTICAL_ROM_M`, and it must not be widened
 # to match it.** That constant is a per-capture gate on a finished measurement
 # and is wide on purpose — bench (0.20, 0.35) admits both instruments while they
 # disagree by 20% (C24). This one is a SCORING prior over rival hypotheses in a
@@ -74,7 +74,7 @@ ROM = {"bench": (0.24, 0.31), "squat": (0.61, 0.68), "deadlift": (0.53, 0.61)}
 # Diameter in metres of the plate the stickers are ON. The owner's measurements
 # (2026-08-12): black notched 42.5, black bumper 44.5, blue calibrated 45.
 #
-# Kept here rather than taken from `truth.sticker_plate_diameter` because that
+# Kept here rather than taken from `capture.sticker_plate_diameter` because that
 # function has no 2026-08-06 entry and falls through to `plate_diameter`, so
 # routing through it would silently change the scale on the newest captures
 # (C32 flagged this and nobody has asked the owner). Reconciling the two is
@@ -180,10 +180,10 @@ def track_clip(video, cache_dir=None, verbose=False, reacquire=True,
 def bar_path(video, cache_dir=None, check: bool = True) -> dict:
     """Tracked bar path, in `markers.bar_path`'s key set.
 
-    Key-compatible by design, so `metrics.vs_truth`, `truth.landings`,
-    `truth.sync` and `metrics.bench_sync` consume it without knowing which
+    Key-compatible by design, so `metrics.vs_truth`, `capture.landings`,
+    `capture.sync` and `metrics.bench_sync` consume it without knowing which
     tracker produced it — the same property that let `markers.py` slot in beside
-    `truth.py` (C17). `residual_px` is present, which is what makes
+    `capture.py` (C17). `residual_px` is present, which is what makes
     `metrics._video_quality` report this as a marker-style referee and score its
     top-of-travel fit in centimetres rather than as an NCC.
 

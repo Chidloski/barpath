@@ -33,7 +33,7 @@ must not inherit a segmentation error from the thing it exists to check. See
 What the cache does NOT protect you from
 ----------------------------------------
 **A cached path is only valid for the tracker code that produced it.** Change
-`markers.py` or `truth.py` and every CSV is stale, silently, in exactly the way
+`markers.py` or `capture.py` and every CSV is stale, silently, in exactly the way
 this project keeps getting hurt by. The header records the tracker, the git
 commit and the time, so staleness is visible if you look — but nothing enforces
 it. `refresh` and `force=True` exist for that; use them after any tracker
@@ -55,7 +55,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import metrics, truth
+from . import metrics, capture
 
 # Which side of the lifter the camera stands on (owner, 2026-08-06). The watch
 # is on the LEFT wrist throughout. Not derivable from the footage; recorded
@@ -90,7 +90,7 @@ def csv_path(video: str | Path) -> Path:
 
 
 # Which subdirectory of `analysis/tracking/` a dataset's figures go in. The two
-# datasets are refereed by DIFFERENT TRACKERS — `data/` by truth.py's plate
+# datasets are refereed by DIFFERENT TRACKERS — `data/` by capture.py's plate
 # template, `data_v2/` by markers.py's conic — so interleaving their figures in
 # one directory puts two incomparable things side by side under names that sort
 # by lift. Split so that browsing a directory means browsing one referee.
@@ -141,8 +141,8 @@ def write(path: dict, video: str | Path, dest: Path | None = None) -> Path:
              f"# generated = {datetime.now(timezone.utc):%Y-%m-%dT%H:%MZ}",
              f"# n_frames = {n}"]
     try:
-        lines.append(f"# lift = {truth.lift_of(video)}")
-        lines.append(f"# camera_side = {CAMERA_SIDE[truth.lift_of(video)]}")
+        lines.append(f"# lift = {capture.lift_of(video)}")
+        lines.append(f"# camera_side = {CAMERA_SIDE[capture.lift_of(video)]}")
     except (ValueError, KeyError):
         pass
     for k in SCALAR_KEYS:
@@ -162,7 +162,7 @@ def write(path: dict, video: str | Path, dest: Path | None = None) -> Path:
 def read(video: str | Path, src: Path | None = None) -> dict | None:
     """Read a cached track back, or None if there is no cache.
 
-    Returns a dict shaped like `truth.bar_path` / `markers.bar_path` output —
+    Returns a dict shaped like `capture.bar_path` / `markers.bar_path` output —
     key-compatible by design, so `metrics.vs_truth` consumes it without knowing
     it came from disk. Keys absent from the CSV are simply absent; callers that
     need a tracker-specific diagnostic should track afresh.
@@ -352,7 +352,7 @@ def review(video: str | Path) -> dict:
     # plausible range means the tracker is following something that is not the
     # bar — however healthy its coverage and residual look.
     try:
-        lo, _ = truth.VERTICAL_ROM_M[truth.lift_of(video)]
+        lo, _ = capture.VERTICAL_ROM_M[capture.lift_of(video)]
         out["implausible"] = out["travel_cm"] < lo * 100 * 0.9
     except (ValueError, KeyError):
         out["implausible"] = False

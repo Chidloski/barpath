@@ -22,7 +22,7 @@ from unittest import mock
 import numpy as np
 import pytest
 
-from src import markers, truth
+from src import markers, capture
 
 VIDEO_DIR = Path(__file__).resolve().parents[1] / "data_v2" / "video_only"
 CAPTURES = ["deadlift_150x5_20260801", "deadlift_160x5_20260801",
@@ -158,7 +158,7 @@ def test_detect_finds_a_blob_to_a_tenth_of_a_pixel():
 # --------------------------------------------------------- real capture --
 @pytest.mark.parametrize("stem", CAPTURES)
 def test_every_capture_tracks_essentially_completely(paths, stem):
-    """Coverage, and it is the headline improvement over `truth.py`.
+    """Coverage, and it is the headline improvement over `capture.py`.
 
     All five captures track 100% of frames with all three rim markers seen.
     The bar is what this asserts against: the first working version held lock
@@ -198,7 +198,7 @@ def test_fit_residual_holds_at_the_top_of_travel(paths, stem):
     HIGHEST at lockout (1.595 px, over that same limit). An aggregate ranked it
     the best capture we hold while it was the worst where the measurement is
     actually taken — the same shape as C12's whole-clip NCC median, which is the
-    defect this module was written to fix in `truth.py`.
+    defect this module was written to fix in `capture.py`.
 
     Asserted in centimetres rather than pixels, because that is the unit of the
     thing being refereed. A referee whose own fit error approaches the 1 cm spec
@@ -290,23 +290,23 @@ def test_apparent_size_is_rigid(paths, stem):
 
 @pytest.mark.parametrize("stem", CAPTURES)
 def test_vertical_rom_is_anatomically_possible(paths, stem):
-    """Whole-clip travel sits inside `truth.VERTICAL_ROM_M`.
+    """Whole-clip travel sits inside `capture.VERTICAL_ROM_M`.
 
     The same table the reconstruction is judged by, applied to the referee.
-    `truth.rom_flags`' own docstring makes the argument: a referee has no
+    `capture.rom_flags`' own docstring makes the argument: a referee has no
     standing to be exempt from the check it applies. The old tracker fails this
     on `bench_85x6`, where it reports 0.2 cm of travel and raises.
     """
     if stem not in paths:
         pytest.skip(f"{stem} not present")
-    lift = truth.lift_of(stem)
-    assert truth.rom_flags(lift, [paths[stem]["travel_m"]]) == []
+    lift = capture.lift_of(stem)
+    assert capture.rom_flags(lift, [paths[stem]["travel_m"]]) == []
 
 
 def test_deadlift_rom_spread_beats_the_old_tracker(paths):
     """One lifter's deadlift ROM does not vary by much, and this is the check.
 
-    `truth.VERTICAL_ROM_M` records the old tracker's 19 cm spread across three
+    `capture.VERTICAL_ROM_M` records the old tracker's 19 cm spread across three
     captures of a range of motion fixed by the lifter's own limbs, and calls it
     the largest known error in that module. On the same lifter's 2026-08-01
     captures the sticker tracker spans 4.8 cm.
@@ -360,7 +360,7 @@ def test_hub_sticker_is_not_in_the_path(paths):
 
 
 def test_validate_raises_on_a_motionless_track():
-    """The failure `truth.validate` exists for, re-checked here.
+    """The failure `capture.validate` exists for, re-checked here.
 
     A tracker that reports a confident path through a static piece of gym is the
     expensive failure in this project's history, and it is worth having a gate
@@ -619,7 +619,7 @@ def test_paired_bench_travel_agrees_with_the_imu(paired, stem):
 
     It read 9-13% LOW on all four until 2026-08-03, and the wrong sign was the
     clue: the clip contains the un-rack, so video travel should if anything
-    EXCEED one rep. The cause was `truth.plate_diameter` returning the black
+    EXCEED one rep. The cause was `capture.plate_diameter` returning the black
     notched plates' 425 mm for a session shot on 450 mm blue calibrated discs.
 
     The gate stays loose at +/-15% despite the agreement being far better. It

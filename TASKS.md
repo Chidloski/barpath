@@ -14,6 +14,66 @@ Related, and deliberately not duplicated here:
 ---
 
 
+## F1 — delete v1 entirely: the corpus, the plate tracker, and `truth.py` (2026-08-14)
+
+Owner's instruction, both scopes chosen by them explicitly after being shown
+what each would cost. Merged `c29-jump-state` to `main` first (fast-forward,
+24 commits, nothing lost).
+
+**Deleted:** `data/raw/`, `data/video/`, `data/synthetic/`, `src/truth.py`'s
+plate-template tracker, `analysis/tracking/v1/`, `tests/test_video_truth.py`,
+and `run.py`'s `--stages`, `--splice` and `--b3oracle` drivers (all three called
+the deleted `bar_path`). `data/raw/` was gitignored, so its 17 labelled captures
+and 4 diagnostic logs are **unrecoverable**. History was NOT rewritten, so the
+10 tracked `.mov` files remain retrievable.
+
+**`src/capture.py` is what survived `truth.py`**, and the split is by whether v2
+needs it. Kept: `lift_of`, the plate diameters and `sticker_plate_diameter`,
+`VERTICAL_ROM_M`/`rom_flags`, `FORE_AFT_ACCEL_MAX`/`fore_aft_flags`, the decode
+helpers `markers.py` uses, `find_plate` **as a single-frame rim detector only**,
+and `landings`/`sync`/`to_imu_time` — which ARE the deadlift clock match at
+9-19 ms and the best-validated sync in the project. Gone: `bar_path`, `track`,
+`SEEDS`, `template_half`, `validate`, `top_of_travel_score`, `GOOD_SCORE`.
+`metrics.TRACKERS` is `("markers", "vtrack")` and `infer_tracker` RAISES outside
+`data_v2/` rather than falling back to a referee that no longer exists.
+
+**THE FINDING, and it is worth more than the deletion.** Every gate in
+`tests/test_real_data.py` and `tests/test_segmentation.py` globbed `data/raw`.
+So when the 2026-08-08 session arrived, **it was never segmented under test** —
+the gates silently had nothing to run on for those captures. Deleting v1 forced
+the constants to be repointed at `data_v2/raw`, and the suite went from **109
+passing to 311**, immediately exposing defects nobody had seen:
+
+    deadlift_150x4_1_20260808   5 windows for a labelled 4   (video says 4)
+    bench_117.5x1_20260808      2 windows for a labelled 1   (video says 1)
+
+plus per-rep ROM out of band on those two and on `deadlift_170x4_3` (68.0 cm
+against 40-61, at a CORRECT count of 4/4 — wrong extent without a miscount,
+the `squat_160x1` shape), `deadlift_200x1` reaching the displacement fallback
+C5 built for singles, and **C31a's cadence plateau closed**: tol=1.47 now gives
+28/32 where C31a measured 1.4598-1.5306 and warned the 2.4% margin was thin.
+
+The bench single is the sharpest of them because **CLAUDE.md predicted it in
+writing** — "if you capture a bench single, expect this to fail", from
+`_similar_cluster`'s lateness tie-break picking the re-rack when every cluster
+is size 1. One was captured. It failed.
+
+Per-capture reasons are in `WRONG_REP_COUNT` and `KNOWN_ROM_FAILURES`. **The two
+structural failures are left RED, not xfailed** — they are the finding, and an
+expected-failure mark is how the earlier ones stayed invisible.
+
+**Removed rather than re-tuned:**
+`test_the_pause_concentrates_the_correction_on_SQUAT_but_NOT_on_BENCH`. It
+contrasted paused squats against continuous ones, and every continuous squat
+was v1. What is left is three paused squats and one continuous SINGLE, so it was
+computing the contrast from one capture of one rep. It failed at 3.84 against
+2.95 x 1.4; lowering the factor would have made it pass, which is precisely
+what must not happen when the sample supporting the claim is gone.
+
+*Evidence:* `src/capture.py`, `tests/test_real_data.py`, CLAUDE.md P1.
+
+---
+
 ## F1 — `src/vtrack/`, a new referee for `data_v2/` (2026-08-14)
 
 Owner's task, over three rounds: fix the `data_v2` video tracking, then land it.

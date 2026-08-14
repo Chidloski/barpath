@@ -23,7 +23,7 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-VIDEO_DIRS = [ROOT / "data" / "video", ROOT / "data_v2" / "video"]
+VIDEO_DIRS = [ROOT / "data_v2" / "video"]
 CLIPS = sorted(p for d in VIDEO_DIRS if d.is_dir() for p in d.glob("*.mov"))
 CACHED = [p for p in CLIPS
           if (p.resolve().parents[1] / "tracked" / f"{p.stem}.csv").is_file()]
@@ -35,7 +35,7 @@ def test_every_clip_that_can_be_tracked_has_a_cached_csv():
     """The protocol is 'cache the moment a video is supplied'. Check it held.
 
     Not every clip CAN be tracked — `squat_140x4_3` and `squat_160x1` raise from
-    `truth.validate`, which is the tracker correctly refusing footage where it
+    `capture.validate`, which is the tracker correctly refusing footage where it
     found 0.2 and 0.4 cm of travel. Those are allowed to be absent. What is not
     allowed is a clip that tracks fine and was simply never cached, because then
     someone pays the ffmpeg cost again and, worse, nobody has looked at it.
@@ -160,9 +160,9 @@ def test_camera_side_is_recorded_for_every_lift():
     bar from the sensor and bar tilt is scored as pipeline error. Deadlift is the
     only lift where the two are on the same side.
     """
-    from src import tracked, truth
+    from src import tracked, capture
 
-    assert set(tracked.CAMERA_SIDE) == set(truth.PLATE_DIAMETER_M), (
+    assert set(tracked.CAMERA_SIDE) == set(capture.PLATE_DIAMETER_M), (
         "a lift gained or lost a camera-side record")
     assert tracked.CAMERA_SIDE["deadlift"] != tracked.CAMERA_SIDE["bench"]
 
@@ -203,6 +203,10 @@ def test_the_video_finds_the_rep_count_the_FILENAME_says():
         f"flagged as mis-tracked: {unexplained}")
 
     # And the check must still be capable of firing, or it is measuring nothing.
-    assert len(CACHED) - len(disagree) >= 20, (
+    # 14, not the 20 this asserted until 2026-08-14. That floor was set when
+    # both datasets were cached — 28 clips — and the v1 half has since been
+    # deleted, leaving 16. This tracks the corpus; it is a "the rep finder has
+    # not broadly regressed" floor, not a finding.
+    assert len(CACHED) - len(disagree) >= 14, (
         f"only {len(CACHED) - len(disagree)} clips match their filename; the "
         f"rep finder has probably regressed")

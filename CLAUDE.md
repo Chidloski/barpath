@@ -668,8 +668,15 @@ The learning goal survives the lockout that used to enforce it, and it changes
   at every boundary. This has bitten before.
 - Use the per-sample `dt` array. The watch does not always honour the
   requested rate, and a baked-in interval is an invisible scale error.
-- `data/raw/` is immutable and gitignored. Re-deriving from raw is trivial;
-  re-collecting from a gym is not.
+- **`data/` NO LONGER EXISTS.** The v1 corpus — `data/raw/`, `data/video/` and
+  `data/synthetic/` — was deleted on 2026-08-14 on the owner's instruction,
+  together with `truth.py`'s plate-template tracker. `data/raw/` was gitignored,
+  so those 17 labelled captures and 4 diagnostic logs are **unrecoverable**; the
+  10 tracked `.mov` files remain in git history, which was NOT rewritten.
+  The immutability rule this bullet used to state — "`data/raw/` is immutable
+  and gitignored, re-deriving from raw is trivial, re-collecting from a gym is
+  not" — now applies to **`data_v2/raw/`**, and applies with more force, because
+  it is the only corpus left.
 
 ## Working style
 
@@ -719,6 +726,34 @@ The learning goal survives the lockout that used to enforce it, and it changes
 
 ## Open problems
 
+**READ THIS BEFORE ANY PROBLEM BELOW — v1 WAS DELETED ON 2026-08-14 (F1).**
+The owner had `data/raw/`, `data/video/`, `data/synthetic/`, `src/truth.py`'s
+plate-template tracker and `analysis/tracking/v1/` removed. Three consequences,
+and the third is the one that changes what you should do next.
+
+**Every finding measured on the v1 corpus is now HISTORY, not a live gate.**
+P2's C10 and C12 tables, P3's oracle work, P4's stationary-watch bias figures,
+P6's momentum closure and B5/B6's impact measurements were all measured on
+captures that no longer exist. They are kept below because what was believed and
+why is the record this project runs on — but **none of them can be re-derived**,
+and a number you cannot re-derive cannot be used to referee a change.
+
+**`truth.py` is gone; `src/capture.py` holds what survived it** — `lift_of`, the
+plate diameters, `VERTICAL_ROM_M`/`rom_flags`, `FORE_AFT_ACCEL_MAX`, the decode
+helpers, `find_plate` as a rim detector only, and `landings`/`sync`/
+`to_imu_time`, which are the deadlift clock match at 9-19 ms. `metrics.TRACKERS`
+is `("markers", "vtrack")`; the `"plate"` referee no longer exists and
+`infer_tracker` raises outside `data_v2/` rather than falling back to it.
+
+**AND THE SUITE HAD NOT BEEN RUNNING ON THE NEW CAPTURES.** Every gate in
+`tests/test_real_data.py` and `tests/test_segmentation.py` globbed `data/raw`,
+so the 2026-08-08 session had **never been segmented under test**. Repointing
+them at `data_v2/raw` took the suite from 109 passing to 311 and immediately
+exposed defects nobody had seen — see P1. This is the project's oldest failure
+shape (an aggregate that passes while the thing fails) in its purest form: a
+suite reporting success by not running.
+
+
 The milestone table is gone. Milestones 1–6 all passed and the project does
 not work; a schedule that reports success while the artefact fails is worse
 than no schedule. What survived it is real: the watch logger works, and
@@ -759,7 +794,9 @@ video and log, four gitignored files, unrecoverable — because that plate's
 stickers are placed too unevenly to referee (C23). They had supplied a rep
 count of 9 of 10 and squat's first replication of the attitude bound; both are
 gone with them, and C22's fatigue finding is measured on data that no longer
-exists. **The corpus is 30 labelled captures and 124 reps** — 17 in `data/raw/`
+exists. **THE CORPUS IS 16 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-14).** The v1
+half was deleted; every count below that includes `data/raw/` is history. The
+paragraph as written said: **the corpus is 30 labelled captures and 124 reps** — 17 in `data/raw/`
 (72 reps) and 13 in `data_v2/raw/` (52), plus four unlabelled diagnostic logs in
 `data/raw/` that no count gate sees. It reached 24 and 101 with the three
 8-sticker deadlifts of 2026-08-04 (6, 6 and 3 reps, the first captures in this
@@ -772,6 +809,47 @@ taken: 13 captures before `7004c32`, then 10 and 44 reps, then 17 and 72, then
 
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
+
+**P1 IS REOPENED (F1, 2026-08-14). COUNTING IS NOT CLEAN — IT WAS UNTESTED.**
+The heading below says 124/124 across 30 captures. That was true of the corpus
+it was measured on, and the 2026-08-08 session was never in it: every gate
+globbed `data/raw`, which no longer exists, so those captures had never been
+segmented under test at all. Pointed at `data_v2/raw`, two of the sixteen
+miscount immediately:
+
+    deadlift_150x4_1_20260808   5 windows for a labelled 4
+    bench_117.5x1_20260808      2 windows for a labelled SINGLE
+
+**The video agrees with the labels on both** — `vtrack` counts 4/4 and 1/1 on
+the same clips — so this is the segmenter, not the labels. `deadlift_150x4_1`'s
+vertical rms against the video is 27.6-30.1 cm where every other deadlift is
+1.7-4.9, which is what one spurious window does to a per-rep comparison.
+
+**The bench single was PREDICTED here and the prediction is below, unchanged.**
+This file already said `_similar_cluster`'s lateness tie-break picks the latest
+movement when every cluster is size 1, that on a bench single the latest
+movement is the re-rack, and "if you capture a bench single, expect this to
+fail." One was captured. It failed. That is the prediction being right, not a
+new mechanism.
+
+Three more gates went red with them, and two are structural rather than
+per-capture:
+
+  * `test_cadence_tolerance_is_a_plateau_not_a_point` — **C31a's plateau has
+    closed.** It recorded 1.4598-1.5306 and warned the 2.4% margin was thin and
+    two-sided. tol=1.47 now gives 28/32.
+  * `test_only_a_single_has_a_degenerate_cluster` — `deadlift_200x1` now reaches
+    the displacement fallback, which C5 built for `squat_160x1` alone.
+  * per-rep vertical ROM is out of band on `bench_117.5x1` (42.1 cm against
+    20-35), `deadlift_150x4_1` (67.8 against 40-61) and `deadlift_170x4_3`
+    (68.0) — the third counts 4/4, so that one is wrong EXTENT without a
+    miscount, the `squat_160x1` shape.
+
+Recorded in `tests/test_real_data.py`'s `WRONG_REP_COUNT` and
+`KNOWN_ROM_FAILURES` with per-capture reasons. The two structural failures are
+deliberately left RED rather than xfailed: they are the finding, and burying
+them under an expected-failure mark is how the previous ones stayed invisible.
+*Evidence:* TASKS.md F1.
 
 **P1 — Counting and extent are clean at 124/124; phase is now verified on
 deadlift and bench, and open only on squat.** *(The heading read 72/72 until

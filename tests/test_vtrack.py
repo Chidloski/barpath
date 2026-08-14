@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src import metrics, truth, vtrack
+from src import metrics, capture, vtrack
 
 VIDEO = Path(__file__).resolve().parents[1] / "data_v2" / "video"
 CLIPS = sorted(VIDEO.glob("*.mov")) if VIDEO.is_dir() else []
@@ -33,14 +33,14 @@ def test_data_v2_infers_vtrack():
 
 
 def test_rom_prior_is_tighter_than_the_capture_gate():
-    """The scoring prior must stay inside `truth.VERTICAL_ROM_M`, not match it.
+    """The scoring prior must stay inside `capture.VERTICAL_ROM_M`, not match it.
 
     `vtrack.ROM` ranks rival constellations and has to discriminate;
-    `truth.VERTICAL_ROM_M` gates a finished measurement and is wide on purpose.
+    `capture.VERTICAL_ROM_M` gates a finished measurement and is wide on purpose.
     Widening the first to the second changes which hypothesis wins.
     """
     for lift, (lo, hi) in vtrack.ROM.items():
-        glo, ghi = truth.VERTICAL_ROM_M[lift]
+        glo, ghi = capture.VERTICAL_ROM_M[lift]
         assert glo <= lo < hi <= ghi, lift
 
 
@@ -80,8 +80,8 @@ def test_every_clip_tracks_plausibly(clip):
     constant — and between them they catch the failure that coverage cannot.
     """
     path = vtrack.bar_path(clip, check=False)
-    lift = truth.lift_of(clip)
-    lo, hi = truth.VERTICAL_ROM_M[lift]
+    lift = capture.lift_of(clip)
+    lo, hi = capture.VERTICAL_ROM_M[lift]
 
     assert not path["implausible"], (
         f"{clip.stem}: {path['travel_m'] * 100:.1f} cm of travel is not the bar")

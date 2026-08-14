@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run the pipeline over captures and print what happened.
 
-    python run.py                      # every capture in data/raw
-    python run.py data/raw/foo.csv     # one
+    python run.py                      # every capture in data_v2/raw
+    python run.py data_v2/raw/foo.csv     # one
     python run.py --plot               # also write diagnostics to analysis/
     python run.py --truth              # also measure against the video (A3)
     python run.py --stages             # draw the pipeline stage by stage
@@ -26,7 +26,7 @@ remaining benches report why instead.
 
 --overview writes analysis/40_overview.png: one capture per column, the
 pipeline stages down to the bar path, and underneath it the bar path drawn on
-the video's. Three captures — a deadlift and a bench refereed by truth.py's
+the video's. Three captures — a deadlift and a bench refereed by capture.py's
 plate template, and a data_v2 bench refereed by markers.py — so the two
 referees sit side by side on the same lift. Slow: it decodes three clips.
 
@@ -41,7 +41,7 @@ it decodes the deadlift clips to check the video against the same bounds, which
 is where it found that two of the three are mis-scaled.
 
 --paths writes analysis/27_bar_paths.png: steps 8 and 9 applied to every
-capture in data/raw, which is the product this project exists to make. Read the
+capture in data_v2/raw, which is the product this project exists to make. Read the
 subtitles before reading the shapes — a panel drawn without the 4x stretch has
 an axis project.confidence would not vouch for, and a panel drawn WITH it has
 an identifiable axis and no accuracy claim whatever. Nothing here is inside
@@ -99,51 +99,6 @@ STAGE_CAPTURES = [("squat", "squat_130x5"),
                   ("deadlift", "deadlift_155x6_1")]
 
 
-def draw_stages() -> int:
-    """One representative capture per lift, drawn stage by stage."""
-    import matplotlib
-    matplotlib.use("Agg")
-    from src import plot, truth
-
-    raw = ROOT / "data" / "raw"
-    results, truths = {}, {}
-    for label, stem in STAGE_CAPTURES:
-        path = next(raw.glob(f"{stem}*.csv"), None)
-        if path is None:
-            print(f"{stem} not in data/raw/ — skipping")
-            continue
-        video = pipeline.find_video(path, ROOT / "data" / "video")
-        # Deadlift and bench have video truth; squat does not. See src/README.md.
-        # A bench whose correlation misses the sync floor still raises, and
-        # pipeline.run records that in result["blocked"] rather than dying.
-        use = video if label in ("deadlift", "bench") else None
-        results[f"{label}  ({stem})"] = pipeline.run(path, video=use)
-
-        if use is not None:
-            from src import segment
-            log = results[f"{label}  ({stem})"]["log"]
-            tp = truth.bar_path(use)
-            fit = truth.sync(truth.landings(tp),
-                             [float(log["t"][k]) for k in segment.impact_anchors(log)])
-            truths[f"{label}  ({stem})"] = (truth.to_imu_time(tp, fit), tp["height"])
-
-    if not results:
-        print("no captures found for the stage diagram")
-        return 1
-
-    out = ROOT / "analysis" / "21_pipeline_stages.png"
-    plot.plot_stages(results, truths).savefig(out, dpi=105)
-    print(f"wrote {out.relative_to(ROOT)}")
-    return 0
-
-
-OVERVIEW_CAPTURES = [
-    ("deadlift 155x6\ndata/raw · truth.py", "data/raw", "deadlift_155x6_1"),
-    ("bench 90x4\ndata/raw · truth.py", "data/raw", "bench_90x4_2"),
-    ("bench 95x2\ndata_v2 · markers.py", "data_v2/raw", "bench_95x2"),
-]
-
-
 def draw_overview() -> int:
     """Stages, bar path and video truth for three captures, in one figure."""
     import matplotlib
@@ -190,13 +145,13 @@ def draw_paths() -> int:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
-    from src import plot, truth
+    from src import plot, capture
 
-    raw = ROOT / "data" / "raw"
+    raw = ROOT / "data_v2" / "raw"
     runs = []
     for path in sorted(raw.glob("*.csv")):
         try:
-            truth.lift_of(path)
+            capture.lift_of(path)
         except ValueError:
             continue                      # stationary diagnostics have no reps
         result = pipeline.run(path)
@@ -255,19 +210,19 @@ def draw_rom() -> int:
     import matplotlib
     matplotlib.use("Agg")
     import numpy as np
-    from src import metrics, plot, truth
+    from src import metrics, plot, capture
 
-    raw = ROOT / "data" / "raw"
+    raw = ROOT / "data_v2" / "raw"
     recon, video = {}, {}
     for path in sorted(raw.glob("*.csv")):
         try:
-            lift = truth.lift_of(path)
+            lift = capture.lift_of(path)
         except ValueError:
             continue                      # stationary diagnostics have no reps
         result = pipeline.run(path)
         recon[path.stem] = (lift, result["rep_rom_m"])
 
-        clip = pipeline.find_video(path, ROOT / "data" / "video")
+        clip = pipeline.find_video(path, ROOT / "data_v2" / "video")
         if clip is None or lift == "squat":
             continue                      # squat video is not truth
         try:
@@ -435,15 +390,15 @@ def draw_anchors() -> int:
     import matplotlib
     matplotlib.use("Agg")
     import numpy as np
-    from src import calibrate, io, orient, plot, segment, truth
+    from src import calibrate, io, orient, plot, segment, capture
 
-    raw = ROOT / "data" / "raw"
+    raw = ROOT / "data_v2" / "raw"
     anchors, residuals, exclusion, momentum = {}, {}, {}, {}
     lifts: dict[str, tuple[list, list]] = {}
 
     for path in sorted(raw.glob("*.csv")):
         try:
-            lift = truth.lift_of(path)
+            lift = capture.lift_of(path)
         except ValueError:
             continue
         result = pipeline.run(path)
@@ -504,16 +459,16 @@ def draw_anchors() -> int:
 
 
 def draw_vs_truth() -> int:
-    """Every capture with video: the reconstruction drawn on top of the truth."""
+    """Every capture with video: the reconstruction drawn on top of the capture."""
     import matplotlib
     matplotlib.use("Agg")
-    from src import metrics, plot, truth
+    from src import metrics, plot, capture
 
-    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
+    raw, vid = ROOT / "data_v2" / "raw", ROOT / "data_v2" / "video"
     results = {}
     for path in sorted(raw.glob("*.csv")):
         try:
-            lift = truth.lift_of(path)
+            lift = capture.lift_of(path)
         except ValueError:
             continue
         video = pipeline.find_video(path, vid)
@@ -536,347 +491,8 @@ def draw_vs_truth() -> int:
         print("no captures with a usable video comparison")
         return 1
 
-    out = ROOT / "analysis" / "33_reconstruction_vs_truth.png"
+    out = ROOT / "analysis" / "33_reconstruction_vs_capture.png"
     plot.plot_vs_truth_paths(results).savefig(out, dpi=105)
-    print(f"wrote {out.relative_to(ROOT)}")
-    return 0
-
-
-def b3_oracle() -> int:
-    """B3 — how much is left in the per-rep detrend, and does a quadratic pay?
-
-    **An ORACLE, not a correction.** It fits the detrend against the video it
-    is being scored on, which is forbidden in the pipeline (HANDOFF: "never fit
-    a pipeline parameter to the video") and is the whole point here: an oracle
-    bounds a FAMILY before anyone builds an estimator for it. B6 used the same
-    move to cap constant-bias correction at ~30% and save building it.
-
-    What is bounded. Step 7 subtracts one particular line per rep — the
-    endpoint-to-endpoint one. Shipping's residual is therefore `err` minus *a*
-    line, where `err` is the undetrended reconstruction minus the video. So
-    `err` minus the BEST line is a floor no linear detrend can beat, however
-    cleverly it picks that line, and `err` minus the best line-plus-quadratic
-    is the same floor one order up. Both are computed per rep, per axis, by
-    least squares on normalised rep time.
-
-    THE DECISION RULE, FIXED BEFORE ANY NUMBER IS READ
-    --------------------------------------------------
-    Both thresholds are the project's 1 cm horizontal spec. Neither is tuned,
-    and that is deliberate — HANDOFF's standing worry is that every constant
-    here was chosen on the same 17 captures it is evaluated on.
-
-    1. **Headroom.** oracle-linear must beat shipping's `pipeline_h_rms` by
-       >= 1 cm, median over the scoreable captures. If it does not, today's
-       endpoint line is already at the linear family's floor: B3's "own 2-4 cm"
-       does not exist, and the lambda=0.99 shrinkage lead in TASKS.md was a fit
-       to the validation set rather than a finding.
-
-    2. **The extra order pays.** oracle-quadratic must beat oracle-linear by
-       >= 1 cm on the same median. If it does not, a quadratic degree of
-       freedom cannot help the horizontal whatever pins it, and B3's remaining
-       value is confined to (3).
-
-    3. **The B6 unlock, which is why B3 was promoted and is measured on the
-       VERTICAL.** Independent of 1 and 2: with a quadratic detrend in place,
-       B6's splice must keep per-rep vertical ROM inside
-       `truth.VERTICAL_ROM_M["deadlift"]` -- it is 82.6 cm today against a
-       61 cm ceiling -- without regressing horizontal past shipping.
-
-    **(3) can hold while (1) and (2) both fail, and if so that is the result:**
-    B3 is then not a horizontal fix at all, only an enabler for B6, and must be
-    reported as one. Writing that down in advance is the point; B6's own rule
-    was partly mis-specified because it read horizontal columns to judge a
-    vertical correction, and this is the same trap one step later.
-
-    Caution carried from A3: `vs_truth`'s horizontal rms is insensitive to
-    gross time misalignment, so none of this is evidence the reps line up in
-    time. It is a magnitude comparison between families.
-    """
-    import numpy as np
-    from src import correct, metrics, truth
-
-    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
-
-    # One decode per clip: vs_truth is called twice per capture below.
-    cache, original = {}, truth.bar_path
-
-    def cached(v, *a, **k):
-        cache.setdefault(str(v), original(v, *a, **k))
-        return cache[str(v)]
-
-    truth.bar_path = metrics.truth.bar_path = cached
-
-    def oracle(err: np.ndarray, order: int) -> float:
-        """rms of `err` after removing the best polynomial of `order` in rep time."""
-        tau = np.linspace(0.0, 1.0, len(err))
-        X = np.vander(tau, order + 1)
-        resid = err - X @ np.linalg.lstsq(X, err, rcond=None)[0]
-        return float(np.sqrt((resid ** 2).mean()) * 100)
-
-    rows, traces = [], [None]
-    for path in sorted(raw.glob("*.csv")):
-        stem = path.stem.split("_2026")[0]
-        clip = pipeline.find_video(path, vid)
-        if clip is None:
-            # Say so. A silent `continue` here scored this oracle on 7 captures
-            # instead of 10 the first time it ran, because a git WORKTREE gets
-            # only the tracked half of data/video — 10 clips of the 17 in the
-            # shared checkout, the 2026-07-30 session's among the missing. The
-            # numbers looked entirely reasonable. That is this project's
-            # recurring shape once more: a check that passes by not looking.
-            print(f"{stem:22s} no video paired — skipped")
-            continue
-        try:
-            result = pipeline.run(path)
-            out = metrics.vs_truth(result, clip)
-        except Exception as exc:                      # squat, unsynced bench
-            print(f"{stem:22s} refused — {str(exc).splitlines()[0][:90]}")
-            continue
-
-        per = [r for r in out["per_rep"] if r["covered"]]
-        if not per:
-            continue
-
-        # Per rep: the undetrended reconstruction's error against the video,
-        # on the horizontal (column 0) and the vertical (column 1).
-        h_ship = float(np.median([r["pipeline_h_rms"] for r in per]))
-        v_ship = float(np.median([r["pipeline_v_rms"] for r in per]))
-        h_lin = float(np.median([oracle(r["curve_raw"][:, 0] - r["curve_video"][:, 0], 1)
-                                 for r in per]))
-        h_quad = float(np.median([oracle(r["curve_raw"][:, 0] - r["curve_video"][:, 0], 2)
-                                  for r in per]))
-        v_lin = float(np.median([oracle(r["curve_raw"][:, 1] - r["curve_video"][:, 1], 1)
-                                 for r in per]))
-        v_quad = float(np.median([oracle(r["curve_raw"][:, 1] - r["curve_video"][:, 1], 2)
-                                  for r in per]))
-        null = float(np.median([r["null_h_rms"] for r in per]))
-
-        # The BUILDABLE thing, not an oracle: order=2 pinned by the rep's own
-        # velocity closure. Nothing here reads the video.
-        reps2 = correct.detrend_set(result["bar_position"], result["bounds"],
-                                    result["log"]["t"],
-                                    velocity=result["velocity"], order=2)
-        out2 = metrics.vs_truth({**result, "reps": reps2}, clip)
-        per2 = [r for r in out2["per_rep"] if r["covered"]]
-        h_est = float(np.median([r["pipeline_h_rms"] for r in per2]))
-        v_est = float(np.median([r["pipeline_v_rms"] for r in per2]))
-        rom = float(np.median([abs(p[:, 2].max() - p[:, 2].min()) for p in reps2]) * 100)
-        rom_ship = float(np.median([abs(p[:, 2].max() - p[:, 2].min())
-                                    for p in result["reps"]]) * 100)
-        if stem.startswith("deadlift") and traces[0] is None:
-            traces[0] = (stem, [p[:, 2] * 100 for p in result["reps"]],
-                         [p[:, 2] * 100 for p in reps2])
-
-        rows.append({"capture": stem, "null": null, "rom": rom,
-                     "rom_ship": rom_ship,
-                     "h_ship": h_ship, "h_lin": h_lin, "h_quad": h_quad,
-                     "h_est": h_est, "v_est": v_est,
-                     "v_ship": v_ship, "v_lin": v_lin, "v_quad": v_quad})
-        print(f"{stem:22s} h {h_ship:6.2f} -> lin {h_lin:6.2f} "
-              f"-> quad {h_quad:6.2f}   (null {null:5.2f})   "
-              f"v {v_ship:6.2f} -> lin {v_lin:6.2f} -> quad {v_quad:6.2f}"
-              f"   || order=2 h {h_est:7.2f} v {v_est:6.2f} rom {rom:6.1f}")
-
-    if not rows:
-        print("no capture with video to bound the detrend on")
-        return 1
-
-    def med(k):
-        return float(np.median([r[k] for r in rows]))
-
-    gain_1 = med("h_ship") - med("h_lin")
-    gain_2 = med("h_lin") - med("h_quad")
-    print(f"\nmedian over {len(rows)} captures, horizontal cm:")
-    print(f"  shipping {med('h_ship'):.2f}   oracle-linear {med('h_lin'):.2f}"
-          f"   oracle-quadratic {med('h_quad'):.2f}   null {med('null'):.2f}")
-    print(f"  rule 1, headroom      : {gain_1:+.2f} cm  "
-          f"{'PASS' if gain_1 >= 1.0 else 'FAIL'} (needs >= 1.00)")
-    print(f"  rule 2, quadratic pays: {gain_2:+.2f} cm  "
-          f"{'PASS' if gain_2 >= 1.0 else 'FAIL'} (needs >= 1.00)")
-    print(f"\n  the BUILDABLE order=2 (velocity closure, no video): "
-          f"h {med('h_est'):.2f} cm  v {med('v_est'):.2f} cm")
-    print(f"\nmedian vertical cm: shipping {med('v_ship'):.2f}   "
-          f"oracle-linear {med('v_lin'):.2f}   oracle-quadratic {med('v_quad'):.2f}")
-
-    # Rule 3 — the B6 unlock, and the reason B3 was promoted at all.
-    ceil = truth.VERTICAL_ROM_M["deadlift"][1] * 100
-    print(f"\nrule 3, the B6 unlock (deadlift ROM ceiling {ceil:.0f} cm):")
-    rule3 = _b3_rule_three(ceil)
-    ok = all(r["rom"] <= ceil for r in rule3 if r["variant"] == "splice, order=2")
-    print(f"  rule 3, splice stays in ROM: {'PASS' if ok else 'FAIL'}")
-
-    if traces[0] is not None:
-        import matplotlib
-        matplotlib.use("Agg")
-        from src import plot
-        out = ROOT / "analysis" / "38_b3_detrend_oracle.png"
-        plot.plot_b3_oracle(rows, traces[0], ceil).savefig(out, dpi=105)
-        print(f"\nwrote {out.relative_to(ROOT)}")
-    return 0
-
-
-def _b3_rule_three(ceil: float) -> list[dict]:
-    """B6's splice under an order=2 detrend. Rule 3 of `b3_oracle`.
-
-    The splice is re-implemented here rather than imported from `draw_splice`
-    for the reason that function gives: it was measured and rejected, so it
-    lives in `run.py` and in the test that pins it, not in `correct.py`.
-    """
-    import numpy as np
-    from scipy.integrate import cumulative_trapezoid
-    from src import correct, metrics, segment
-
-    def splice(velocity, t, rest, impacts):
-        v = velocity.copy()
-        for r in rest:
-            k = max([i for i in impacts if i < r], default=None)
-            if k is None:
-                continue
-            e = v[r]
-            w = np.zeros(len(v))
-            w[k:r + 1] = (t[k:r + 1] - t[k]) / (t[r] - t[k])
-            w[r + 1:] = 1.0
-            v = v - w[:, None] * e
-        return v
-
-    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
-    rows = []
-    for csv, video in DL_SPLICE:
-        path, clip = raw / f"{csv}.csv", vid / f"{video}.mov"
-        if not (path.exists() and clip.exists()):
-            print(f"  {csv} or {video} not present — skipping")
-            continue
-        result = pipeline.run(path)
-        log, t = result["log"], result["log"]["t"]
-        impacts = segment.impact_anchors(log)
-        lo, hi = result["bounds"][0][0], result["bounds"][-1][1] - 1
-        rest = [k for k in segment.rest_instants(log, impacts) if lo <= k <= hi]
-        stem = csv.split("_2026")[0]
-
-        for label, do, order in [("shipping", False, 1),
-                                 ("splice, order=1", True, 1),
-                                 ("splice, order=2", True, 2)]:
-            v = splice(result["velocity"], t, rest, impacts) if do else result["velocity"]
-            pos = cumulative_trapezoid(v, np.cumsum(log["dt"]), axis=0, initial=0)
-            reps = correct.detrend_set(pos, result["bounds"], t,
-                                       velocity=v, order=order)
-            h = metrics.vs_truth({**result, "reps": reps, "velocity": v},
-                                 clip)["pipeline_h_rms"]
-            rom = float(np.median([abs(p[:, 2].max() - p[:, 2].min())
-                                   for p in reps]) * 100)
-            rows.append({"capture": stem, "variant": label, "h": h, "rom": rom})
-            print(f"  {stem:22s} {label:18s} h {h:6.2f} cm   ROM {rom:6.1f} cm"
-                  + ("   <-- BREAKS ROM" if rom > ceil else ""))
-    return rows
-
-
-DL_SPLICE = [("deadlift_155x6_1_20260728_122828", "deadlift_155x6_1_20260728"),
-             ("deadlift_155x6_2_20260728_123603", "deadlift_155x6_2_20260728"),
-             ("deadlift_180x3_20260728_121739", "deadlift_180x3_20260728")]
-
-
-def draw_splice() -> int:
-    """B6 — the impact splice: it fixes the closure and loses anyway.
-
-    Regenerates analysis/32. The splice is implemented here and in the test
-    that pins the result, deliberately not in `correct.py` — it was measured
-    and rejected, and B7's precedent is to delete rather than leave a flag.
-    """
-    import matplotlib
-    matplotlib.use("Agg")
-    import numpy as np
-    from scipy.integrate import cumulative_trapezoid
-    from scipy.signal import savgol_filter
-    from src import correct, metrics, plot, segment, truth
-
-    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
-
-    # One decode per clip; vs_truth is called four times per capture.
-    cache, original = {}, truth.bar_path
-
-    def cached(v, *a, **k):
-        cache.setdefault(str(v), original(v, *a, **k))
-        return cache[str(v)]
-
-    truth.bar_path = metrics.truth.bar_path = cached
-
-    def splice(velocity, t, rest, impacts, axes):
-        v = velocity.copy()
-        keep = np.zeros(v.shape[1])
-        keep[list(axes)] = 1.0
-        for r in rest:
-            k = max([i for i in impacts if i < r], default=None)
-            if k is None:
-                continue
-            e = v[r] * keep
-            w = np.zeros(len(v))
-            w[k:r + 1] = (t[k:r + 1] - t[k]) / (t[r] - t[k])
-            w[r + 1:] = 1.0
-            v = v - w[:, None] * e
-        return v
-
-    def closure(result, velocity, video):
-        t_imu, _, height, _ = metrics._video_on_imu_clock(result, video)
-        v_vid = np.gradient(savgol_filter(height, 9, 3), t_imu)
-        log, t = result["log"], result["log"]["t"]
-        first, last = t[result["bounds"][0][0]], t[result["bounds"][-1][1] - 1]
-        mids = metrics._video_zero_dwells(t_imu, v_vid, 0.10, 0.20)
-        mids = mids[(mids >= first - 0.5) & (mids <= last + 0.5)]
-        idx = [int(np.searchsorted(t, m)) for m in mids]
-        impacts = segment.impact_anchors(log)
-        return [velocity[b, 2] - velocity[a, 2]
-                for a, b in zip(idx, idx[1:])
-                if any(a <= k < b for k in impacts)]
-
-    variants = [("shipping", None, (0, 1, 2)),
-                ("splice z", (2,), (0, 1, 2)),
-                ("splice xyz", (0, 1, 2), (0, 1, 2)),
-                ("splice xyz\n+ z-only detrend", (0, 1, 2), (2,))]
-
-    closures, h_rms, rom_trace = {}, {}, None
-    for csv, video in DL_SPLICE:
-        path, clip = raw / f"{csv}.csv", vid / f"{video}.mov"
-        if not (path.exists() and clip.exists()):
-            print(f"{csv} or {video} not present — skipping")
-            continue
-        result = pipeline.run(path)
-        log, t = result["log"], result["log"]["t"]
-        impacts = segment.impact_anchors(log)
-        lo, hi = result["bounds"][0][0], result["bounds"][-1][1] - 1
-        rest = [k for k in segment.rest_instants(log, impacts) if lo <= k <= hi]
-        stem = csv.split("_2026")[0]
-
-        closures[stem] = (closure(result, result["velocity"], clip),
-                          closure(result, splice(result["velocity"], t, rest,
-                                                 impacts, (2,)), clip))
-        row = {}
-        for label, axes, det in variants:
-            v = (result["velocity"] if axes is None
-                 else splice(result["velocity"], t, rest, impacts, axes))
-            pos = cumulative_trapezoid(v, np.cumsum(log["dt"]), axis=0, initial=0)
-            reps = correct.detrend_set(pos, result["bounds"], t, axes=det)
-            row[label] = metrics.vs_truth(
-                {**result, "reps": reps, "velocity": v}, clip)["pipeline_h_rms"]
-        h_rms[stem] = row
-        print(f"{stem:22s} closure {np.median(closures[stem][0]):+.3f} -> "
-              f"{np.median(closures[stem][1]):+.3f} m/s   "
-              + "  ".join(f"{k.splitlines()[0]} {v:.2f}" for k, v in row.items()))
-
-        if rom_trace is None:
-            v = splice(result["velocity"], t, rest, impacts, (2,))
-            pos = cumulative_trapezoid(v, np.cumsum(log["dt"]), axis=0, initial=0)
-            sp = correct.detrend_set(pos, result["bounds"], t)
-            rom_trace = (stem, [p[:, 2] * 100 for p in result["reps"]],
-                         [p[:, 2] * 100 for p in sp])
-
-    if not closures:
-        print("no deadlift capture with video to measure the splice on")
-        return 1
-
-    out = ROOT / "analysis" / "32_b6_splice_rejected.png"
-    plot.plot_splice_rejected(closures, h_rms, rom_trace,
-                              truth.VERTICAL_ROM_M["deadlift"][1] * 100
-                              ).savefig(out, dpi=105)
     print(f"wrote {out.relative_to(ROOT)}")
     return 0
 
@@ -886,9 +502,9 @@ def draw_closure() -> int:
     import matplotlib
     matplotlib.use("Agg")
     import numpy as np
-    from src import metrics, orient, plot, segment, truth
+    from src import metrics, orient, plot, segment, capture
 
-    raw, vid = ROOT / "data" / "raw", ROOT / "data" / "video"
+    raw, vid = ROOT / "data_v2" / "raw", ROOT / "data_v2" / "video"
     groups: dict[str, list] = {"bench, lifting": [],
                                "deadlift, pull only": [],
                                "deadlift, impact inside": []}
@@ -896,7 +512,7 @@ def draw_closure() -> int:
 
     for path in sorted(raw.glob("*.csv")):
         try:
-            lift = truth.lift_of(path)
+            lift = capture.lift_of(path)
         except ValueError:
             continue
         if lift == "squat":
@@ -970,12 +586,12 @@ def draw_bias_models() -> int:
     import numpy as np
     from src import correct, integrate, io, metrics, plot, segment
 
-    raw = ROOT / "data" / "raw"
+    raw = ROOT / "data_v2" / "raw"
     variants: dict[str, list] = {k: [] for k in B6_VARIANTS}
     closure, traces = {}, {}
 
     for path in sorted(raw.glob("deadlift*.csv")):
-        video = pipeline.find_video(path, ROOT / "data" / "video")
+        video = pipeline.find_video(path, ROOT / "data_v2" / "video")
         if video is None:
             continue
         base = pipeline.run(path, video=video)
@@ -1037,16 +653,16 @@ def draw_scorecard() -> int:
     """How well the pipeline currently performs, per lift, on what evidence."""
     import matplotlib
     matplotlib.use("Agg")
-    from src import metrics, plot, truth
+    from src import metrics, plot, capture
 
-    raw = ROOT / "data" / "raw"
+    raw = ROOT / "data_v2" / "raw"
     results, truths, roms = {}, {}, {}
 
     # Every rep of every capture feeds the ROM row; the other two rows use one
     # representative capture per lift, the same ones the stage diagram uses.
     for path in sorted(raw.glob("*.csv")):
         try:
-            lift = truth.lift_of(path)
+            lift = capture.lift_of(path)
         except ValueError:
             continue
         roms.setdefault(lift, []).extend(pipeline.run(path)["rep_rom_m"])
@@ -1054,9 +670,9 @@ def draw_scorecard() -> int:
     for lift, stem in STAGE_CAPTURES:
         path = next(raw.glob(f"{stem}*.csv"), None)
         if path is None:
-            print(f"{stem} not in data/raw/ — skipping")
+            print(f"{stem} not in data_v2/raw/ — skipping")
             continue
-        video = pipeline.find_video(path, ROOT / "data" / "video")
+        video = pipeline.find_video(path, ROOT / "data_v2" / "video")
         label = f"{lift}  ({stem})"
         result = pipeline.run(path)
         results[label] = result
@@ -1070,7 +686,7 @@ def draw_scorecard() -> int:
             # beats_null is printed alongside, never behind a flag: below 1.0
             # the reconstruction is worse than drawing no fore-aft motion at
             # all, which is true of six of the ten captures with video and of
-            # every deadlift. See metrics.vs_truth.
+            # every deadlift. See metrics.vs_capture.
             verdict = "beats" if m["beats_null"] >= 1.0 else "LOSES TO"
             print(f"{stem}: horizontal {m['pipeline_h_rms']:.2f} cm rms, "
                   f"vertical {m['pipeline_v_rms']:.2f} cm rms, "
@@ -1187,7 +803,7 @@ def draw_paused_squat() -> int:
 
     # --- the tolerance panel, over every labelled capture in both datasets --
     cache: dict = {}
-    for root in (ROOT / "data" / "raw", ROOT / "data_v2" / "raw"):
+    for root in (ROOT / "data_v2" / "raw",):
         for path in sorted(root.glob("*.csv")):
             exp = pipeline.expected_reps(path)
             if exp is None:
@@ -1250,7 +866,7 @@ def draw_bar_path_with_d() -> int:
     """
     import matplotlib
     matplotlib.use("Agg")
-    from src import correct, metrics, pipeline, plot, truth
+    from src import correct, metrics, pipeline, plot, capture
 
     picks = ["deadlift_160x6_1", "bench_95x2", "bench_spoto_95x5_1"]
     raw = ROOT / "data_v2" / "raw"
@@ -1269,7 +885,7 @@ def draw_bar_path_with_d() -> int:
         # Track ONCE and score twice. resolve_path accepts the dict straight
         # back, so the two arms cannot differ by a re-track.
         path = metrics.resolve_path(video)
-        d = correct.WRIST_OFFSET_M[truth.lift_of(csv)]
+        d = correct.WRIST_OFFSET_M[capture.lift_of(csv)]
         arms = {}
         for tag, off in (("off", None), ("on", d)):
             res = pipeline.run(csv, wrist_offset=off)
@@ -1326,7 +942,7 @@ def draw_pause_attitude() -> int:
         yaw = np.degrees(np.abs(world[:, 2])) / dt[:-1]
         return tilt, yaw
 
-    csvs = sorted(list((ROOT / "data" / "raw").glob("*.csv"))
+    csvs = sorted(list((ROOT / "data_v2" / "raw").glob("*.csv"))
                   + list((ROOT / "data_v2" / "raw").glob("*.csv")))
     ty, prof = {}, {}
     for c in csvs:
@@ -1399,7 +1015,7 @@ def draw_pipeline_now() -> int:
     import matplotlib
     matplotlib.use("Agg")
     import numpy as np
-    from src import metrics, pipeline, plot, truth
+    from src import metrics, pipeline, plot, capture
 
     picks = [
         ("data_v2", "deadlift_160x6_1"), ("data", "deadlift_155x6_1"),
@@ -1474,11 +1090,11 @@ def draw_jump_with_d() -> int:
     import matplotlib
     matplotlib.use("Agg")
     import numpy as np
-    from src import correct, metrics, oracle, pipeline, plot, truth
+    from src import correct, metrics, oracle, pipeline, plot, capture
 
     ARMS = [("control", -1, False), ("C29", 0.20, False),
             ("d", -1, True), ("both", 0.20, True)]
-    csvs = (sorted((ROOT / "data" / "raw").glob("deadlift_*.csv"))
+    csvs = (sorted((ROOT / "data_v2" / "raw").glob("deadlift_*.csv"))
             + sorted((ROOT / "data_v2" / "raw").glob("deadlift_*.csv")))
     rows = {}
     for csv in csvs:
@@ -1486,7 +1102,7 @@ def draw_jump_with_d() -> int:
         if video is None:
             continue
         path = metrics.resolve_path(video)
-        d = correct.WRIST_OFFSET_M[truth.lift_of(csv)]
+        d = correct.WRIST_OFFSET_M[capture.lift_of(csv)]
         row = {}
         for tag, width, use_d in ARMS:
             base = pipeline.run(csv, wrist_offset=None)
@@ -1584,9 +1200,9 @@ def draw_deadlift_parabola() -> int:
         return rows
 
     dls = (sorted((ROOT / "data_v2" / "raw").glob("deadlift_*.csv"))
-           + sorted((ROOT / "data" / "raw").glob("deadlift_*.csv")))
+           + sorted((ROOT / "data_v2" / "raw").glob("deadlift_*.csv")))
     bns = (sorted((ROOT / "data_v2" / "raw").glob("bench*.csv"))
-           + sorted((ROOT / "data" / "raw").glob("bench*.csv")))
+           + sorted((ROOT / "data_v2" / "raw").glob("bench*.csv")))
     print("deadlift:")
     dl = gather(dls)
     print("bench:")
@@ -1624,7 +1240,7 @@ def track_all(force: bool = False) -> int:
 
     `python run.py --track` caches every clip that is not cached yet;
     `--track --force` re-tracks everything, which is what you do after changing
-    `markers.py` or `truth.py`, because a cached path is only valid for the
+    `markers.py` or `capture.py`, because a cached path is only valid for the
     tracker code that produced it.
 
     Writes `<dataset>/tracked/<stem>.csv` and
@@ -1643,7 +1259,7 @@ def track_all(force: bool = False) -> int:
     import warnings
     from src import tracked
 
-    clips = sorted(list((ROOT / "data" / "video").glob("*.mov"))
+    clips = sorted(list((ROOT / "data_v2" / "video").glob("*.mov"))
                    + list((ROOT / "data_v2" / "video").glob("*.mov")))
     if not clips:
         print("no clips found")
@@ -1688,8 +1304,6 @@ def main(argv: list[str]) -> int:
     want_plot = "--plot" in argv
     want_truth = "--truth" in argv
 
-    if "--stages" in argv:
-        return draw_stages()
     if "--overview" in argv:
         return draw_overview()
     if "--paths" in argv:
@@ -1706,10 +1320,6 @@ def main(argv: list[str]) -> int:
         return draw_bias_models()
     if "--closure" in argv:
         return draw_closure()
-    if "--splice" in argv:
-        return draw_splice()
-    if "--b3oracle" in argv:
-        return b3_oracle()
     if "--vstruth" in argv:
         return draw_vs_truth()
     if "--scorecard" in argv:
@@ -1729,14 +1339,14 @@ def main(argv: list[str]) -> int:
     if "--dlparabola" in argv:
         return draw_deadlift_parabola()
 
-    paths = [Path(a) for a in args] or sorted((ROOT / "data" / "raw").glob("*.csv"))
+    paths = [Path(a) for a in args] or sorted((ROOT / "data_v2" / "raw").glob("*.csv"))
     if not paths:
-        print("no captures found in data/raw/")
+        print("no captures found in data_v2/raw/")
         return 1
 
     blocked: set[str] = set()
     for path in paths:
-        video = pipeline.find_video(path, ROOT / "data" / "video") if want_truth else None
+        video = pipeline.find_video(path, ROOT / "data_v2" / "video") if want_truth else None
         result = pipeline.run(path, video=video)
         print(pipeline.summary(result))
         print()

@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import calibrate, integrate, io, orient, segment  # noqa: E402
 
-RAW = Path(__file__).resolve().parents[1] / "data" / "raw"
+RAW = Path(__file__).resolve().parents[1] / "data_v2" / "raw"
 
 # Must stay identical to pipeline.REP_LABEL. The optional middle token is a
 # lift variant (bench_spoto_90x5); without it the three 2026-07-30 benches
@@ -33,14 +33,22 @@ REP_COUNT = re.compile(r"^(bench|squat|deadlift)(?:_[a-z]+)*_[\d.]+x(\d+)")
 
 # Every log, including non-lifts. Use for format-level checks — clipping,
 # sampling, quaternion norms — which are about the FILE, not about lifting.
+#
+# **`RAW` is `data_v2/raw` as of 2026-08-14**, because `data/raw` was deleted
+# with the rest of v1 on the owner's instruction. Every gate in this file was
+# written against the v1 corpus and would otherwise skip silently — 132 of 133
+# tests did exactly that for one run, which is the failure mode this project
+# has been bitten by repeatedly: a suite that reports success by not running.
+# The four diagnostic logs (a stationary watch on a table, and the room
+# captures) went with v1, so `ALL_LOGS` and `CAPTURES` are now nearly the same
+# list; `CAPTURES` is kept distinct because the distinction is real and the
+# next diagnostic capture will restore it.
 ALL_LOGS = sorted(RAW.glob("*.csv")) if RAW.is_dir() else []
 
-# Rep-labelled lifts only. Nearly every gate here means "a set of reps", and
-# data/raw/ now also holds diagnostic captures — a stationary watch on a table,
-# for instance — where asking how many reps were found is meaningless.
+# Rep-labelled lifts only. Nearly every gate here means "a set of reps".
 CAPTURES = [p for p in ALL_LOGS if REP_COUNT.match(p.name)]
 
-needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
+needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data_v2/raw/")
 
 # Captures whose rep COUNT is wrong. P1 recorded counting as closed at 44/44,
 # and it was, on the ten captures that existed on 2026-07-29. The 2026-07-30
@@ -72,7 +80,27 @@ needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
 # Separate from KNOWN_ROM_FAILURES, which is about how far each window SPANS.
 # A window can be miscounted with the right extent or counted right with the
 # wrong extent, and squat_160x1 was exactly the second case.
-WRONG_REP_COUNT: dict[str, str] = {}
+# NOT EMPTY as of 2026-08-14 (F1), and these entries were invisible until the
+# v1 corpus was deleted. Every gate in this file globbed `data/raw`, so the
+# 2026-08-08 captures had NEVER been segmented under test — the suite reported
+# success by not running, which is this project's oldest failure shape. Pointing
+# RAW at `data_v2/raw` took the file from 1 passing test to 311 across the
+# suite, and surfaced these two immediately.
+WRONG_REP_COUNT: dict[str, str] = {
+    "deadlift_150x4_1_20260808":
+        "segments 5 windows for a labelled 4, and the VIDEO agrees with the "
+        "label — vtrack counts 4/4 on the same clip. Its vertical rms against "
+        "the video is 27.6-30.1 cm where every other deadlift is 1.7-4.9, which "
+        "is what a spurious window does to a per-rep comparison. C31a's rule "
+        "was measured on captures from 2026-08-06 and earlier; this is the "
+        "first set it was never tested against.",
+    "bench_117.5x1_20260808":
+        "segments 2 windows for a labelled SINGLE. P1 predicted exactly this: "
+        "`_similar_cluster`'s lateness tie-break picks the latest movement when "
+        "every cluster is size 1, and on a bench single the latest movement is "
+        "the re-rack. CLAUDE.md says 'if you capture a bench single, expect "
+        "this to fail'. It was captured, and it failed.",
+}
 
 
 def xfail_if_miscounted(path: Path) -> None:
@@ -334,7 +362,20 @@ SLACK_M = 0.02      # the bounds are anatomical, quoted to the nearest cm
 # It is the worst capture by measured horizontal error (P2) and the one that
 # over-reads its impact step (P6); treat a drift past ~63 cm as that capture
 # getting worse rather than as the bound being tight.
-KNOWN_ROM_FAILURES: dict[str, str] = {}
+# NOT EMPTY as of 2026-08-14 (F1). Same cause as WRONG_REP_COUNT above and the
+# same reason nobody had seen it: these captures were never under test while
+# the gates globbed the v1 corpus.
+KNOWN_ROM_FAILURES: dict[str, str] = {
+    "bench_117.5x1_20260808":
+        "rep 1 spans 42.1 cm against a 20-35 cm bench band, because the set is "
+        "segmented as 2 windows and the first one swallows the un-rack. The "
+        "count is the defect; the extent is how it shows up here.",
+    "deadlift_150x4_1_20260808":
+        "rep 1 spans 67.8 cm against 40-61. Same root cause as its miscount.",
+    "deadlift_170x4_3_20260808":
+        "rep 4 spans 68.0 cm against 40-61, on a capture that counts 4/4 — so "
+        "this one is extent WITHOUT a miscount, the squat_160x1 shape.",
+}
 
 
 @needs_data
@@ -342,7 +383,7 @@ KNOWN_ROM_FAILURES: dict[str, str] = {}
 def test_reconstructed_rom_is_physically_possible(path):
     """Every rep's vertical ROM must be a range this lifter can move a bar through.
 
-    Bounds are measured per lift (`truth.VERTICAL_ROM_M`); the floors are
+    Bounds are measured per lift (`capture.VERTICAL_ROM_M`); the floors are
     inferred, so read a floor violation as "that window is not a whole rep".
 
     Where this is measured matters. Run on `result["position"]` instead of
@@ -352,17 +393,17 @@ def test_reconstructed_rom_is_physically_possible(path):
     nothing about the acceleration reaching the integrator, which is P3.
 
     The bounds are anatomical and quoted to the nearest centimetre, so this
-    gate allows `SLACK_M` on each end where `truth.rom_flags` allows none. The
+    gate allows `SLACK_M` on each end where `capture.rom_flags` allows none. The
     flag is a thing to look at; a build failure is a claim that something is
     wrong. `deadlift_180x3` rep 2 lands at 61.1 cm against the 61 cm bound —
     worth surfacing in `pipeline.summary`, not worth failing over.
     """
-    from src import pipeline, truth
+    from src import pipeline, capture
 
     result = pipeline.run(path)
     reason = next((r for k, r in KNOWN_ROM_FAILURES.items()
                    if path.stem.startswith(k)), None)
-    lo, hi = truth.VERTICAL_ROM_M[truth.lift_of(path)]
+    lo, hi = capture.VERTICAL_ROM_M[capture.lift_of(path)]
     flags = [f"rep {i}: {r*100:.1f} cm outside {lo*100:.0f}-{hi*100:.0f} cm"
              for i, r in enumerate(result["rep_rom_m"], 1)
              if not (lo - SLACK_M) <= r <= (hi + SLACK_M)]
@@ -377,7 +418,7 @@ def test_reconstructed_rom_is_physically_possible(path):
 
 
 # ------------------------------------------------------------------- A2 --
-VIDEO = Path(__file__).resolve().parents[1] / "data" / "video"
+VIDEO = Path(__file__).resolve().parents[1] / "data_v2" / "video"
 
 DEADLIFTS = [
     ("deadlift_155x6_1_20260728", "deadlift_155x6_1_20260728_122828", 6),
@@ -414,10 +455,10 @@ def _bench_video_events(path: dict, third: float = 3.0) -> tuple[list, list]:
     minima. `third` keeps only extrema in the outer third of the travel, and
     0.8 s of refractory merges the frame-to-frame jitter around a turnaround.
     """
-    from src import truth
+    from src import capture
 
     t = path["t"]
-    h = truth._smooth(path["height"], 15)
+    h = capture._smooth(path["height"], 15)
     span = h.max() - h.min()
 
     def extrema(sign, keep):
@@ -446,17 +487,17 @@ def test_video_and_imu_agree_on_when_the_bar_lands(video, csv, reps):
     """
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
-    from src import truth
+    from src import capture
 
-    path = truth.bar_path(VIDEO / f"{video}.mov")
-    seen = truth.landings(path)
+    path = capture.bar_path(VIDEO / f"{video}.mov")
+    seen = capture.landings(path)
     log = io.load_log(RAW / f"{csv}.csv")
     impacts = np.array([float(log["t"][i]) for i in segment.impact_anchors(log)])
 
     assert len(seen) == reps, f"video found {len(seen)} landings, expected {reps}"
     assert len(impacts) == reps
 
-    fit = truth.sync(seen, impacts)
+    fit = capture.sync(seen, impacts)
     assert fit["rms_ms"] < 50.0, f"sync residual {fit['rms_ms']:.0f} ms exceeds the spec"
     assert abs(fit["drift_pct"]) < 1.0, f"clock drift {fit['drift_pct']:.2f}% is implausible"
 
@@ -469,17 +510,17 @@ def test_video_deadlift_rom_is_physical(video, csv, reps):
     bumper radius: true bar height at lockout is this plus that.
 
     The band used to be 0.40-0.85 m, which was wide enough to pass anything.
-    It is now `truth.VERTICAL_ROM_M["deadlift"]`, whose ceiling is measured for
+    It is now `capture.VERTICAL_ROM_M["deadlift"]`, whose ceiling is measured for
     this lifter — and at that width the check finally bites: `deadlift_155x6_2`
     reads 67-70 cm and fails. That is the video's scale error, not the lifter's
     ROM, and it is xfailed below rather than papered over.
     """
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
-    from src import truth
+    from src import capture
 
-    path = truth.bar_path(VIDEO / f"{video}.mov")
-    edges = np.r_[0.0, truth.landings(path), path["t"][-1]]
+    path = capture.bar_path(VIDEO / f"{video}.mov")
+    edges = np.r_[0.0, capture.landings(path), path["t"][-1]]
     peaks = []
     for a, b in zip(edges, edges[1:]):
         window = path["height"][(path["t"] >= a) & (path["t"] < b)]
@@ -493,9 +534,9 @@ def test_video_deadlift_rom_is_physical(video, csv, reps):
         pytest.xfail(
             "the video's vertical scale is wrong on this capture: 67-70 cm of "
             "lockout against a 61 cm bound, from the same lifter and the same "
-            "plate radius as deadlift_155x6_1's 60 cm. See truth.VERTICAL_ROM_M")
+            "plate radius as deadlift_155x6_1's 60 cm. See capture.VERTICAL_ROM_M")
 
-    lo, hi = truth.VERTICAL_ROM_M["deadlift"]
+    lo, hi = capture.VERTICAL_ROM_M["deadlift"]
     for p in peaks:
         assert lo < p < hi, (
             f"lockout {p*100:.0f} cm above the floor is outside the "
@@ -508,7 +549,7 @@ def test_bench_auto_seeding_still_does_not_find_the_plate(video):
 
     This replaces `test_bench_tracking_fails_loudly_rather_than_silently`,
     which asserted that `bar_path` RAISES on bench. It no longer does:
-    `truth.SEEDS` carries a hand-placed seed per capture and all seven now
+    `capture.SEEDS` carries a hand-placed seed per capture and all seven now
     track. That test asked to be replaced by a real one rather than deleted
     when a seed was wired in, and this is it — the underlying claim it was
     really pinning was about the SEEDER, not about `bar_path`, and that claim
@@ -522,18 +563,18 @@ def test_bench_auto_seeding_still_does_not_find_the_plate(video):
     Not a tuning problem, and four attempts on 2026-07-31 say so: dark disc,
     circular-edge radial gradient, dark disc weighted by temporal motion
     energy, and a dark-annulus rim filter all preferred the clutter. If this
-    test ever fails, auto-seeding has been solved and `truth.SEEDS` may be able
+    test ever fails, auto-seeding has been solved and `capture.SEEDS` may be able
     to go — check that before assuming a regression. The real bench tracking
-    gates live in tests/test_video_truth.py.
+    gates live in tests/test_video_capture.py.
     """
     if not (VIDEO / f"{video}.mov").exists():
         pytest.skip(f"{video} not present")
-    from src import truth
+    from src import capture
 
-    _, cy, cx, radius = truth.SEEDS[video]
-    stack, fps, _ = truth.frames(VIDEO / f"{video}.mov")
-    frame = stack[truth.SEEDS[video][0]]
-    y, x, _, _ = truth.find_plate(frame)
+    _, cy, cx, radius = capture.SEEDS[video]
+    stack, fps, _ = capture.frames(VIDEO / f"{video}.mov")
+    frame = stack[capture.SEEDS[video][0]]
+    y, x, _, _ = capture.find_plate(frame)
 
     miss = float(np.hypot(y - cy, x - cx))
     assert miss > radius, (
@@ -572,29 +613,29 @@ def test_deadlift_tracking_is_clean_where_it_is_clean(video, csv, reps):
     if not _has(video, csv):
         pytest.skip(f"{video} not present")
     import warnings as w
-    from src import truth
+    from src import capture
 
     with w.catch_warnings(record=True) as caught:
         w.simplefilter("always")
-        path = truth.bar_path(VIDEO / f"{video}.mov")
+        path = capture.bar_path(VIDEO / f"{video}.mov")
     messages = " ".join(str(c.message) for c in caught)
 
     # The aggregates, which are genuinely fine and always were.
     assert path["travel_m"] > 0.40
-    assert np.nanmedian(path["score"]) > truth.GOOD_SCORE
+    assert np.nanmedian(path["score"]) > capture.GOOD_SCORE
 
     # The floor is where this tracker earns its keep — and where every gate
     # that depends on it (impacts, landings, sync, rest instants) reads.
     height, score = path["height"], path["score"]
     ok = np.isfinite(height) & np.isfinite(score)
     low = ok & (height < np.nanmin(height[ok]) + 0.10)
-    assert (score[low] > truth.GOOD_SCORE).mean() > 0.95, (
+    assert (score[low] > capture.GOOD_SCORE).mean() > 0.95, (
         f"{video}: the tracker has stopped being reliable at the FLOOR too. "
         f"That breaks the landings, the sync and rest_instants, not just the "
         f"lockout — this is much worse than C12 and wants investigating first")
 
     # And the lockout failure, pinned so that fixing it is visible.
-    assert truth.top_of_travel_score(path) < truth.GOOD_SCORE
+    assert capture.top_of_travel_score(path) < capture.GOOD_SCORE
     assert "losing the plate at LOCKOUT" in messages, (
         f"{video}: the lockout warning no longer fires. If better footage or a "
         f"better tracker fixed it, delete this block, re-measure every deadlift "
@@ -668,15 +709,15 @@ def test_rep_windows_are_in_phase_with_the_video(video, csv, reps):
     """
     if not _has(video, csv):
         pytest.skip(f"{video} not present")
-    from src import truth
+    from src import capture
 
     log = io.load_log(RAW / f"{csv}.csv")
-    path = truth.bar_path(VIDEO / f"{video}.mov")
+    path = capture.bar_path(VIDEO / f"{video}.mov")
     impacts = np.array([float(log["t"][i]) for i in segment.impact_anchors(log)])
-    fit = truth.sync(truth.landings(path), impacts)
-    t_video = truth.to_imu_time(path, fit)
+    fit = capture.sync(capture.landings(path), impacts)
+    t_video = capture.to_imu_time(path, fit)
 
-    edges = np.r_[0.0, truth.landings(path), path["t"][-1]]
+    edges = np.r_[0.0, capture.landings(path), path["t"][-1]]
     lockouts = []
     for a, b in zip(edges, edges[1:]):
         m = (path["t"] >= a) & (path["t"] < b)
@@ -753,10 +794,10 @@ def test_bench_rep_windows_are_in_phase_with_the_video(video, reps):
     csv_path = _csv_for(video)
     if not (VIDEO / f"{video}.mov").exists() or csv_path is None:
         pytest.skip(f"{video} not present")
-    from src import metrics, pipeline, truth
+    from src import metrics, pipeline, capture
 
     result = pipeline.run(csv_path)
-    path = truth.bar_path(VIDEO / f"{video}.mov")
+    path = capture.bar_path(VIDEO / f"{video}.mov")
     starts = [float(result["log"]["t"][a]) for a, _ in result["bounds"]]
     offset = metrics.bench_sync(path, result["log"], result["velocity"][:, 2],
                                 float(np.median(np.diff(starts))))["offset"]
@@ -814,9 +855,9 @@ def test_a_bench_rep_really_is_asymmetric(video, reps):
     """
     if not (VIDEO / f"{video}.mov").exists():
         pytest.skip(f"{video} not present")
-    from src import truth
+    from src import capture
 
-    path = truth.bar_path(VIDEO / f"{video}.mov")
+    path = capture.bar_path(VIDEO / f"{video}.mov")
     touches, lockouts = _bench_video_events(path)
 
     fracs = []
@@ -858,18 +899,18 @@ def test_acceleration_sign_agrees_with_the_video(video, csv, reps):
     if not _has(video, csv):
         pytest.skip(f"{video} not present")
     from scipy.signal import savgol_filter
-    from src import orient, truth
+    from src import orient, capture
 
     log = io.load_log(RAW / f"{csv}.csv")
     accel = orient.to_world(log["accel"], log["quat"],
                             orient.correct_attitude(log, np.zeros(3)))
     accel = accel - calibrate.accel_bias(accel, log)
 
-    path = truth.bar_path(VIDEO / f"{video}.mov")
+    path = capture.bar_path(VIDEO / f"{video}.mov")
     impacts = segment.impact_anchors(log)
-    fit = truth.sync(truth.landings(path),
+    fit = capture.sync(capture.landings(path),
                      np.array([float(log["t"][k]) for k in impacts]))
-    t_video = truth.to_imu_time(path, fit)
+    t_video = capture.to_imu_time(path, fit)
 
     grid = np.arange(log["t"][impacts[0]] - 3, log["t"][impacts[-1]] + 1, 0.01)
     height = savgol_filter(np.interp(grid, t_video, path["height"]), 41, 3)
@@ -925,7 +966,7 @@ def test_floor_impact_decelerates_the_bar(stem):
 
 
 # ------------------------------------------------------------------- A3 --
-# Measured 2026-07-29, first run of metrics.vs_truth. Ceilings, not targets:
+# Measured 2026-07-29, first run of metrics.vs_capture. Ceilings, not targets:
 # the spec is 1 cm horizontal and 2-3 cm vertical, and the pipeline meets
 # neither. These pin what it does TODAY so B2/B3/B6 can only improve it, and
 # they should be tightened whenever one of those lands. The xfail below carries
@@ -1156,7 +1197,7 @@ def test_vs_truth_refuses_squat(stem):
 
     Narrowed from bench-and-squat on 2026-07-31. Bench used to be refused on
     the grounds that it "does not seed automatically", which was true of
-    `find_plate` and is no longer true of the shipped path — `truth.SEEDS`
+    `find_plate` and is no longer true of the shipped path — `capture.SEEDS`
     seeds it by hand and `metrics.bench_sync` aligns it to the IMU clock. Bench
     is scored now, on the three of seven captures whose correlation clears the
     floor.
@@ -1196,7 +1237,7 @@ def test_video_truth_is_physically_sane(video, csv, reps):
     """
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
-    from src import metrics, pipeline, truth
+    from src import metrics, pipeline, capture
 
     result = pipeline.run(RAW / f"{csv}.csv")
     m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
@@ -1206,8 +1247,8 @@ def test_video_truth_is_physically_sane(video, csv, reps):
 
     if csv.startswith("deadlift_155x6_2"):
         pytest.xfail("video vertical scale wrong on this capture; "
-                     "see truth.VERTICAL_ROM_M")
-    lo, hi = truth.VERTICAL_ROM_M["deadlift"]
+                     "see capture.VERTICAL_ROM_M")
+    lo, hi = capture.VERTICAL_ROM_M["deadlift"]
     assert lo * 100 < m["video_rom_cm"] < hi * 100, (
         f"video ROM {m['video_rom_cm']:.0f} cm is not a deadlift ROM for this "
         f"lifter ({lo*100:.0f}-{hi*100:.0f} cm)")
@@ -1248,7 +1289,7 @@ def test_video_rom_is_flagged_where_it_is_implausible(video, csv, reps):
     """
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
-    from src import metrics, pipeline, truth
+    from src import metrics, pipeline, capture
 
     result = pipeline.run(RAW / f"{csv}.csv")
     m = metrics.vs_truth(result, VIDEO / f"{video}.mov")
@@ -1257,7 +1298,7 @@ def test_video_rom_is_flagged_where_it_is_implausible(video, csv, reps):
     assert abs(m["video_rom_cm"] - VIDEO_ROM_CM[stem]) < 1.0, (
         f"video ROM moved from {VIDEO_ROM_CM[stem]} to {m['video_rom_cm']:.1f} cm")
 
-    hi = truth.VERTICAL_ROM_M["deadlift"][1] * 100
+    hi = capture.VERTICAL_ROM_M["deadlift"][1] * 100
     assert bool(m["video_rom_flags"]) == (VIDEO_ROM_CM[stem] > hi), (
         f"{stem}: ROM {m['video_rom_cm']:.1f} cm vs a {hi:.0f} cm bound, but "
         f"flags={m['video_rom_flags']}")
@@ -1266,7 +1307,7 @@ def test_video_rom_is_flagged_where_it_is_implausible(video, csv, reps):
         # The whole point, on the one capture that makes it: judged by the same
         # table, the video fails the bound and the IMU it is refereeing passes.
         assert m["video_rom_flags"]
-        assert not truth.rom_flags("deadlift", result["rep_rom_m"]), (
+        assert not capture.rom_flags("deadlift", result["rep_rom_m"]), (
             "the reconstruction now fails the bound too, so this capture no "
             "longer shows the referee failing alone")
 
@@ -1295,16 +1336,16 @@ def test_rest_instants_land_where_the_bar_is_actually_still(video, csv, reps):
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
     from scipy.signal import savgol_filter
-    from src import truth
+    from src import capture
 
     log = io.load_log(RAW / f"{csv}.csv")
     impacts = segment.impact_anchors(log)
     rest = segment.rest_instants(log, impacts)
 
-    path = truth.bar_path(VIDEO / f"{video}.mov")
-    fit = truth.sync(truth.landings(path),
+    path = capture.bar_path(VIDEO / f"{video}.mov")
+    fit = capture.sync(capture.landings(path),
                      np.array([float(log["t"][k]) for k in impacts]))
-    t_video = truth.to_imu_time(path, fit)
+    t_video = capture.to_imu_time(path, fit)
     v_video = np.gradient(savgol_filter(path["height"], 9, 3), t_video)
 
     assert rest, "no rest instants accepted on a deadlift"
@@ -1381,7 +1422,7 @@ def test_impact_velocity_step_matches_the_video(video, csv, reps):
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
     from scipy.signal import savgol_filter
-    from src import truth
+    from src import capture
 
     log = io.load_log(RAW / f"{csv}.csv")
     accel = orient.to_world(log["accel"], log["quat"],
@@ -1389,11 +1430,11 @@ def test_impact_velocity_step_matches_the_video(video, csv, reps):
     accel = accel - calibrate.accel_bias(accel, log)
     vel = integrate.integrate(accel, log["dt"])[0]
 
-    path = truth.bar_path(VIDEO / f"{video}.mov")
+    path = capture.bar_path(VIDEO / f"{video}.mov")
     impacts = segment.impact_anchors(log)
-    fit = truth.sync(truth.landings(path),
+    fit = capture.sync(capture.landings(path),
                      np.array([float(log["t"][k]) for k in impacts]))
-    t_video = truth.to_imu_time(path, fit)
+    t_video = capture.to_imu_time(path, fit)
     v_video = np.gradient(savgol_filter(path["height"], 9, 3), t_video)
 
     ratios = []
@@ -1503,13 +1544,13 @@ def test_step_six_runs_and_is_ON_by_default(path):
     behaviour back, because every number recorded in the docs before 2026-08-06
     was measured that way and they are not comparable otherwise.
     """
-    from src import correct, pipeline, truth
+    from src import correct, pipeline, capture
 
     plain = pipeline.run(path)
     assert not any("apply_offset" in b for b in plain["blocked"])
     assert plain["wrist_offset"] is not None, "step 6 must be on by default"
     np.testing.assert_allclose(plain["wrist_offset"],
-                               correct.WRIST_OFFSET_M[truth.lift_of(path)])
+                               correct.WRIST_OFFSET_M[capture.lift_of(path)])
 
     off = pipeline.run(path, wrist_offset=None)
     assert off["wrist_offset"] is None
@@ -1944,7 +1985,7 @@ def test_the_impact_amplitude_is_right_and_its_net_is_not(video, csv, reps):
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
     from scipy.signal import savgol_filter
-    from src import metrics, orient, pipeline, segment, truth
+    from src import metrics, orient, pipeline, segment, capture
 
     result = pipeline.run(RAW / f"{csv}.csv", video=VIDEO / f"{video}.mov")
     log = result["log"]
@@ -1952,11 +1993,11 @@ def test_the_impact_amplitude_is_right_and_its_net_is_not(video, csv, reps):
     world = orient.to_world(log["accel"], log["quat"], log["quat"])
     vel = np.concatenate([[0.0], np.cumsum(world[:-1, 2] * np.diff(t))])
 
-    path = truth.bar_path(VIDEO / f"{video}.mov")
+    path = capture.bar_path(VIDEO / f"{video}.mov")
     impacts = segment.impact_anchors(log)
-    fit = truth.sync(truth.landings(path),
+    fit = capture.sync(capture.landings(path),
                      np.array([float(t[k]) for k in impacts]))
-    t_video = truth.to_imu_time(path, fit)
+    t_video = capture.to_imu_time(path, fit)
     v_video = np.gradient(savgol_filter(path["height"], 9, 3), t_video)
 
     amplitude, net = [], []
@@ -2043,7 +2084,7 @@ def test_the_impact_splice_fixes_the_closure_and_loses_anyway(video, csv, reps):
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
     from scipy.integrate import cumulative_trapezoid
-    from src import correct, metrics, pipeline, segment, truth
+    from src import correct, metrics, pipeline, segment, capture
 
     result = pipeline.run(RAW / f"{csv}.csv")
     log = result["log"]
@@ -2097,7 +2138,7 @@ def test_the_impact_splice_fixes_the_closure_and_loses_anyway(video, csv, reps):
         f"{shipped:.2f}. If it now wins, B6 should ship and this test go")
 
     # And the position artefact breaks the physical ROM ceiling.
-    assert rom_all > truth.VERTICAL_ROM_M["deadlift"][1] * 100, (
+    assert rom_all > capture.VERTICAL_ROM_M["deadlift"][1] * 100, (
         f"{csv}: spliced ROM {rom_all:.1f} cm no longer exceeds the bound, so "
         f"the e*T/2 artefact is gone and the splice deserves re-measuring")
 
@@ -2150,7 +2191,7 @@ def test_the_quadratic_detrend_is_worse_than_the_line(video, csv, reps):
     """
     if not _has(video, csv):
         pytest.skip(f"{video} or {csv} not present")
-    from src import correct, metrics, pipeline, truth
+    from src import correct, metrics, pipeline, capture
 
     result = pipeline.run(RAW / f"{csv}.csv")
     clip = VIDEO / f"{video}.mov"
@@ -2181,7 +2222,7 @@ def test_the_quadratic_detrend_is_worse_than_the_line(video, csv, reps):
 
     # The decisive failure, 3 of 3: the dv*T/8 artefact puts per-rep vertical
     # travel past what the lifter can physically move a bar through.
-    assert rom2 > truth.VERTICAL_ROM_M["deadlift"][1] * 100, (
+    assert rom2 > capture.VERTICAL_ROM_M["deadlift"][1] * 100, (
         f"{csv}: order=2 ROM {rom2:.1f} cm is now inside the bound, so the "
         f"dv*T/8 artefact is gone and the quadratic deserves re-measuring")
 
@@ -2354,66 +2395,29 @@ def test_the_gravity_correction_mechanism_is_real():
         # Tilt always dominates: a gravity-referencing filter, not a free gyro.
         assert r_qs > 1.0, f"{p.name}: tilt/yaw {r_qs:.2f} when still"
         rose += r_qs > r_dy
-    assert total >= 25
+    # 16, not the 25 this asserted until 2026-08-14. The corpus was 30 labelled
+    # captures across two datasets; deleting v1 left the 16 in `data_v2/raw`.
+    # This is a "did we actually check enough captures" floor, so it tracks the
+    # corpus rather than encoding a finding.
+    assert total >= 16
     assert rose >= 0.6 * total, (
         f"tilt/yaw rose when still on only {rose} of {total}; the "
         f"accelerometer-as-gravity-reference mechanism is not visible")
 
 
-def test_the_pause_concentrates_the_correction_on_SQUAT_but_NOT_on_BENCH():
-    """The half of the hypothesis that fails, pinned so it is not re-proposed.
-
-    A paused SQUAT concentrates the tilt correction mid-rep — peak/min 3.84
-    against 2.34 for continuous squats, peaking at phase 0.62, which is the
-    bottom hold. A paused BENCH does not: 2.17 against 2.28, and its absolute
-    correction is LOWER than a touch-and-go bench throughout.
-
-    So the pause does not explain the paused-BENCH behaviour, and anyone
-    reaching for it as the explanation of the `d` dissent (C32 nominated it)
-    should read this first. Continuous lifts already spend 34-57% of their
-    samples quasi-static — between reps, at lockout, in the setup — so a pause
-    adds no gravity-reference opportunity the lift did not already have.
-    """
-    from src import io, pipeline
-
-    NB = 20
-    prof = {}
-    for p in BOTH_DATASETS:
-        if pipeline.expected_reps(p) is None or "deadlift" in p.name:
-            continue
-        log = io.load_log(p)
-        tilt, _ = _fusion_tilt_yaw(log)
-        r = pipeline.run(p)
-        rows = []
-        for i0, i1 in r["bounds"]:
-            i1 = min(i1, len(tilt))
-            if i1 - i0 < NB:
-                continue
-            ph = np.linspace(0, 1, i1 - i0)
-            rows.append([np.median(tilt[i0:i1][(ph >= k / NB) & (ph < (k + 1) / NB)])
-                         for k in range(NB)])
-        if not rows:
-            continue
-        lift = "bench" if "bench" in p.name else "squat"
-        style = "paused" if ("spoto" in p.name or "pause" in p.name) else "continuous"
-        prof.setdefault((lift, style), []).append(
-            np.nanmedian(np.array(rows, dtype=float), axis=0))
-
-    def contrast(key):
-        m = np.median(np.array(prof[key]), axis=0)
-        return float(np.max(m) / np.min(m)), float((np.argmax(m) + 0.5) / NB)
-
-    sq_p, sq_phase = contrast(("squat", "paused"))
-    sq_c, _ = contrast(("squat", "continuous"))
-    bn_p, _ = contrast(("bench", "paused"))
-    bn_c, _ = contrast(("bench", "continuous"))
-
-    assert sq_p > sq_c * 1.4, (
-        f"paused squat no longer concentrates the correction: {sq_p:.2f} vs "
-        f"{sq_c:.2f} continuous")
-    assert 0.45 < sq_phase < 0.80, (
-        f"paused squat's peak moved to phase {sq_phase:.2f}, away from the "
-        f"bottom hold")
-    assert bn_p < bn_c * 1.4, (
-        f"paused bench now DOES concentrate the correction ({bn_p:.2f} vs "
-        f"{bn_c:.2f}); the hypothesis this test refutes may need revisiting")
+# REMOVED 2026-08-14 — test_the_pause_concentrates_the_correction_on_SQUAT_but
+# _NOT_on_BENCH, and it is removed rather than re-tuned on purpose.
+#
+# It contrasted PAUSED squats against CONTINUOUS ones, and every continuous
+# squat in the project lived in `data/raw/`, which the owner deleted with the
+# rest of v1. What survives is three paused squats and one continuous SINGLE,
+# so `sq_c` was being computed from one capture of one rep — the comparison the
+# test is named after no longer exists in the corpus.
+#
+# It failed at 3.84 against 2.95 x 1.4. Lowering the factor would have made it
+# pass, and that is exactly what must not happen: the effect was measured across
+# a set of continuous squats and there is no longer a set to measure it across.
+# The finding it gated is in TASKS.md and CLAUDE.md as history.
+#
+# If continuous squats are captured again, restore it from git history rather
+# than rewriting it from the description above.
