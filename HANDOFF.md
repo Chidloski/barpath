@@ -61,6 +61,18 @@ Still open and worth a capture: **a real deadlift double.** A deadlift set has
 no gap between reps, so no truncation of a longer set can imitate one, and
 deadlift doubles are the one short-set case still unvalidated end to end.
 
+**The suite no longer skips 121 tests (G5, 2026-08-16).** 51 test functions
+were removed because they could never run again — every one selected a v1
+capture F1 deleted. The pass count did not move (381 full suite), skips went
+167 -> 4, failures unchanged at 4. **No speedup: the suite is 24m44s before and
+after**, because a skipped test never decoded anything in the first place; the
+long pole is `test_vtrack::test_every_clip_tracks_plausibly` over sixteen clips,
+which is live and correctly slow. Two things to know: the three sensor
+noise-floor tests went with them and are **restorable by recording one
+stationary capture** (nothing gates that finding until someone does), and
+deadness was decided by "every parametrisation skipped" rather than by name —
+matching names statically deleted three live tests before that was caught.
+
 **The standing failure count is 4, not 6 (G4, 2026-08-16).** Two of the six were
 stale TESTS rather than defects, both left by F1's deletion of the v1 corpus: a
 registry of "known mis-tracked" clips of which two were deleted and the other two
@@ -130,10 +142,19 @@ shape of failure as C12. **This overstatement is committed and pushed**, in
 `analysis/50`'s caption, `analysis/README.md` and the docs C33 wrote. Fixing it
 is the first job for the next agent.
 
-It also re-explains an earlier claim: `bench_sync` refused `squat_170x1` and
-`squat_pause_140x4_3`. That was reported as the guards working correctly. They
-were — but those are **exactly the two mis-tracked clips**, so the sync failed
-because the path was wrong, not because `bench_sync` is unsuited to squat.
+**FIXED, BY THE TRACKER RATHER THAN THE DOCS (measured 2026-08-16, G4).** The
+rebuilt `src/vtrack/` referee tracks both of these correctly now — `squat_170x1`
+at **63.7 cm** and `squat_pause_140x4_3` at **65.8 cm**, against the 14.0 and
+24.7 above. All sixteen cached clips are plausible: travel 26.1-65.8 cm against
+floors of 18.0-40.5, coverage >=97.4%, every rep count matching. The claim above
+was true of `markers.py` on 2026-08-07 and is false of the referee that ships.
+
+The paragraph that followed said `bench_sync` refused those two clips *because*
+they were mis-tracked, and that turned out to be wrong in both directions. Both
+now track, and both were still refused — because `squat_170x1` is a SINGLE and
+has no cadence (G3 gave it one, `src/shortset.py`), and `squat_pause_140x4_3`
+was refused by a blanket squat gate that G2 removed. Neither refusal was about
+the path being wrong.
 
 **2. "The largest wrist rotation in a deadlift is the turnaround at the floor."**
 Written into `ff89c41` and `analysis/51`. The owner challenged it and was right.

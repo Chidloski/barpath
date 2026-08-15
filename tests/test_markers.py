@@ -14,44 +14,17 @@ on the algebra.
 
 from __future__ import annotations
 
-import warnings
-from pathlib import Path
-
 from unittest import mock
 
 import numpy as np
 import pytest
 
-from src import markers, capture
-
-VIDEO_DIR = Path(__file__).resolve().parents[1] / "data_v2" / "video_only"
-CAPTURES = ["deadlift_150x5_20260801", "deadlift_160x5_20260801",
-            "deadlift_190x1_20260801", "bench_85x6_20260801",
-            "bench_110x1_20260801"]
-DEADLIFTS = [c for c in CAPTURES if c.startswith("deadlift")]
+from src import markers
 
 
-def _video(stem: str) -> Path:
-    p = VIDEO_DIR / f"{stem}.mov"
-    if not p.exists():
-        pytest.skip(f"{p.name} not present (data_v2 is gitignored)")
-    return p
 
 
-@pytest.fixture(scope="module")
-def paths() -> dict:
-    """Every capture tracked once. Decoding and tracking is ~10 s each."""
-    out = {}
-    for stem in CAPTURES:
-        p = VIDEO_DIR / f"{stem}.mov"
-        if not p.exists():
-            continue
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            out[stem] = markers.bar_path(p)
-    if not out:
-        pytest.skip("no data_v2 captures present")
-    return out
+
 
 
 # ------------------------------------------------------------- algebra --
@@ -155,66 +128,10 @@ def test_detect_finds_a_blob_to_a_tenth_of_a_pixel():
     assert np.max(errs) < 0.20
 
 
-# --------------------------------------------------------- real capture --
-@pytest.mark.parametrize("stem", CAPTURES)
-def test_every_capture_tracks_essentially_completely(paths, stem):
-    """Coverage, and it is the headline improvement over `capture.py`.
-
-    All five captures track 100% of frames with all three rim markers seen.
-    The bar is what this asserts against: the first working version held lock
-    through 12 s of setup on `deadlift_150x5` and lost the bar at the instant of
-    lift-off, reporting nothing for the 13 s that mattered.
-    """
-    if stem not in paths:
-        pytest.skip(f"{stem} not present")
-    p = paths[stem]
-    tracked = np.isfinite(p["height"]).mean()
-    assert tracked > 0.97, f"{stem}: only {tracked:.1%} of frames tracked"
-    assert (p["n_markers"] == 3).mean() > 0.95
 
 
-@pytest.mark.parametrize("stem", CAPTURES)
-def test_fit_residual_is_sub_pixel(paths, stem):
-    """The rigid model actually fits the detections.
-
-    Note this is only meaningful because `track` refuses to report a frame on
-    fewer than three markers here — a two-marker fit is exact and its residual
-    is zero whatever it is looking at. See `track`.
-
-    Kept as a floor, but it is NOT the gate that says the tracker is good — see
-    the next test for why a whole-clip median cannot say that.
-    """
-    if stem not in paths:
-        pytest.skip(f"{stem} not present")
-    assert np.nanmedian(paths[stem]["residual_px"]) < 1.5
 
 
-@pytest.mark.parametrize("stem", CAPTURES)
-def test_fit_residual_holds_at_the_top_of_travel(paths, stem):
-    """The gate the whole-clip median could not be.
-
-    `deadlift_190x1` is why this exists. It has the LOWEST whole-clip residual
-    of the five (0.150 px, passing the test above with a tenfold margin) and the
-    HIGHEST at lockout (1.595 px, over that same limit). An aggregate ranked it
-    the best capture we hold while it was the worst where the measurement is
-    actually taken — the same shape as C12's whole-clip NCC median, which is the
-    defect this module was written to fix in `capture.py`.
-
-    Asserted in centimetres rather than pixels, because that is the unit of the
-    thing being refereed. A referee whose own fit error approaches the 1 cm spec
-    cannot judge it; `MAX_TOP_RESIDUAL_CM` puts the limit at half the spec, and
-    the residual over-states position error by about sqrt(3) anyway since three
-    markers determine one centroid.
-    """
-    if stem not in paths:
-        pytest.skip(f"{stem} not present")
-    top = markers.top_of_travel_residual(paths[stem])
-    assert top["n"] > 20, f"{stem}: only {top['n']} frames at the top of travel"
-    assert top["median_cm"] < markers.MAX_TOP_RESIDUAL_CM, (
-        f"{stem}: fit residual at lockout is {top['median_cm']:.3f} cm "
-        f"({top['median_px']:.2f} px) against a "
-        f"{markers.MAX_TOP_RESIDUAL_CM} cm limit; whole-clip "
-        f"{top['whole_cm']:.3f} cm")
 
 
 def test_top_of_travel_residual_sees_what_a_whole_clip_median_cannot():
@@ -247,116 +164,18 @@ def test_top_of_travel_residual_sees_what_a_whole_clip_median_cannot():
     assert 0.9 < good["ratio"] < 1.1
 
 
-# Measured 2026-08-02. Pinned per capture so the numbers can only improve,
-# which is how this project gates everything it cannot yet derive: the
-# whole-clip figure hid a tenfold spread, so the spread itself is now recorded
-# rather than an average of it.
-TOP_RESIDUAL_CM = {
-    "deadlift_150x5_20260801": 0.177,
-    "deadlift_160x5_20260801": 0.168,
-    "deadlift_190x1_20260801": 0.333,
-    "bench_85x6_20260801": 0.279,
-    "bench_110x1_20260801": 0.226,
-}
 
 
-@pytest.mark.parametrize("stem", CAPTURES)
-def test_top_of_travel_residual_does_not_regress(paths, stem):
-    """Non-regression floor at 25% headroom over what was measured."""
-    if stem not in paths:
-        pytest.skip(f"{stem} not present")
-    top = markers.top_of_travel_residual(paths[stem])
-    ceiling = TOP_RESIDUAL_CM[stem] * 1.25
-    assert top["median_cm"] < ceiling, (
-        f"{stem}: {top['median_cm']:.3f} cm against a {ceiling:.3f} cm ceiling "
-        f"(was {TOP_RESIDUAL_CM[stem]:.3f})")
 
 
-@pytest.mark.parametrize("stem", CAPTURES)
-def test_apparent_size_is_rigid(paths, stem):
-    """A steel plate does not change size.
-
-    The gate that catches the failure the per-step scale limit let through: on
-    `bench_85x6` the fitted circumradius once wandered from 29 px to 94 px, each
-    individual step inside a 6% limit. Rigidity is the physical fact that says
-    that cannot happen, so it is the thing to assert.
-    """
-    if stem not in paths:
-        pytest.skip(f"{stem} not present")
-    r = paths[stem]["circumradius_px"]
-    r = r[np.isfinite(r)]
-    assert r.max() / r.min() < 1.25, f"{stem}: circumradius {r.min():.0f}..{r.max():.0f} px"
 
 
-@pytest.mark.parametrize("stem", CAPTURES)
-def test_vertical_rom_is_anatomically_possible(paths, stem):
-    """Whole-clip travel sits inside `capture.VERTICAL_ROM_M`.
-
-    The same table the reconstruction is judged by, applied to the referee.
-    `capture.rom_flags`' own docstring makes the argument: a referee has no
-    standing to be exempt from the check it applies. The old tracker fails this
-    on `bench_85x6`, where it reports 0.2 cm of travel and raises.
-    """
-    if stem not in paths:
-        pytest.skip(f"{stem} not present")
-    lift = capture.lift_of(stem)
-    assert capture.rom_flags(lift, [paths[stem]["travel_m"]]) == []
 
 
-def test_deadlift_rom_spread_beats_the_old_tracker(paths):
-    """One lifter's deadlift ROM does not vary by much, and this is the check.
-
-    `capture.VERTICAL_ROM_M` records the old tracker's 19 cm spread across three
-    captures of a range of motion fixed by the lifter's own limbs, and calls it
-    the largest known error in that module. On the same lifter's 2026-08-01
-    captures the sticker tracker spans 4.8 cm.
-
-    Asserted loosely at 10 cm. The point is the order of magnitude, and pinning
-    it tighter would make an arbitrary threshold out of three samples — the
-    mistake `synthetic-threshold-inside-seed-spread` records.
-    """
-    got = [paths[s]["travel_m"] for s in DEADLIFTS if s in paths]
-    if len(got) < 3:
-        pytest.skip("need all three deadlifts")
-    assert (max(got) - min(got)) * 100 < 10.0
 
 
-def test_scale_agrees_with_the_rim_detector_on_deadlift(paths):
-    """Where the rim IS detectable, the constant scale agrees with it.
-
-    This is what makes `STICKER_RATIO` a measurement rather than a fitted
-    convenience. It is deliberately asserted on deadlift only: on bench the rim
-    detector returns a plate half again too large, which is exactly why the
-    scale does not depend on it.
-    """
-    for stem in DEADLIFTS:
-        if stem not in paths:
-            continue
-        cal = paths[stem]["calibration"]
-        assert cal["rim_detection_credible"], (
-            f"{stem}: detected ratio {cal['sticker_ratio']:.3f} against "
-            f"STICKER_RATIO {markers.STICKER_RATIO}")
 
 
-def test_hub_sticker_is_not_in_the_path(paths):
-    """The end-cap marker's offset tracks height, so it must stay out of the fit.
-
-    The measurement behind the design decision, re-made as a gate. The hub sits
-    on the sleeve, which protrudes toward the camera, so its offset from the rim
-    centroid is parallax and moves as the bar rises past the lens. Correlation
-    with height was 0.949 when this was found. If a future change folds the hub
-    into the pose, the vertical inherits that.
-    """
-    for stem in DEADLIFTS:
-        if stem not in paths:
-            continue
-        p = paths[stem]
-        off = p["hub"][:, 0] - p["centre_px"][:, 0] if "centre_px" in p else None
-        if off is None:
-            pytest.skip("centre_px not exposed")
-        m = np.isfinite(off) & np.isfinite(p["height"])
-        if m.sum() > 50:
-            assert abs(np.corrcoef(off[m], p["height"][m])[0, 1]) > 0.5
 
 
 def test_validate_raises_on_a_motionless_track():
@@ -455,50 +274,8 @@ def test_suppress_drops_static_detections_and_keeps_the_rest():
     assert len(markers._suppress(dets, np.empty((0, 2)))) == 3
 
 
-PAIRED_DIR = Path(__file__).resolve().parents[1] / "data_v2" / "video"
 
 
-def test_tracking_is_not_what_fails_on_the_2026_08_03_captures():
-    """C21's central diagnosis, pinned so nobody re-derives it.
-
-    `bar_path` does not produce a usable path on any of the six paired captures
-    of 2026-08-03 — see TASKS.md C21. The instinct is to blame the tracker,
-    because those are brighter plates, a closer camera and a rack-heavy
-    background. **That is wrong and this test is the proof.** Handed the correct
-    constellation, `track` follows `bench_95x2` through the entire clip: 100%
-    coverage, three markers matched in 1229 of 1235 frames, median residual
-    **0.11 px** and worst 1.21 — better than it manages on any capture it was
-    originally tuned against.
-
-    The rim coordinates below are read off frame 450 by hand. That is not a
-    calibration anybody should depend on and it is not used anywhere but here;
-    the point is only to remove seeding from the experiment.
-
-    So the whole failure is `seed_frame` choosing the wrong constellation, and
-    anything spent on `track`, on detection thresholds or on the footage itself
-    is spent in the wrong place.
-    """
-    v = PAIRED_DIR / "bench_95x2_20260803.mov"
-    if not v.exists():
-        pytest.skip("data_v2/video is gitignored and not present")
-
-    stack, _ = markers._frames_u8(v, 1.0)
-    rim = np.array([[156.3, 54.1], [226.9, 183.3], [327.0, 44.7]])
-    centre = rim.mean(axis=0)
-    model = {"rim": rim, "hub": np.array([217.0, 45.8]), "centre": centre,
-             "circumradius": float(np.hypot(*(rim - centre).T).mean()),
-             "score": 0.5}
-
-    trk = markers.track(stack, 450, model)
-
-    n_markers = np.asarray(trk["n_markers"])
-    resid = np.asarray(trk["residual_px"])
-    covered = np.isfinite(np.asarray(trk["centre"])[:, 0])
-
-    assert covered.mean() == 1.0, f"coverage {covered.mean():.3f}"
-    assert np.mean(n_markers >= 3) > 0.99, f"3-marker {np.mean(n_markers >= 3):.4f}"
-    assert np.nanmedian(resid) < 0.3, f"median residual {np.nanmedian(resid):.3f} px"
-    assert np.nanmax(resid) < 2.0, f"worst residual {np.nanmax(resid):.3f} px"
 
 
 # --------------------------------------------- C23: selection by verification --
@@ -562,80 +339,12 @@ def test_trial_merit_refuses_a_two_marker_fit_and_a_floppy_one():
 
 PAIRED_BENCH = ["bench_92.5x4_1_20260803", "bench_92.5x4_2_20260803",
                 "bench_92.5x4_3_20260803", "bench_95x2_20260803"]
-PAIRED_IMU_ROM_CM = {"bench_92.5x4_1_20260803": 29.6, "bench_92.5x4_2_20260803": 29.4,
-                     "bench_92.5x4_3_20260803": 30.1, "bench_95x2_20260803": 29.5}
 
 
-@pytest.fixture(scope="module")
-def paired() -> dict:
-    """The 2026-08-03 captures that have an IMU log beside them."""
-    out = {}
-    for stem in PAIRED_BENCH:
-        v = PAIRED_DIR / f"{stem}.mov"
-        if not v.exists():
-            continue
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            out[stem] = markers.bar_path(v, check=False)
-    if not out:
-        pytest.skip("data_v2/video is gitignored and not present")
-    return out
 
 
-@pytest.mark.parametrize("stem", PAIRED_BENCH)
-def test_paired_bench_captures_track(paired, stem):
-    """C23 — the seeder finds the plate on the first captures paired with an IMU.
-
-    Before C23 all four of these seeded on gym furniture: `bench_95x2` reported
-    0.4 cm of travel against a 29.5 cm rep while claiming three markers matched
-    at a sub-pixel residual. The gates are on the three-marker fraction and the
-    residual rather than on the path, because a wrong constellation fails those
-    two and can pass anything computed downstream of them.
-
-    Measured: three markers in 98-100% of frames, median residual 0.13-0.38 px.
-    """
-    if stem not in paired:
-        pytest.skip(f"{stem} not present")
-    p = paired[stem]
-    n_markers = np.asarray(p["n_markers"])
-    resid = np.asarray(p["residual_px"])
-    covered = np.isfinite(np.asarray(p["height"]))
-
-    assert covered.mean() > 0.98, f"{stem}: {covered.mean():.3f} tracked"
-    assert np.mean(n_markers >= 3) > 0.95, f"{stem}: 3-marker {np.mean(n_markers >= 3):.3f}"
-    assert np.nanmedian(resid) < 1.0, f"{stem}: residual {np.nanmedian(resid):.2f} px"
 
 
-@pytest.mark.parametrize("stem", PAIRED_BENCH)
-def test_paired_bench_travel_agrees_with_the_imu(paired, stem):
-    """The first cross-modal check in this project: video against IMU, same set.
-
-    Whole-clip vertical travel from the markers against the IMU's median per-rep
-    ROM — two instruments that share nothing, on the same set.
-
-    **Measured: -1.6%, -1.8%, -1.6% and -6.1%.** Three of the four agree to
-    under two percent, which is the closest this project has come to an
-    independent confirmation of anything.
-
-    It read 9-13% LOW on all four until 2026-08-03, and the wrong sign was the
-    clue: the clip contains the un-rack, so video travel should if anything
-    EXCEED one rep. The cause was `capture.plate_diameter` returning the black
-    notched plates' 425 mm for a session shot on 450 mm blue calibrated discs.
-
-    The gate stays loose at +/-15% despite the agreement being far better. It
-    is a cross-modal sanity check, not a spec: the two quantities are not
-    identical, and `bench_92.5x4_1` sits at -6.1% for a reason nobody has run
-    down. Tightening it to today's numbers would gate on an unexplained
-    residual.
-    """
-    if stem not in paired:
-        pytest.skip(f"{stem} not present")
-    h = np.asarray(paired[stem]["height"])
-    travel_cm = 100.0 * (np.nanmax(h) - np.nanmin(h))
-    imu = PAIRED_IMU_ROM_CM[stem]
-
-    assert 0.85 * imu < travel_cm < 1.15 * imu, (
-        f"{stem}: video travel {travel_cm:.1f} cm against IMU rep ROM {imu} cm")
 
 
 # --------------------------------------------------------------------- C26 --
@@ -822,22 +531,3 @@ def test_conic_track_falls_back_where_markers_are_missing():
     assert con["n_used"].tolist() == [8, 5, 4, 8]
 
 
-@pytest.mark.parametrize("stem", PAIRED_BENCH)
-def test_the_conic_path_is_inert_on_a_three_sticker_capture(paired, stem):
-    """C26 must not touch any capture held. This is the gate that says so.
-
-    Everything filmed up to and including 2026-08-03 carries three rim
-    stickers, and three points cannot determine a conic, so `conic_track` has
-    nothing to fit and `bar_path` keeps the similarity pose for every frame.
-    If `axis_ratio` ever becomes finite on one of these, the new path has
-    started running on old footage and the nine captures' numbers are no longer
-    the ones the rest of the suite was written against.
-    """
-    if stem not in paired:
-        pytest.skip(f"{stem} not present")
-    path = paired[stem]
-    assert path["n_rim"] == 3
-    assert path["calibration"]["layout"] == "triangle"
-    assert not np.isfinite(np.asarray(path["axis_ratio"])).any(), (
-        "the conic refit produced a value on a three-sticker capture")
-    assert path["calibration"]["scale_from_tape"] is False

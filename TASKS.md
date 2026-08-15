@@ -14,6 +14,81 @@ Related, and deliberately not duplicated here:
 ---
 
 
+## G5 — sweep tests/ for silent skips; remove everything v1 (2026-08-16)
+
+Owner's instruction after G4, which found two tests skipping rather than failing
+on a deleted capture. That was the small end of it. **121 of the non-video
+suite's tests were skipping, and 117 of those were dead v1 references** —
+captures F1 deleted on 2026-08-14 that can never come back.
+
+**51 test functions removed. The suite's PASS count did not move.**
+
+    file                    lines          before              after
+    test_real_data.py    2523 -> 924   165 pass, 119 skip   165 pass, 4 skip
+    test_markers.py       843 -> 533    32 pass,  13 dead    32 pass, 0 skip
+    test_segmentation.py  566 -> 497    37 pass,   2 dead    37 pass, 0 skip
+    fast suite                         313 pass, 121 skip   313 pass, 4 skip
+    FULL suite                         381 pass, 167 skip   381 pass, 4 skip
+
+Identical pass counts on every file is the whole gate: nothing that was actually
+executing has been lost. What went was 51 functions that could never run again,
+plus the registries and helpers orphaned by their removal (`DEADLIFTS`,
+`BENCH_SYNCED`, `BEATS_NULL`, `TWO_ANCHOR`, `STATIONARY`, `PAIRED_DIR`,
+`VIDEO_DIR`, `_bench_video_events`, `_quietest`, and others).
+
+**No runtime is claimed for this, and an earlier draft of this entry claimed one
+that was wrong.** It said `test_markers.py` went from ~16 minutes to 1.3 s
+"because the dead tests were decoding video that is not there". A SKIPPED TEST
+DOES NOT DECODE ANYTHING — the skip fires before the work — so the thirteen dead
+tests cost nothing and removing them saved nothing. The full suite is 24m44s
+before and after. The long pole is `test_vtrack::test_every_clip_tracks_plausibly`,
+which tracks all sixteen clips and is live, valuable and correctly slow.
+
+### Deadness was measured, not pattern-matched, and that mattered
+
+The rule is *every parametrisation of this function skipped*. A first attempt
+matched capture names statically and **deleted three live tests** — they are
+driven by the live corpus and merely MENTION a v1 capture in their docstring.
+Caught on the line count, reverted with `git checkout` on that one file, and
+redone against the per-test outcomes. A second slip left a dangling
+`@pytest.fixture` decorator, because the orphan-removal pass computed spans from
+`node.lineno` and ignored `decorator_list`; it re-attached to the next function
+and broke 23 tests. Also reverted and redone. **Both were caught by running the
+file, not by reading the diff.**
+
+### The four remaining skips are all legitimate
+
+Three singles that genuinely cannot have a dispersion (`squat_170x1`,
+`bench_117.5x1`, `deadlift_200x1` — rep-to-rep spread needs two reps), and
+`deadlift_170x4_3`'s known-bad windows. Also fixed a `needs_data` skip reason
+still naming `data/raw/`.
+
+### What was deliberately kept, and what was deliberately lost
+
+**Kept:** `test_find_video_does_not_cross_datasets` names a v1 stem but is
+algebraic on `tmp_path` — it builds a synthetic layout and gates `find_video`'s
+dataset rule against the C17 regression. It runs and passes; only the example
+name is historical.
+
+**Lost, and this one is a real gate rather than dead weight:** the three
+`STATIONARY` tests (`test_core_motion_residual_gyro_bias_is_negligible`,
+`test_body_frame_accel_bias_at_rest_is_small`,
+`test_core_motion_attitude_is_stable_at_rest`). They are NOT name-bound to v1 —
+they glob for any `stationary*` or `stable*` log, and the diagnostic logs went
+with v1. They gate a recorded finding: **on a table, gyro bias 0.002 deg/s and
+accel 0.0025 g.** They never run today, which is what this task was to
+eliminate, so they are gone — but **recording one stationary capture would
+restore all three**, and until someone does, that noise floor has no gate. The
+code is in git history at `a032c39`.
+
+### Evidence
+
+`tests/` only; no `src/` module, no threshold, no measurement moved. Failures
+unchanged at 4, all real defects.
+
+---
+
+
 ## G4 — the two stale test registries F1's deletion left behind (2026-08-16)
 
 Owner's instruction after G3. **Two of the six standing failures were not

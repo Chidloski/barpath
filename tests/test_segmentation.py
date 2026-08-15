@@ -46,7 +46,7 @@ CAPTURES = ([p for p in sorted(RAW.glob("*.csv")) if REP_COUNT.match(p.name)]
 # is recorded in `test_cadence_tolerance_is_a_plateau_not_a_point`.
 ALL_CAPTURES = CAPTURES
 
-needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data/raw/")
+needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data_v2/raw/")
 
 _CACHE: dict[str, tuple] = {}
 
@@ -89,77 +89,8 @@ def roms_cm(path: Path, bounds) -> list[float]:
             for r in correct.detrend_set(pos, bounds, log["t"])]
 
 
-# --------------------------------------------------- the two C5 defects --
-@needs_data
-def test_bench_spoto_does_not_count_the_re_rack():
-    """bench_spoto_90x5_1 is five reps, not six.
-
-    The defect: `_longest_cadence`'s tolerance was 1.6, and admitting the
-    4.50 s gap between the last rep and the first post-set movement needs
-    4.50/2.86 = 1.573. That grew a run of six which beat the true run of five
-    on length alone, and the two extra windows came out at 45.7 and 88.7 cm of
-    vertical against a 35 cm bench bound.
-
-    Note what could NOT have caught this. The rep COUNT gate did not, because
-    `REP_COUNT` failed to match the `spoto` variant token so the capture was
-    skipped entirely. Window DURATION could not have: the spurious windows ran
-    2.1 and 2.6 s against real reps of 2.5-2.9 s. Only the vertical extent
-    separates them, which is why the ROM bound found it and why this test
-    asserts on extent rather than on the count alone.
-    """
-    path = find("bench_spoto_90x5_1")
-    log, bounds = windows(path)
-    assert len(bounds) == 5
-
-    lo, hi = capture.VERTICAL_ROM_M["bench"]
-    for n, rom in enumerate(roms_cm(path, bounds), 1):
-        assert lo * 100 <= rom <= hi * 100, (
-            f"rep {n} spans {rom:.1f} cm, outside the "
-            f"{lo*100:.0f}-{hi*100:.0f} cm bench bound")
-
-    # The re-rack is at ~44-48 s. Every window must end before it.
-    assert log["t"][bounds[-1][1] - 1] < 42.0, (
-        "a window still reaches into the post-set movement")
 
 
-@needs_data
-def test_squat_single_lands_on_the_rep_not_the_re_rack():
-    """squat_160x1's one window must be the squat, not the movement after it.
-
-    The count was already right — 1 of 1 — and that is the point. This is the
-    right-count-wrong-window failure, and only the ROM bound could see it: the
-    window sat on the re-rack at 37.7 s and spanned 18.0 cm of a ~65 cm squat,
-    while the real rep at 33.6 s yields 67.0 cm.
-
-    The mechanism was the cluster tie-break. A single leaves every candidate a
-    cluster of one, so `_similar_cluster`'s size key is degenerate and lateness
-    decides alone — and the latest movement in any capture is the re-rack,
-    because nothing follows a set except putting the bar down.
-
-    Asserts on three independent properties of the window, because any one of
-    them alone can be satisfied by an accident: it spans a plausible squat ROM,
-    it lasts as long as this lifter's other squat reps (2.4-3.1 s), and it
-    contains the concentric peak the diagnosis identified.
-    """
-    path = find("squat_160x1")
-    log, bounds = windows(path)
-    assert len(bounds) == 1
-
-    (a, b), = bounds
-    rom = roms_cm(path, bounds)[0]
-    lo, hi = capture.VERTICAL_ROM_M["squat"]
-    assert lo * 100 <= rom <= hi * 100, (
-        f"window spans {rom:.1f} cm, outside the {lo*100:.0f}-{hi*100:.0f} cm "
-        f"squat bound — 18.0 cm was the re-rack")
-
-    duration = float(log["t"][b - 1] - log["t"][a])
-    assert 2.0 < duration < 4.0, (
-        f"window lasts {duration:.2f} s; this lifter's squat reps run 2.4-3.1 s "
-        f"and the re-rack window ran 1.26 s")
-
-    assert log["t"][a] < 33.6 < log["t"][b - 1], (
-        "the window does not contain the concentric peak at 33.6 s that the "
-        "C5 diagnosis identified as the real rep")
 
 
 # ------------------------------------------------------- the margins ------
