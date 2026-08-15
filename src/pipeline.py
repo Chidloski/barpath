@@ -211,7 +211,11 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
 
     # 5 --- segment ---------------------------------------------------------
     impacts = segment.impact_anchors(log)
-    bounds = segment.rep_bounds(log, velocity[:, 2])
+    # `position` is what turns on `segment._upright`, the fore-aft check that
+    # splits a real rep from a setup movement when there is no majority of reps
+    # to out-vote it. Step 4's position, not step 6's bar path: this runs before
+    # the wrist offset is applied and must not depend on it.
+    bounds = segment.rep_bounds(log, velocity[:, 2], position=position)
     result["bounds"] = bounds
     result["quality"] = segment.quality_flags(log, bounds)
     result["impacts"] = impacts

@@ -80,27 +80,28 @@ needs_data = pytest.mark.skipif(not CAPTURES, reason="no captures in data_v2/raw
 # Separate from KNOWN_ROM_FAILURES, which is about how far each window SPANS.
 # A window can be miscounted with the right extent or counted right with the
 # wrong extent, and squat_160x1 was exactly the second case.
-# NOT EMPTY as of 2026-08-14 (F1), and these entries were invisible until the
-# v1 corpus was deleted. Every gate in this file globbed `data/raw`, so the
-# 2026-08-08 captures had NEVER been segmented under test — the suite reported
-# success by not running, which is this project's oldest failure shape. Pointing
-# RAW at `data_v2/raw` took the file from 1 passing test to 311 across the
-# suite, and surfaced these two immediately.
-WRONG_REP_COUNT: dict[str, str] = {
-    "deadlift_150x4_1_20260808":
-        "segments 5 windows for a labelled 4, and the VIDEO agrees with the "
-        "label — vtrack counts 4/4 on the same clip. Its vertical rms against "
-        "the video is 27.6-30.1 cm where every other deadlift is 1.7-4.9, which "
-        "is what a spurious window does to a per-rep comparison. C31a's rule "
-        "was measured on captures from 2026-08-06 and earlier; this is the "
-        "first set it was never tested against.",
-    "bench_117.5x1_20260808":
-        "segments 2 windows for a labelled SINGLE. P1 predicted exactly this: "
-        "`_similar_cluster`'s lateness tie-break picks the latest movement when "
-        "every cluster is size 1, and on a bench single the latest movement is "
-        "the re-rack. CLAUDE.md says 'if you capture a bench single, expect "
-        "this to fail'. It was captured, and it failed.",
-}
+# It was NOT EMPTY between 2026-08-14 (F1) and 2026-08-15 (G1), and those two
+# entries were invisible until the v1 corpus was deleted. Every gate in this
+# file globbed `data/raw`, so the 2026-08-08 captures had NEVER been segmented
+# under test — the suite reported success by not running, which is this
+# project's oldest failure shape. Pointing RAW at `data_v2/raw` took the file
+# from 1 passing test to 311 across the suite, and surfaced two immediately:
+#
+#     deadlift_150x4_1_20260808   5 windows for a labelled 4
+#     bench_117.5x1_20260808      2 windows for a labelled SINGLE
+#
+# **G1 fixed both and this is empty again (2026-08-15).** The first was
+# `impact_anchors` reading a setup wrist swing as a floor landing — the video
+# has the bar flat on the floor at that instant. The second was a real press
+# and a setup arm movement forming a false cluster of TWO, on the corpus's
+# first bench single, with no third rep to out-vote them. See
+# `segment.impact_anchors`, `segment._upright` and `analysis/53`. Counting is
+# 16/16 captures and 64/64 reps.
+#
+# Empty is the normal state and it is load-bearing: an entry here means the
+# suite asserts a defect rather than a requirement, so nothing belongs in it
+# that is not being actively worked.
+WRONG_REP_COUNT: dict[str, str] = {}
 
 
 def xfail_if_miscounted(path: Path) -> None:
@@ -211,8 +212,12 @@ def test_every_rep_is_found_and_nothing_else(path):
     """
     xfail_if_miscounted(path)
     log = io.load_log(path)
-    velocity, _ = world(log)
-    bounds = segment.rep_bounds(log, velocity[:, 2])
+    velocity, position = world(log)
+    # `position` is what the pipeline passes, and it is what turns on the
+    # verticality discriminator (G1). A gate that omits it tests a path nothing
+    # ships — which is how `bench_117.5x1` read as a miscount here after the
+    # fix that repaired it.
+    bounds = segment.rep_bounds(log, velocity[:, 2], position=position)
     assert len(bounds) == truth_reps(path)
 
 
@@ -221,7 +226,8 @@ def test_reps_do_not_overlap_and_are_ordered(path=None):
     """Rep windows must be disjoint and in time order on every capture."""
     for p in CAPTURES:
         log = io.load_log(p)
-        bounds = segment.rep_bounds(log, world(log)[0][:, 2])
+        velocity, position = world(log)
+        bounds = segment.rep_bounds(log, velocity[:, 2], position=position)
         for (_, stop), (start, _) in zip(bounds, bounds[1:]):
             assert stop <= start, f"{p.name}: overlapping rep windows"
 
@@ -255,7 +261,8 @@ def test_paused_bench_reps_are_where_the_analysis_says():
         pytest.skip("bench_92.5x2 not present")
 
     log = io.load_log(path)
-    bounds = segment.rep_bounds(log, world(log)[0][:, 2])
+    velocity, position = world(log)
+    bounds = segment.rep_bounds(log, velocity[:, 2], position=position)
     starts = [log["t"][a] for a, _ in bounds]
 
     assert len(starts) == 2
@@ -315,10 +322,12 @@ def test_every_rep_contains_both_phases(path):
     the window closed at both ends.
     """
     log = io.load_log(path)
-    velocity = world(log)[0][:, 2]
+    vel3, position = world(log)
+    velocity = vel3[:, 2]
     filtered = segment.bandpass(velocity, log["fs"])
 
-    for n, (a, b) in enumerate(segment.rep_bounds(log, velocity), 1):
+    for n, (a, b) in enumerate(
+            segment.rep_bounds(log, velocity, position=position), 1):
         seg, tt = filtered[a:b], log["t"][a:b]
         up = np.trapezoid(np.clip(seg, 0, None), tt)
         down = abs(np.trapezoid(np.clip(seg, None, 0), tt))
@@ -366,15 +375,22 @@ SLACK_M = 0.02      # the bounds are anatomical, quoted to the nearest cm
 # same reason nobody had seen it: these captures were never under test while
 # the gates globbed the v1 corpus.
 KNOWN_ROM_FAILURES: dict[str, str] = {
-    "bench_117.5x1_20260808":
-        "rep 1 spans 42.1 cm against a 20-35 cm bench band, because the set is "
-        "segmented as 2 windows and the first one swallows the un-rack. The "
-        "count is the defect; the extent is how it shows up here.",
-    "deadlift_150x4_1_20260808":
-        "rep 1 spans 67.8 cm against 40-61. Same root cause as its miscount.",
     "deadlift_170x4_3_20260808":
-        "rep 4 spans 68.0 cm against 40-61, on a capture that counts 4/4 — so "
-        "this one is extent WITHOUT a miscount, the squat_160x1 shape.",
+        "rep 4 spans 67.5 cm against 40-61, on a capture that counts 4/4 — so "
+        "this one is extent WITHOUT a miscount, the squat_160x1 shape. **The "
+        "only one of F1's three left after G1 (2026-08-15)**, and the two that "
+        "went were both segmentation: bench_117.5x1's 42.1 cm was a window "
+        "swallowing the un-rack and deadlift_150x4_1's 67.8 cm was a spurious "
+        "floor anchor. This one is not: its window runs impact to impact like "
+        "every other deadlift window and those impacts match the video. What "
+        "is different is that the lifter rested 5.8 s before the last rep "
+        "against 3.5-4.3 s for the others, making it the longest window in the "
+        "corpus — and across all 28 deadlift windows duration correlates 0.575 "
+        "with reconstructed ROM. **That is a correlation and not the cause**: "
+        "the second-longest window (deadlift_185x3, 5.03 s) comes out at a "
+        "perfectly ordinary 53.9 cm. So this is a reconstruction defect "
+        "surfacing in a segmentation gate — no window change fixes it — and "
+        "the mechanism is not established. Open.",
 }
 
 
@@ -724,7 +740,8 @@ def test_rep_windows_are_in_phase_with_the_video(video, csv, reps):
         if m.any() and np.nanmax(path["height"][m]) > 0.2:
             lockouts.append(float(t_video[m][np.nanargmax(path["height"][m])]))
 
-    bounds = segment.rep_bounds(log, world(log)[0][:, 2])
+    velocity, position = world(log)
+    bounds = segment.rep_bounds(log, velocity[:, 2], position=position)
     assert len(bounds) == reps
 
     for n, (a, b) in enumerate(bounds, 1):
@@ -1143,7 +1160,7 @@ def test_dispersion_is_finite_and_reported(path):
 
 
 @needs_data
-@pytest.mark.parametrize("stem", ["bench_spoto_90x5_1", "squat_130x5"])
+@pytest.mark.parametrize("stem", ["bench_spoto_95x5_1", "squat_pause_140x4_3"])
 def test_dispersion_flatters_a_broken_pipeline(stem):
     """The caveat in dispersion's docstring, asserted rather than promised.
 
@@ -1162,9 +1179,16 @@ def test_dispersion_flatters_a_broken_pipeline(stem):
     says 3.67 cm of horizontal error. A metric needing no ground truth reported
     inside spec on a capture measured to be outside it.
 
-    Squat keeps the older form, because squat video genuinely is not truth —
-    see `test_vs_truth_refuses_squat`. Between them the two parametrisations
-    cover both failure modes: flattery with no referee, and flattery with one.
+    **Squat used to keep the older form and no longer does (G2, 2026-08-15).**
+    It was parametrised on `squat_130x5` — a v1 capture, deleted — and asserted
+    that `vs_truth` refused. Squat is scored now, so both parametrisations
+    assert the SAME, stronger thing: there is a referee, and it disagrees with
+    dispersion. On `squat_pause_140x4_3` dispersion reports under 2 cm of spread
+    against 2.97 cm measured from the video.
+
+    That both lifts now take the strong form is the point rather than a tidy-up.
+    The weak form could only ever say "no referee exists here"; it could not
+    catch the failure the docstring is about.
     """
     from src import metrics, pipeline
 
@@ -1174,11 +1198,6 @@ def test_dispersion_flatters_a_broken_pipeline(stem):
 
     result = pipeline.run(path)
     assert result["dispersion"]["horizontal_rms"] < 2.0
-
-    if stem.startswith("squat"):
-        with pytest.raises(ValueError, match="refuses squat"):
-            metrics.vs_truth(result, VIDEO / "deadlift_155x6_1_20260728.mov")
-        return
 
     video = VIDEO / f"{path.stem.rsplit('_', 1)[0]}.mov"
     if not video.exists():
@@ -1191,34 +1210,115 @@ def test_dispersion_flatters_a_broken_pipeline(stem):
 
 
 @needs_data
-@pytest.mark.parametrize("stem", ["squat_130x5", "squat_140x4_1"])
-def test_vs_truth_refuses_squat(stem):
-    """Squat is not truth, so vs_truth must raise rather than guess.
+@pytest.mark.parametrize("stem", ["squat_pause_140x4_2", "squat_pause_140x4_3",
+                                  "squat_pause_145x4_1"])
+def test_vs_truth_scores_squat_and_the_sync_is_corroborated(stem):
+    """Squat is refereed now, and the sync that makes it possible is checked. G2.
 
-    Narrowed from bench-and-squat on 2026-07-31. Bench used to be refused on
-    the grounds that it "does not seed automatically", which was true of
-    `find_plate` and is no longer true of the shipped path — `capture.SEEDS`
-    seeds it by hand and `metrics.bench_sync` aligns it to the IMU clock. Bench
-    is scored now, on the three of seven captures whose correlation clears the
-    floor.
+    **This replaces `test_vs_truth_refuses_squat`, which asserted the opposite
+    and had been skipping since v1 was deleted.** Its parametrisation was
+    `squat_130x5` and `squat_140x4_1`, both gone, so the gate protecting the
+    refusal had not run in any form since 2026-08-14. The refusal's stated
+    reason — median NCC ~0.40, the plate clipping the top of frame, "a wider
+    shot, not code" — was entirely about the v1 plate template on `data/video/`
+    footage, and BOTH the tracker and the footage were deleted with it. It was
+    gating on a fact that could no longer be checked in either direction.
 
-    Squat's refusal stands and its reasons got worse rather than better. It
-    tracks at median NCC ~0.40 with the plate leaving the top of frame at
-    lockout, and of the four 2026-07-30 captures two do not track at all while
-    two report ~12.5 cm of travel against a 45-76 cm band. Returning a number
-    from that would invent the ground truth this module exists to supply — the
-    exact move that let a broken pipeline look validated for months. The fix is
-    a wider shot, not code.
+    What changed underneath it: `src/vtrack/` tracks these four clips at 100%
+    coverage and 63-66 cm of travel with rep counts matching their labels, and
+    `metrics.bench_sync` — which `_video_on_imu_clock` has always routed
+    non-deadlift lifts to — turns out to work BETTER on a paused squat than on
+    any bench. Correlation 0.73-0.76 against bench's 0.46-0.63, and **zero
+    whole-rep rivals** where every bench capture has two to four. The bottom
+    dwell breaks the periodicity that makes bench ambiguous.
+
+    Asserts three independent things, because the count of them is the point:
+    the capture scores at all, the correlation is corroborated by a landmark
+    that cannot see it, and the result is physically sane.
     """
-    from src import metrics, pipeline
+    from src import metrics, pipeline, capture
 
     path = next((p for p in CAPTURES if p.stem.startswith(stem)), None)
     if path is None:
         pytest.skip(f"{stem} not present")
 
     result = pipeline.run(path)
-    with pytest.raises(ValueError, match="refuses squat"):
-        metrics.vs_truth(result, VIDEO / "deadlift_155x6_1_20260728.mov")
+    video = pipeline.find_video(path)
+    if video is None:
+        pytest.skip(f"{stem} has no paired video")
+    m = metrics.vs_truth(result, video)
+
+    assert m["n_compared"] == truth_reps(path), (
+        f"{stem}: {m['n_compared']} of {truth_reps(path)} reps fell inside the "
+        f"video's coverage — a sync error looks exactly like this")
+
+    # The corroboration, which is what licenses scoring squat at all.
+    assert m["sync_landmark_reps"] == truth_reps(path)
+    assert m["sync_landmark_disagree_reps"] < metrics.LANDMARK_TOL_REPS, (
+        f"{stem}: correlation and per-rep bottoms disagree by "
+        f"{m['sync_landmark_disagree_reps']:.3f} rep periods")
+
+    # Physically sane: a squat's horizontal error is centimetres, not metres,
+    # and its video ROM sits in the band measured for this lifter.
+    assert 0.0 < m["pipeline_h_rms"] < 10.0
+    lo, hi = capture.VERTICAL_ROM_M["squat"]
+    assert lo * 100 <= m["video_rom_cm"] <= hi * 100, (
+        f"{stem}: video ROM {m['video_rom_cm']:.1f} cm outside the squat band")
+
+
+@needs_data
+def test_the_sync_landmark_catches_a_whole_rep_error():
+    """The gate that makes the squat sync trustworthy, tested by breaking it. G2.
+
+    `bench_sync` identifies its lag only up to a whole rep period, and its own
+    docstring is explicit that the ambiguity is harmless ONLY for the two
+    quantities it was measured against — and that `vs_truth`'s `covered` flag
+    and per-rep table are not among them. So the ambiguity had to be closed
+    before squat could be scored per rep, not argued around.
+
+    `metrics.pause_landmark` closes it: the bottom of each rep, named by the raw
+    IMU (`segment.dwell_instants`, no attitude or integration) and by the video
+    independently. Across all seven multi-rep bench and squat captures the two
+    agree to 0.003-0.083 of a rep period.
+
+    This asserts the other half — that the check would FIRE. A one-rep error is
+    injected in both directions on every capture that has a cadence, and every
+    one must be refused. Fourteen for fourteen when written.
+    """
+    from src import metrics, pipeline, capture
+
+    real = metrics.bench_sync
+    caught, missed = [], []
+    try:
+        for shift in (+1, -1):
+            def shifted(p, log, vz, cadence, max_lag_s=None, _s=shift):
+                fit = real(p, log, vz, cadence, max_lag_s)
+                fit["offset"] = fit["offset"] + _s * cadence
+                return fit
+            metrics.bench_sync = shifted
+            for path in CAPTURES:
+                if capture.lift_of(path) == "deadlift":
+                    continue
+                result = pipeline.run(path)
+                if len(result["bounds"]) < metrics.LANDMARK_MIN_REPS:
+                    continue
+                video = pipeline.find_video(path)
+                if video is None:
+                    continue
+                try:
+                    metrics.vs_truth(result, video)
+                except ValueError as exc:
+                    (caught if "sync refused" in str(exc) else missed).append(
+                        (path.stem, shift, str(exc)[:60]))
+                else:
+                    missed.append((path.stem, shift, "scored anyway"))
+    finally:
+        metrics.bench_sync = real
+
+    assert not missed, f"a whole-rep sync error went undetected: {missed}"
+    assert len(caught) >= 6, (
+        f"only {len(caught)} captures exercised the guard; it was 14 when "
+        f"written, so either the corpus shrank or captures stopped syncing")
 
 
 @pytest.mark.parametrize("video,csv,reps", DEADLIFTS, ids=[d[0] for d in DEADLIFTS])

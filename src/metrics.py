@@ -68,6 +68,24 @@ MIN_OVERLAP_REPS = 3.0  # ...and it must also hold this many rep periods. You
 WIDEN_FACTOR = 1.6      # how fast the sweep grows when the peak is at the edge
 STABLE_LAG_S = 0.25     # a widened peak must not move more than this when the
 #                         sweep is widened once more, or it was never a peak
+# --- the pause landmark, added 2026-08-15 (G2). `bench_sync` identifies a lag
+# --- only up to a whole rep, and its validation is TRANSFERRED from deadlift.
+# --- `pause_landmark` is an independent, on-lift check: the bottom of a rep,
+# --- named separately by the IMU (`segment.dwell_instants`, raw signal only)
+# --- and by the video (its per-rep lowest point).
+LANDMARK_TOL_REPS = 0.25  # the two methods must agree within this fraction of a
+#                           rep period. Measured across all seven multi-rep
+#                           bench and squat captures they agree to 0.003-0.083
+#                           of a rep; a whole-rep sync error would disagree by
+#                           ~1.0. So the admissible range is roughly
+#                           [0.083, 0.9] and 0.25 is near its geometric
+#                           midpoint — 3x clear of the worst real capture and
+#                           4x clear of the error it exists to catch.
+LANDMARK_MIN_REPS = 3   # fewer than this and the mean offset is not worth
+#                         quoting; the check abstains rather than gating on two
+#                         points. It abstains rather than refusing, because an
+#                         absent corroboration is not evidence of a bad sync.
+
 SYNC_MAX_LAG_S = 11.75  # s, where the lag sweep STARTS. NOT arbitrary and
 #                         NOT free to grow: see bench_sync's search-window
 #                         section. Too narrow and the true peak falls outside,
@@ -629,7 +647,131 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
         "cadence_s": float(cadence_s),
         # (lag, height as a fraction of the peak, offset in rep periods)
         "rivals": rivals,
+        # The curve the decision was made on. Returned because this method
+        # accepts on the SHAPE of it rather than on the height of its peak, and
+        # a claim about a shape should be checkable from the function's own
+        # output rather than only from its docstring — the same reason
+        # `markers.bar_path` returns both of its scale variants. Diagnostic
+        # only: nothing reads these back, and `vs_truth` does not carry them.
+        "lags": lags,
+        "curve": curve,
     }
+
+
+def _video_bottoms(path: dict, expected: int | None) -> np.ndarray:
+    """Video time of the lowest point of each rep, from the height trace.
+
+    Kept private and separate from `tracked.video_reps`, which brackets reps by
+    the extremum a set STARTS on and would return tops for bench and squat.
+    This wants the turnarounds between them. It also cannot import `tracked` —
+    that module imports this one.
+
+    The prominence sweep matches `tracked.video_reps`' and carries the same
+    caveat: when `expected` is supplied the threshold is swept until that many
+    troughs appear. The extrema are whatever they are; only how small a wobble
+    counts as one is being chosen.
+    """
+    from scipy.signal import find_peaks
+
+    h = np.asarray(path["height"], dtype=float)
+    t = np.asarray(path["t"], dtype=float)
+    ok = np.isfinite(h)
+    if ok.sum() < 10:
+        return np.empty(0)
+    h = np.interp(np.arange(len(h)), np.flatnonzero(ok), h[ok])
+
+    fps = float(path.get("fps") or 30.0)
+    win = max(3, int(round(0.15 * fps)) | 1)
+    sm = np.convolve(h, np.ones(win) / win, mode="same")
+    span = float(np.ptp(sm))
+    if span <= 0:
+        return np.empty(0)
+
+    best = None
+    for prom in np.linspace(0.60, 0.10, 60):
+        idx = find_peaks(-sm, prominence=prom * span,
+                         distance=max(1, int(0.8 * fps)))[0]
+        if expected is not None and len(idx) == expected:
+            best = idx
+            break
+        if best is None or (expected is not None
+                            and abs(len(idx) - expected) < abs(len(best) - expected)):
+            best = idx
+    return t[best] if best is not None and len(best) else np.empty(0)
+
+
+def pause_landmark(path: dict, log: dict, bounds: list[tuple[int, int]]) -> dict | None:
+    """Offset between video and IMU clocks from the BOTTOM OF EACH REP. G2.
+
+    Returns `{offset, scatter_s, n}`, or None when there is no landmark to
+    match. `offset` is video-to-IMU, the same convention `bench_sync` returns.
+
+    **Why this exists.** `bench_sync` cross-correlates two whole records and
+    identifies the lag only up to a whole rep period, and its validation is
+    TRANSFERRED from deadlift — the method was calibrated where the true offset
+    is known and then applied where it is not. This is the missing half: an
+    instant that the IMU and the video name INDEPENDENTLY, on the lift being
+    scored. `segment.dwell_instants` finds it in raw acceleration and gyro with
+    no attitude, integration or filtering; `_video_bottoms` finds it in the
+    tracked height. Neither can see the other.
+
+    **What it is worth, measured on all seven multi-rep bench and squat
+    captures.** Against `bench_sync`'s correlation, as a fraction of that
+    capture's own rep period:
+
+        bench_spoto_95x5_2    0.3%      squat_pause_140x4_2   0.3%
+        bench_spoto_95x5_1    2.0%      squat_pause_145x4_1   1.6%
+        bench_92.5x6_2        2.6%      squat_pause_140x4_3   3.6%
+        bench_92.5x6_1        8.3%
+
+    Two unrelated methods, seven captures, never further apart than 8.3% of a
+    rep. That is what licenses `_video_on_imu_clock` gating on it, and it is the
+    first on-lift evidence bench's sync has ever had. Note where it bites
+    hardest: `bench_92.5x6_2`'s correlation offset is −5.385 s, more than a rep
+    from zero, and the landmark independently lands at −5.453.
+
+    **And this is not a nicety on squat, which is the reason to read the margin
+    rather than the verdict.** The case for scoring squat at all is that its
+    correlation has no rival above `RIVAL_FRAC` where every bench has two to
+    four. Measured, the highest sidelobe as a fraction of the peak is:
+
+        bench                     0.720 - 0.794   (above 0.70: rivals)
+        squat_pause_140x4_2       0.598
+        squat_pause_140x4_3       0.578
+        squat_pause_145x4_1       0.693           <-- 1% under the line
+
+    So "the paused squat is unambiguous" is comfortable on two captures and
+    within one percent of failing on the third. The rival test would not have
+    survived a slightly noisier capture, and nothing about the sync being right
+    would have changed. This corroboration is what actually carries the claim;
+    the rival count is what made it worth checking.
+
+    **An OFFSET ONLY, deliberately.** The per-rep scatter is 83-223 ms against
+    the 11-16 ms `capture.sync` achieves from matched landings, so there is not
+    the precision here to fit a slope: over a 20 s set, four points at that
+    scatter produced apparent clock drifts of 1.6-5.3% where the deadlift
+    measures under 0.25%. Fitting one would be reading noise as drift. It
+    corroborates a correlation and bounds a whole-rep error; it does not replace
+    `capture.sync`.
+
+    Returns None rather than guessing when the two sides disagree on how many
+    reps there are, or when there are fewer than `LANDMARK_MIN_REPS`. **An
+    absent corroboration is not evidence of a bad sync**, and the caller treats
+    it that way — it proceeds uncorroborated and says so.
+    """
+    if len(bounds) < LANDMARK_MIN_REPS:
+        return None
+
+    imu = segment.dwell_instants(log, bounds)
+    video = _video_bottoms(path, expected=len(bounds))
+    if len(imu) != len(video) or len(imu) < LANDMARK_MIN_REPS:
+        return None
+
+    t = log["t"]
+    offsets = np.array([float(t[k]) for k in imu]) - np.asarray(video, dtype=float)
+    return {"offset": float(np.mean(offsets)),
+            "scatter_s": float(np.std(offsets)),
+            "n": int(len(offsets))}
 
 
 # ---------------------------------------------------------------- vs truth --
@@ -776,12 +918,25 @@ def _video_quality(path: dict) -> dict:
 
 
 def _video_on_imu_clock(result: dict, video: str | Path | dict,
-                        tracker: str | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+                        tracker: str | None = None,
+                        sync=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """Tracked bar path resampled onto the IMU clock.
 
     Returns (t_imu, fore_aft, height, sync_fit), NaN samples dropped.
 
-    Two routes, because the two lifts offer different evidence.
+    Two routes, because the two lifts offer different evidence — and an optional
+    third supplied by the caller.
+
+    **`sync` is a hook, and it defaults to None, which is exactly the behaviour
+    this function has always had.** It exists because both routes below need
+    REPEATED events to identify an alignment — the deadlift route fits a slope
+    and so needs two landings, the bench route needs a cadence to tell a
+    whole-rep rival from a real one — and a single provides one of everything.
+    That is why the only three captures in `data_v2/` that have never been
+    refereed are the three singles. `shortset.sync` passes a clock those can
+    support; it returns None for any set of three reps or more, so a capture
+    this hook is not for takes the identical path whether it is installed or
+    not. See `src/shortset.py`, which records what it can and cannot measure.
 
     **Deadlift** matches the IMU's floor impacts to the video's landings. They
     are the same physical events seen by unrelated sensors, so the match fits
@@ -815,6 +970,15 @@ def _video_on_imu_clock(result: dict, video: str | Path | dict,
     path = resolve_path(video, tracker)
     result.setdefault("_video_quality", _video_quality(path))
 
+    # The caller's route first, and only if it claims this capture. It returning
+    # None is how it says "not mine" — which keeps the decision about WHICH
+    # captures are short in the hook rather than spread across this function.
+    fit = sync(result, path) if sync is not None else None
+    if fit is not None:
+        t_imu = path["t"] + fit["offset"]
+        ok = np.isfinite(path["x"]) & np.isfinite(path["height"]) & np.isfinite(t_imu)
+        return t_imu[ok], path["x"][ok], path["height"][ok], fit
+
     if capture.lift_of(Path(result["path"]).name) == "deadlift":
         impacts = np.array([float(log["t"][k]) for k in segment.impact_anchors(log)])
         landings = capture.landings(path)
@@ -842,6 +1006,38 @@ def _video_on_imu_clock(result: dict, video: str | Path | dict,
         fit["rms_ms"] = float("nan")
         fit["drift_pct"] = float("nan")
         fit["n"] = 1
+
+        # CORROBORATION (G2, 2026-08-15). The correlation identifies the lag
+        # only up to a whole rep, and everything `vs_truth` reports per rep is
+        # destroyed by a whole-rep error — see `bench_sync`'s closing section,
+        # which is explicit that the ambiguity is harmless only for the two
+        # quantities it was measured against, and that `covered` and the per-rep
+        # table are NOT in that class. `pause_landmark` names the bottom of each
+        # rep from the raw IMU and from the video separately, so it can check
+        # exactly that. Measured, the two agree to 0.3-8.3% of a rep on all
+        # seven multi-rep captures.
+        mark = pause_landmark(path, log, result["bounds"])
+        if mark is None:
+            # Not evidence of a bad sync — just no landmark to check it with.
+            fit["landmark_offset"] = float("nan")
+            fit["landmark_scatter_s"] = float("nan")
+            fit["landmark_reps"] = fit["landmark_disagree_reps"] = float("nan")
+        else:
+            disagree = abs(mark["offset"] - fit["offset"]) / max(cadence, 1e-9)
+            fit["landmark_offset"] = mark["offset"]
+            fit["landmark_scatter_s"] = mark["scatter_s"]
+            fit["landmark_reps"] = mark["n"]
+            fit["landmark_disagree_reps"] = float(disagree)
+            if disagree > LANDMARK_TOL_REPS:
+                raise ValueError(
+                    f"sync refused: the correlation puts the video "
+                    f"{fit['offset']:+.3f} s from the IMU clock and the "
+                    f"per-rep bottoms put it {mark['offset']:+.3f} s, a "
+                    f"disagreement of {disagree:.2f} rep periods against a "
+                    f"{LANDMARK_TOL_REPS} tolerance. The correlation "
+                    f"identifies a lag only up to one whole rep and this is "
+                    f"what that failure looks like; scoring per rep through it "
+                    f"would pair each video rep with the wrong window")
         t_imu = path["t"] + fit["offset"]
 
     ok = np.isfinite(path["x"]) & np.isfinite(path["height"]) & np.isfinite(t_imu)
@@ -866,8 +1062,13 @@ def _close(arr: np.ndarray, t: np.ndarray,
 
 
 def vs_truth(result: dict, video: str | Path | dict,
-             tracker: str | None = None) -> dict:
+             tracker: str | None = None, sync=None) -> dict:
     """Reconstructed rep paths against the video, in cm. Deadlift and bench.
+
+    `sync` is an optional hook that supplies the video-to-IMU clock, used by
+    `shortset.run` to score sets too short for either of the two routes below.
+    It defaults to None, which is the behaviour this function has always had;
+    see `_video_on_imu_clock`.
 
     `result` is a `pipeline.run` dict. **Squat still raises** — it tracks at
     median NCC ~0.40 with the plate leaving frame at lockout, and two of the
@@ -967,18 +1168,30 @@ def vs_truth(result: dict, video: str | Path | dict,
     log, bounds, reps = result["log"], result["bounds"], result["reps"]
     name = Path(result["path"]).name
 
-    if capture.lift_of(name) == "squat":
-        raise ValueError(
-            f"{name}: vs_truth refuses squat. It tracks at median NCC ~0.40 "
-            f"with the plate clipping the top of frame at lockout, and two of "
-            f"the four 2026-07-30 captures do not track at all. Returning a "
-            f"number from that would invent the ground truth this module "
-            f"exists to supply. Needs a wider shot, not code. See "
-            f"src/README.md.")
+    # THE BLANKET SQUAT REFUSAL WAS REMOVED 2026-08-15 (G2). It read: "vs_truth
+    # refuses squat. It tracks at median NCC ~0.40 with the plate clipping the
+    # top of frame at lockout, and two of the four 2026-07-30 captures do not
+    # track at all... Needs a wider shot, not code."
+    #
+    # Every clause of that described the v1 PLATE TEMPLATE on `data/video/`
+    # footage, which F1 deleted on 2026-08-14 along with the 2026-07-30
+    # captures. It is not that the reason weakened — it is that neither the
+    # tracker nor the footage it was measured on still exists, so the refusal
+    # was gating on a fact that could no longer be checked either way. The four
+    # squats in `data_v2/` track through `vtrack` at 100% coverage and 63-66 cm
+    # of travel, and their rep counts match their labels. "A wider shot, not
+    # code" was wrong in an interesting direction: it needed neither, it needed
+    # a different feature to track, which `src/vtrack/` now is.
+    #
+    # A squat is now refused when it cannot be SYNCED, which is a fact about
+    # the capture rather than about the lift, and which bench is subject to
+    # equally. `squat_170x1` is still refused: it is a single, so there is no
+    # cadence, exactly as for `bench_117.5x1`.
     if not reps:
         raise ValueError(f"{name}: no reps to compare")
 
-    t_vid, fore_aft, height, fit = _video_on_imu_clock(result, video, tracker)
+    t_vid, fore_aft, height, fit = _video_on_imu_clock(result, video, tracker,
+                                                       sync=sync)
 
     axis = np.real(project.principal_axis(reps)[0])
     raw_pos = result["bar_position"]
@@ -1086,6 +1299,37 @@ def vs_truth(result: dict, video: str | Path | dict,
         "n_compared": len(good),
         "sync_rms_ms": fit["rms_ms"],
         "sync_drift_pct": fit["drift_pct"],
+        # The offset itself, its slope, and which route produced it. None of
+        # this was reported until 2026-08-15 (G3), which left the sync as the
+        # one stage whose output could not be read back from the result it
+        # conditions — `deadlift_170x4_3` has been scored through a fitted
+        # slope of 0.7715, a 22.8% clock drift, and no caller could see it.
+        #
+        # **`sync_offset` IS NOT ON A COMMON CONVENTION AND MUST NOT BE COMPARED
+        # ACROSS ROUTES WITHOUT `sync_method`.** `capture.sync` fits
+        # video = slope * imu + offset; `bench_sync` and `shortset.short_sync`
+        # return imu = video + offset. Those are opposite signs. Each route uses
+        # its own correctly and always has, so this is not a bug being reported
+        # — it is a trap being labelled, because reporting the two side by side
+        # under one name is exactly how it would become one. To put a video time
+        # on the IMU clock, use `capture.to_imu_time` for the floor-impact route
+        # and add the offset for the other two.
+        "sync_offset": float(fit["offset"]),
+        "sync_slope": float(fit.get("slope", float("nan"))),
+        "sync_method": fit.get("method", ""),
+        # Short sets only; NaN otherwise. See src/shortset.py.
+        "sync_containment_phase": fit.get("containment_phase", float("nan")),
+        "sync_corr": fit.get("corr", float("nan")),
+        # What checked the sync, reported alongside it. On deadlift the sync IS
+        # a landmark match and these are NaN; on bench and squat they are the
+        # independent check on a correlation that identifies its lag only up to
+        # a whole rep. NaN means no landmark was available, which is not the
+        # same as agreement — read `sync_landmark_reps` before quoting.
+        "sync_landmark_offset": fit.get("landmark_offset", float("nan")),
+        "sync_landmark_scatter_s": fit.get("landmark_scatter_s", float("nan")),
+        "sync_landmark_reps": fit.get("landmark_reps", float("nan")),
+        "sync_landmark_disagree_reps": fit.get("landmark_disagree_reps",
+                                               float("nan")),
         "axis_flipped": bool(flip),
         "reps_disagreeing_on_sign": int(disagreeing),
         "axis": axis,

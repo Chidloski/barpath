@@ -14,6 +14,453 @@ Related, and deliberately not duplicated here:
 ---
 
 
+## G3 — a pipeline variant for singles and doubles (2026-08-15)
+
+Owner's task, following G2. **The corpus is now 16 of 16 scored.** The three
+captures that had never been refereed — `bench_117.5x1`, `deadlift_200x1`,
+`squat_170x1`, one single per lift — score at h 0.96 / 2.66 / 2.05 cm, and all
+three beat the flat-line null (3.31 / 1.08 / 2.01).
+
+`deadlift_200x1` is the first deadlift in the project to beat the null at all;
+every multi-rep deadlift sits at 0.14-0.81. Read it carefully rather than as
+good news: a single's `beats_null` is a median over ONE rep, so it is far less
+robust than the six-rep figures it is being compared against.
+
+New module `src/shortset.py`; `pipeline.py` and `segment.py` are untouched.
+
+### The premise was wrong, and measuring it first is what saved the work
+
+The task's prior was that singles need a new SEGMENTER — "find the part of the
+recording with maximum displacement with IMU dwells on either side". Measured
+before building anything, singles do not have a segmentation problem at all:
+`segment.rep_bounds` gets 1/1 on all three real singles (G1 checked the windows
+against video) and 1/1 on thirteen more singles truncated out of the multi-rep
+captures, with IoU 0.53-0.99 against the first rep of the full capture.
+
+The proposed rule was implemented anyway, in three readings, and all three lose:
+
+    rule                                        median IoU   IoU >= 0.5
+    dwell = stationary_mask, duration-capped        0.00        1/12
+    dwell = vertical-velocity turnaround            0.29        3/12
+    candidates from _all_lobes, max displacement    0.00        2/13
+    segment.rep_bounds as it stands                 0.70       12/12
+
+One number explains it: **integration drift produces more apparent displacement
+than a rep does.** The window the rule picks on `bench_92.5x6_1` claims 86.8 cm
+of vertical travel on a bench press whose true range is 27 cm, and the largest
+claim any variant made was 127 cm. Drift grows with window length, so "maximum
+displacement" systematically prefers the longest admissible window. No dwell
+threshold repairs that — the ordering is wrong, not the cut. **Do not
+re-propose displacement as a selection rule without first removing the drift.**
+
+### What was actually broken: the sync, in two different places
+
+Bench and squat singles died on `bench_sync`'s cadence precondition — it accepts
+on "every rival is a whole rep away" and a single has no rep period. The
+deadlift single never reached it: `capture.sync` fits offset AND slope, so it
+needs two landings against two impacts, and a single has one of each.
+
+`shortset.short_sync` is the same correlation with the cadence precondition
+removed and **the sweep bounded by overlap instead of by lag**. That swap is the
+whole of it. Running `bench_sync`'s widening search on a single is a disaster:
+
+    deadlift_200x1, sweep half-width    peak      error vs its own floor impact
+      6.00 s                          -0.355 s          +11 ms
+     11.75 s (the shipping constant)  -10.820 s      -10454 ms
+     20.00 s                          -19.190 s      -18824 ms
+
+and the wrong answers score HIGHER (0.490 and 0.688 against 0.335), because a
+single is a flat record with one event in it and sliding the two records apart
+correlates flat against flat on ever less of it. `MIN_OVERLAP_FRAC` is 0.80, the
+LOW edge of a 0.80-0.95 plateau — taken at the edge on purpose, since the
+failure it guards against grows as the floor falls.
+
+### Accuracy, against answers the module did not supply
+
+    singles (n=12)   median 7.5 ms, worst 103.9 ms
+    doubles (n=9)    median 5.0 ms, worst  15.0 ms
+    deadlift_200x1   +10.9 ms against its own floor impact — the only real
+                     single carrying an offset that owes nothing to this module
+
+For scale the multi-rep deadlift sync, the best-validated clock in the project,
+runs 8.4-9.7 ms. Two acceptance checks: **containment** (the video's single
+largest excursion must land inside the IMU's rep window — measured 0.44-0.88 on
+all sixteen, and injected whole-rep errors are refused in both directions on all
+three real singles) and, where the lift provides one, a **landmark** (a floor
+impact matched to a video landing, agreeing to 3-104 ms).
+
+### Doubles: bench and squat yes, deadlift NOT VALIDATED
+
+The prior that doubles work like the existing pipeline is half right. The
+existing route answers 9 of 13 truncated doubles at 0-27 ms; two of the extra
+refusals are `bench_sync`'s fractional-rival guard on a two-rep set and two are
+`capture.landings`, whose `skip_s=10.0` discards the only landing on a short
+record. `short_sync` answers all of them.
+
+But **deadlift doubles cannot be tested by truncation and are not claimed.** A
+deadlift set has NO GAP between reps — the windows run impact to impact and the
+measured gap is 0.00 s on all six captures — so cutting after rep 2 ends the
+record exactly at the second landing with zero trailing record, where a real
+double ends with the lifter releasing the bar and stepping back. Swept the
+margin from 0.5 to 0.98 of the (zero) gap; the counts do not move. Bench and
+squat doubles segment 2/2 on all seven and sync to 0-15 ms.
+
+**A deadlift double is the single most useful capture anyone could add.**
+
+### Two pre-existing defects found in passing, NEITHER fixed here
+
+1. **`deadlift_170x4_3` is scored through a physically impossible clock.** Its
+   landing-to-impact sync fits slope **0.7715** — a 22.8% clock drift, 216 ms
+   residual — against under 0.4% and ~9 ms on every other deadlift. Nothing in
+   the pipeline gates on `drift_pct` or `rms_ms`, so no caller could see it.
+   Two independent estimates agree with each other and not with it: the
+   correlation says -0.627 s and its own single landing/impact pair says
+   -0.652 s, against the four-point fit's -1.505 s. `capture.sync` is not this
+   module's to change and the right fix is a gate rather than a special case,
+   so it is pinned by `test_a_broken_reference_sync_is_detectable` instead.
+2. **`capture.sync` and `metrics.bench_sync` return `fit["offset"]` with
+   OPPOSITE SIGNS** — `video = slope*imu + offset` against `imu = video +
+   offset`. Each branch uses its own correctly and always has, so nothing is
+   currently wrong; but anything comparing the two is silently out by twice the
+   offset, which it did to this task's own measurements mid-flight and would
+   have shipped a ~1 s error in six places. `vs_truth` now reports
+   `sync_offset`, `sync_slope` and `sync_method` together, with the trap
+   labelled where the fields are built.
+
+### Evidence
+
+`analysis/56_singles_doubles.png` (`run.py --shortsets`) and
+`tests/test_shortset.py`, 45 gates. The thirteen multi-rep captures are
+**bit-identical** with the hook installed and without it, checked per capture —
+`metrics.vs_truth` and `_video_on_imu_clock` take a `sync=` hook defaulting to
+None, and `shortset.sync` returns None for anything over two reps.
+
+---
+
+
+## G2 — vs_truth's squat refusal lifted, and the sync corroborated (2026-08-15)
+
+Owner's task, following G1's investigation.
+
+**Suite, run file by file:** 330 passed, 169 skipped, 1 xfailed, **6 failed** —
+the same six as after G1, so G2 adds no new failures. Five pre-date this
+session entirely and the sixth is `test_oracle[deadlift_200x1]`, which G1 caused
+by making that capture's window right.
+
+Squat is refereed for the first time in this project: **h 1.88 / 2.97 / 2.65 cm on the three paused captures,
+all three beating the flat-line null** (1.71 / 1.24 / 1.50), which no deadlift
+does. The corpus goes from 10 scored captures to 13, and the three that remain
+unscored are all SINGLES. *(All three scored 2026-08-15 by G3; the corpus is
+16 of 16. See the G3 entry above.)*
+
+### Why it was refused, and why that reason was empty
+
+`vs_truth` raised on any squat before doing anything else. Its stated reason —
+median NCC ~0.40, the plate clipping the top of frame at lockout, two of four
+2026-07-30 captures not tracking, "a wider shot, not code" — described the v1
+plate template on `data/video/` footage. **F1 deleted both on 2026-08-14**, so
+the refusal was gating on a claim that could no longer be checked in either
+direction. The gate protecting it (`test_vs_truth_refuses_squat`) had been
+silently skipping since, because it parametrised on two deleted captures.
+
+"A wider shot, not code" was wrong in an interesting direction: it needed
+neither. It needed a different feature to track, which `src/vtrack/` now is.
+
+### The sync works, and works BETTER on squat than on bench
+
+`_video_on_imu_clock` has always routed non-deadlift lifts to `bench_sync`.
+Nobody had run it on a squat because the refusal fired first. Measured:
+
+    capture               corr    whole-rep rivals   highest sidelobe
+    bench (four)       0.46-0.63        2 to 4          0.720-0.794
+    squat_pause_140x4_2   0.752            0            0.598
+    squat_pause_140x4_3   0.732            0            0.578
+    squat_pause_145x4_1   0.760            0            0.693
+
+Bench's lag is identified only modulo one rep — that is `bench_sync`'s
+documented ambiguity — and the paused squats' is identified absolutely. The
+bottom dwell breaks the periodicity that makes bench ambiguous.
+
+**Read the last column before quoting the middle one.** `squat_pause_145x4_1`'s
+highest sidelobe is 0.693 against a 0.70 threshold: one percent from having a
+rival. "The paused squat is unambiguous" is comfortable on two captures and
+marginal on the third, and a slightly noisier capture would have failed the
+rival test without anything about the sync being wrong.
+
+### So the claim rests on a landmark instead, not on the rival count
+
+`segment.dwell_instants` finds the bottom of each rep in RAW acceleration and
+gyro — no attitude, no integration, no filtering, the discipline
+`impact_anchors` and `rest_instants` keep — and `metrics.pause_landmark` matches
+those against the video's per-rep lowest point. Two instruments that cannot see
+each other, on the same offset. Across all seven multi-rep bench and squat
+captures they agree to **0.003–0.083 of a rep period**.
+
+`_video_on_imu_clock` now refuses when they disagree by more than
+`LANDMARK_TOL_REPS = 0.25` — 3x clear of the worst real capture, 4x clear of the
+whole-rep error it exists to catch. **Tested by breaking it:** a one-rep error
+injected in both directions on every capture with a cadence is refused 14 times
+out of 14, none missed.
+
+That check is bench's gain as much as squat's. `bench_sync`'s validation was
+transferred from deadlift — calibrated where the true offset is known, applied
+where it is not — and this is the first on-lift evidence any bench capture has
+had. Where it bites hardest: `bench_92.5x6_2`'s correlation offset is −5.385 s,
+more than a rep from zero, and the landmark independently lands at −5.453.
+
+### Two things that had to be got right, both found by them failing
+
+**The dwell must be sought in the window's INTERIOR.** Searched over the whole
+rep window the quietest instant is the standing brace at the edge, not the
+bottom — a lifter holding a racked bar is quieter than the same lifter braced at
+depth under it. That happened on 4 of 12 reps, at phase 0.02–0.16, and it
+wrecked the fit: residual 55–677 ms and an implied clock drift of 1.6–5.3% where
+the deadlift's landmark sync measures under 0.25%. Restricted to the middle 60%
+the instants land at phase 0.31–0.54. Every value in 0.4–0.6 is bit-identical.
+
+**It fits an OFFSET only.** Per-rep scatter is 83–223 ms against `capture.sync`'s
+11–16 ms from matched landings, so four points over a 20 s set do not support a
+slope — fitting one reads noise as drift. It corroborates a correlation and
+bounds a whole-rep error; it does not replace `capture.sync`.
+
+### Squat gains a second check for free, and it reads like bench
+
+`metrics.momentum_closure` had no squat gate of its own — it was simply never
+reachable, because nothing scored squat. It integrates vertical acceleration
+between two moments the VIDEO says the bar was still, which must come to zero,
+and a paused squat's bottom dwell is exactly such a moment. Median |dv| over the
+whole corpus, in g:
+
+    bench                0.0121 - 0.0263   (8-11 intervals)
+    squat (paused)       0.0112 - 0.0401   (5-6 intervals)
+    deadlift             0.0374 - 0.2785   (3-7 intervals)
+
+Squat lands in bench's band and well inside deadlift's, and this number does not
+depend on the video's distances at all — a scale error cannot move a zero
+crossing — so it is independent of `STICKER_RATIO` being transferred rather than
+measured. Not chased further here; recorded because it is now reachable.
+
+### What is still refused, and why it is not about squat
+
+`squat_170x1` — a single, so no cadence, so `bench_sync` cannot tell a whole-rep
+ambiguity from a real one. Identical to `bench_117.5x1`. The three unscored
+captures in the corpus are now exactly the three singles, and the fix for them
+is a sync that does not need a cadence, not anything squat-specific. Note the
+bottom dwell will not rescue `squat_170x1`: it is not a paused squat.
+
+**CLOSED 2026-08-15 by G3, and the prediction above was right on both counts.**
+The fix was a sync that does not need a cadence (`shortset.short_sync`) and the
+bottom dwell did not rescue it — `segment.dwell_instants` misses `squat_170x1`
+by +616 ms and `bench_117.5x1` by -843 ms, because neither is a paused lift.
+All three singles now score. The corpus is 16 of 16.
+
+### Evidence
+
+`analysis/55_squat_sync.png` (`run.py --squatsync`), and the gates
+`test_vs_truth_scores_squat_and_the_sync_is_corroborated` and
+`test_the_sync_landmark_catches_a_whole_rep_error`. The latter replaces
+`test_vs_truth_refuses_squat`, which asserted the opposite and had been skipping
+since v1's deletion.
+
+---
+
+## G1 — three segmentation defects, fixed (2026-08-15)
+
+Owner's task: find the segmenter's problems, fix them, then run the pipeline
+against the cached tracked paths and plot it. F1 had already *diagnosed* two and
+deliberately left them red as findings; this closes those and adds a third that
+was found only by checking the second fix's own output against the video.
+
+**Counting is 16/16 captures and 64/64 reps.** Every capture that was already
+correct produces **bit-identical** windows — only the three broken ones move.
+
+**Suite, run file by file:** 324 passed, 173 skipped, 1 xfailed, **6 failed**.
+Five of the six pre-date this session (`test_segmentation` deadlift_170x4_3 ROM,
+two `test_oracle` parabolas, `test_tracked`'s stale implausible flag,
+`test_vtrack`'s stale `data/video/` assertion) and the sixth is
+`test_oracle[deadlift_200x1]`, which G1 caused by making its window right —
+see defect 3. Six gates that were RED before G1 now pass: the four in
+`test_segmentation` and two in `test_real_data`.
+
+### Defect 1: a setup wrist swing counterfeits a floor landing
+
+`deadlift_150x4_1` gave five anchors for four reps. The extra one at 7.03 s is
+not a collision at all but a 250 ms ramp — |a| climbing 0.7 → 6.9 g while |ω|
+climbs to 27 rad/s and snaps to a stop. At the watch's ~9.5 cm lever that is
+`α·r` = 6.3 g against 6.9 measured, so it is the lifter setting their grip. The
+cached video track settles it: the bar is flat on the floor at 1.4–1.5 cm from
+0 to 11 s.
+
+**A higher `threshold_g` cannot fix it** — counterfeit 7.01 g, weakest real
+landing 6.69 g, disjoint. `impact_anchors` now rejects on the median wrist
+rotation rate in the second BEFORE the spike (28 real landings 0.39–0.98 rad/s,
+4 setup swings 1.65–2.83, 5 rack collisions 0.33–0.56 and correctly kept).
+Plateau [0.98, 2.83]; 1.3 ships. Still raw accel and gyro only — no attitude,
+no integration, no filtering — which is the property that makes an anchor worth
+having. Fixed at the source, so `capture.sync` and `metrics` get it too.
+
+Three alternatives measured and rejected, in `analysis/53` and the docstring.
+The instructive one: high-frequency energy fraction looked like the winner on
+the deadlift and INVERTED on the control.
+
+### Defect 2: the first bench single has no majority to out-vote the setup
+
+`bench_117.5x1` gave two windows. Shape, size and cadence all compare candidates
+with EACH OTHER, so all three need a majority of real reps; a single has none.
+Its cluster is the real press at 21.9 s plus a setup arm movement at 10.6 s,
+correlating 0.80 and carrying 0.290 against 0.304 m.
+
+New discriminator `segment._upright`: a loaded bench or squat rep is a closed
+kinematic chain and is constrained to travel vertically. Per candidate window,
+detrended — 36 real bench and squat reps score 3.64–15.08 on vertical over
+fore-aft; the setup movement scores 1.00. Plateau [1.02, 3.62], 255% wide, 2.0
+ships. It **abstains** where no member of a cluster passes, on this module's
+standing preference for silence over a false assertion; nothing in the corpus
+exercises that today. `rep_bounds` takes an optional `position=`;
+`pipeline.run` passes step 4's.
+
+### Defect 3: the deadlift single was on the DROP, and only checking found it
+
+Not in the brief — found while verifying defect 2's own work, and the most
+useful thing in this entry. `deadlift_200x1` counted 1/1, reported a plausible
+43.8 cm inside a 40–61 cm band, and its window was 18.97–19.92 s. The video has
+the pull at **15.7–17.5 s** and the bar back on the floor by 19.8. It was
+segmenting the drop. `squat_160x1`'s shape for the third time, and every summary
+number said fine.
+
+**Two independent defects, each of which alone leaves it wrong:**
+
+  * `_similar_cluster` ranked a degenerate cluster by DISPLACEMENT, and the
+    largest of its ten lobes is the reconstruction's invented velocity across
+    the drop (0.529 m) rather than the pull (0.280 m). Singletons now rank by
+    verticality, the same quantity `_upright` filters with, computed once and
+    shared. Measured on all three singles the corpus holds, displacement gets
+    **one of three** right and verticality gets three of three:
+
+        capture           real rep   argmax displacement   argmax verticality
+        squat_170x1         35.0 s   35.0 s  correct       35.0 s  correct
+        bench_117.5x1       21.9 s    5.4 s  the unrack    21.9 s  correct
+        deadlift_200x1      16.6 s   19.8 s  the DROP      16.6 s  correct
+
+    Margins over the runner-up: 12.6x, 4.4x, and **1.22x on the deadlift**,
+    which is the thin one and the value to watch.
+
+  * `_full_cycles` was then handed a **hardcoded `sets_down=False`**, so a lift
+    that rests on the floor got the bench convention and its eccentric taken
+    from the wrong side. `_full_cycles` has always documented `sets_down` as
+    coming from the signal "so the lift is never named" — the call site never
+    did it. Harmless while only bench and squat reached that line. It is now
+    `len(anchors) == len(chosen)`: one impact per rep means the bar is set down
+    every rep. `bench_92.5x6_1` fires one anchor against six reps, so bench is
+    untouched.
+
+Window: 18.97–19.92 (43.8 cm, the drop) → 13.17–16.97 (28.1 cm, half a pull,
+with only the ranking fixed) → **15.51–19.43 (55.0 cm)**, against a video pull
+of 15.7–17.5. The ROM band is the independent check and it moves from failing
+to mid-band.
+
+**This also corrects a claim G1 itself made earlier in this session.**
+`_upright`'s first docstring justified abstaining on deadlift by saying
+"`deadlift_200x1`'s real pull scores 2.13, below several of its own non-reps".
+Wrong: the lobe at 19.8 s had been assumed to be the pull without checking the
+video. The real pull scores **2.59, the highest of that capture's ten lobes**.
+
+**Two things that look like fixes and are not, both measured:**
+
+  * Raising `similarity` to 0.83 breaks the false pair, and then the singleton
+    fallback picks the 5.4 s unrack at 0.455 m — right count, wrong window.
+    The [0.798, 0.872] plateau is real and measures the wrong thing.
+  * Verticality computed from band-passed VELOCITY instead of detrended
+    position — no new argument needed — collapses to overlapping (worst real
+    1.69 against best non-rep 2.35). The detrend is doing the work.
+
+### What this exposed about the corpus, which outlasts both fixes
+
+**Deleting v1 removed this corpus's ability to tell two segmentation rules
+apart, and two independent gates lost their teeth unnoticed.**
+
+  * `test_segmentation.py` had `RAW` and `RAW_V2` both pointing at
+    `data_v2/raw`, so every capture counted TWICE — F1's "28/32" is 14/16.
+  * The cadence plateau's **ceiling is gone**. It came from
+    `bench_spoto_90x5_1`, deleted with v1. Swept to `tol=1e6` — the cadence
+    rule disabled outright — all 16 still count correctly. The constant is
+    admissible, unfalsifiable from above, and its discriminator unexercised.
+  * C31a's emptiness result no longer reproduces: the pre-C31a global-spread
+    rule now reaches **16/16 at tol=2.49**. Not because it improved — because
+    the capture that refuted it is gone and `_upright` removes the candidate
+    cadence used to. Both gates now assert the new state with the reason.
+
+**The most valuable capture that could be filmed for this module is a set with
+a post-set movement inside the rep cluster** — a rest-pause, or simply pressing
+"Finish Set" late after re-racking. It restores both gates at once.
+
+**Two more gates are stale from the same deletion, left RED and untouched here
+because they are not segmentation and G1 did not measure into them:**
+
+  * `test_vtrack.test_data_v2_infers_vtrack` asserts
+    `infer_tracker("data/video/squat_130x5.mov") == "plate"`. `data/video/` is
+    gone and `infer_tracker` now raises. The assertion, not the code, is stale.
+  * `test_tracked.test_the_implausible_flag_fires_on_the_clips_known_to_be_
+    broken` expects `squat_170x1` to trip the implausible-travel flag. F1's
+    `vtrack` rebuild fixed that clip's tracking, so the flag correctly does not
+    fire and the gate is asserting a defect that no longer exists.
+
+**And D1's headline is falsified on two of six deadlifts, which is NOT G1's
+doing and is measured here because it was in the way.** `test_oracle.
+test_the_deadlift_fore_aft_path_IS_one_parabola` pins median r2 > 0.70 and
+records "0.76, 0.95, 0.95, 0.97, 0.98 and 1.00 across the six". Measured with
+G1's anchors and without them:
+
+    deadlift_150x4_1     before 0.23 (5 reps)    after 0.27 (4 reps)
+    deadlift_170x4_3     before 0.47             after 0.47
+    deadlift_160x6_1     before 0.97             after 0.97
+    deadlift_185x3       before 1.00             after 1.00
+    deadlift_200x1       before 0.88             after 0.43   <-- G1's doing
+
+Two of the three failures pre-date this session, and the two captures the
+parabola claim was measured on are untouched to two decimals. All three are
+2026-08-08 captures — the session F1 found had never been under test. So "the
+deadlift fore-aft channel is ONE NUMBER per rep" holds on the captures it was
+derived from and does not generalise to the newest ones, and
+`parabola_detrend`'s rejection rests on it. Left failing rather than re-pinned:
+it is a finding, not a stale gate.
+
+**`deadlift_200x1`'s IS G1's doing, and it is the good kind.** The gate was
+passing at 0.88 on a **0.94 s window of the DROP** — a fragment that short fits
+a parabola trivially. Against the corrected 3.91 s window, which is the real
+pull and moves ROM from 43.8 to 55.0 cm, it scores 0.43. The metric got worse
+because the window got right; that is CLAUDE.md's standing rule (correctness
+outranks score) and it is recorded rather than smoothed. It also means one of
+the six captures behind D1's headline was never measuring a rep.
+
+### Corrections to F1's record
+
+Two of F1's three structural claims do not survive measurement, and are
+corrected in `CLAUDE.md` where they were made. `tol=1.47` did not fail because
+the plateau closed; it failed because of the doubled corpus and an unrelated
+miscount. And the bench single's mechanism is NOT the predicted singleton
+tie-break picking the re-rack — the cluster has size 2, the singleton branch
+never runs, and the false window is a setup movement 11 s before the press.
+F1's third claim stands: `deadlift_170x4_3` rep 4 is wrong extent without a
+miscount and remains the only entry in `KNOWN_ROM_FAILURES`.
+
+### The pipeline against the cached tracks
+
+`analysis/54`, all sixteen, and `run.py --vstracked`. **Six cannot be scored at
+all** — four squats (`vs_truth` refuses), and both SINGLES, because
+`bench_sync` needs a rep cadence and the deadlift clock fit needs two landings.
+Two of the three captures repaired here are those singles, and neither can be
+checked against the video at all.
+*(SUPERSEDED: G2 lifted the squat refusal the same day and G3 scored the three
+singles on 2026-08-15. All sixteen are scored now, and `analysis/54`'s figure
+and docstring were written against the six-refusal state. The reasoning above
+was correct when measured and is kept for the trail.)*
+Of the ten scored, **all six deadlifts lose to a flat line** (0.14–0.81×) and
+three of four benches beat it; the best capture in the corpus is 1.23 cm
+horizontal against a 1 cm spec.
+
+---
+
 ## F1 — delete v1 entirely: the corpus, the plate tracker, and `truth.py` (2026-08-14)
 
 Owner's instruction, both scopes chosen by them explicitly after being shown
@@ -753,7 +1200,9 @@ Squat moved the other way: `find_plate` no longer lets a disc hanging off the
 frame edge win by being scored against zero-padding, which stopped three
 2026-07-30 squats crashing — but two still raise and two report ~12.5 cm against
 a 45–76 cm band. **That converted a crash into an honest refusal, not into a
-track.** `vs_truth` refuses squat.
+track.** `vs_truth` refuses squat. *(Superseded 2026-08-15: the refusal is
+removed and squat is scored through `src/vtrack/` — see G2 at the top. The
+tracker and footage this paragraph is about were deleted by F1.)*
 
 `analysis/29_bench_video_truth.png`, `tests/test_video_truth.py`.
 
@@ -3238,7 +3687,8 @@ Not code, and the highest value per effort available:
   not** — `squat_170x1` and `squat_pause_140x4_3` report 14.0 and 24.7 cm of
   travel against 65-70 cm squats. C31 first wrote "the plate tracks at 100%",
   having measured one capture and generalised; corrected 2026-08-07. So what
-  remains is BOTH code and capture: `metrics.vs_truth` still refuses squat by a
+  remains is BOTH code and capture: `metrics.vs_truth` refuses squat by a
+  [SUPERSEDED: the refusal was removed 2026-08-15, see G2 at the top] 
   hardcoded check whose stated reason describes the old template footage, AND
   half the squat footage is not yet usable. The original text follows.
 - **Put the watch on and re-shoot with the markers.** ~~Now the highest-value item

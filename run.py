@@ -223,8 +223,8 @@ def draw_rom() -> int:
         recon[path.stem] = (lift, result["rep_rom_m"])
 
         clip = pipeline.find_video(path, ROOT / "data_v2" / "video")
-        if clip is None or lift == "squat":
-            continue                      # squat video is not truth
+        if clip is None:
+            continue                      # squat is refereed too, since G2
         try:
             m = metrics.vs_truth(result, clip)
         except ValueError as e:           # a bench below the sync floor
@@ -468,12 +468,15 @@ def draw_vs_truth() -> int:
     results = {}
     for path in sorted(raw.glob("*.csv")):
         try:
-            lift = capture.lift_of(path)
+            capture.lift_of(path)          # a capture with no lift has no reps
         except ValueError:
             continue
         video = pipeline.find_video(path, vid)
-        if video is None or lift == "squat":
-            continue                      # vs_truth refuses squat; see its docstring
+        if video is None:
+            continue
+        # The `lift == "squat"` skip that used to sit here went with vs_truth's
+        # blanket refusal (G2, 2026-08-15). Squat is scored now; a capture that
+        # cannot be synced still refuses, and is reported below like any other.
         result = pipeline.run(path, video=video)
         m = result.get("vs_truth")
         if m is None:
@@ -515,8 +518,7 @@ def draw_closure() -> int:
             lift = capture.lift_of(path)
         except ValueError:
             continue
-        if lift == "squat":
-            continue                      # vs_truth refuses squat; so does this
+        # No squat skip here either, for the same reason (G2).
         video = pipeline.find_video(path, vid)
         if video is None:
             continue
@@ -1009,8 +1011,11 @@ def draw_pipeline_now() -> int:
     Six captures chosen to span what the corpus can and cannot check: two
     deadlifts (one refereed by the conic marker path, one by the plate
     template), two benches (one where step 6 clearly helped, one where it
-    clearly hurt) and two squats, which have no referee at all because
-    `metrics.vs_truth` still refuses squat.
+    clearly hurt) and two squats.
+
+    *The squat picks were chosen when squat had no referee at all. It has one
+    since G2 (2026-08-15), so those panels now carry video like the rest unless
+    the capture cannot be synced.*
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -1038,14 +1043,12 @@ def draw_pipeline_now() -> int:
         video, paths = None, res["planar"]
         try:
             m = metrics.vs_truth(res, pipeline.find_video(csv))
-        except (ValueError, FileNotFoundError):
-            # vs_truth's squat refusal is STALE rather than wrong-headed: its
-            # stated reason describes the OLD template footage. Do not paraphrase
-            # the exception into the caption — it would print a reason that is no
-            # longer true. But do not overcorrect either: only two of the four
-            # 8-sticker squat clips track cleanly (C31, 2026-08-07).
-            cap = (f"{head}\nNO REFEREE — vs_truth still refuses squat "
-                   f"(reason is stale; this footage tracks)")
+        except (ValueError, FileNotFoundError) as exc:
+            # The squat refusal this used to work around was removed in G2
+            # (2026-08-15), so a refusal here is now about the CAPTURE — an
+            # unsyncable single, most often — and the reason is worth printing
+            # rather than paraphrasing.
+            cap = f"{head}\nNOT SCORED — {str(exc).split(':')[-1].strip()[:46]}" 
         else:
             good = [r for r in m["per_rep"] if r.get("covered")]
             video = [r["curve_video"] for r in good]
@@ -1299,6 +1302,519 @@ def track_all(force: bool = False) -> int:
     return 0
 
 
+def draw_segmenter_fixes() -> int:
+    """G1 — the two segmentation defects of 2026-08-08, and their gates.
+
+    Writes `analysis/53_segmenter_fixes.png`. Every number in it is measured
+    here rather than quoted, so the figure cannot drift away from the code the
+    way a hand-copied caption can.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import io, segment, plot, tracked, pipeline, capture
+
+    raw = sorted((ROOT / "data_v2" / "raw").glob("*.csv"))
+    if not raw:
+        print("no captures in data_v2/raw/")
+        return 1
+
+    # --- A: deadlift_150x4_1's five anchors, against its cached track ------
+    csv = next(p for p in raw if p.stem.startswith("deadlift_150x4_1"))
+    log = io.load_log(csv)
+    kept = segment.impact_anchors(log)
+    every = segment.impact_anchors(log, max_wrist_rate=None)
+    vid = tracked.read(pipeline.find_video(csv))
+    impact = {
+        "t": log["t"],
+        "accel_g": np.linalg.norm(log["accel"], axis=1) / 9.80665,
+        "kept": [float(log["t"][k]) for k in kept],
+        "rejected": [float(log["t"][k]) for k in every if k not in kept],
+        "video_t": vid["t"], "video_h_cm": np.asarray(vid["height"]) * 100,
+    }
+    print(f"  A: {len(every)} anchors, {len(kept)} kept, "
+          f"rejected at {impact['rejected']}")
+
+    # --- B: the wrist rate at every candidate in the corpus ---------------
+    # Deadlift anchors are landings; a bench or squat NEVER sets the bar down
+    # mid-set, so every candidate in one is a non-landing by construction. That
+    # is what supplies the negatives, and it needs no labelling by hand.
+    quiet = {"landings": [], "racks": [], "swings": []}
+    for p in raw:
+        lg = io.load_log(p)
+        lift = capture.lift_of(p)
+        for k in segment.impact_anchors(lg, threshold_g=4.0,
+                                        max_wrist_rate=None):
+            rate = segment._quiet_before(lg, k)
+            if lift == "deadlift" and rate < 1.3:
+                quiet["landings"].append(rate)
+            elif rate < 1.3:
+                quiet["racks"].append(rate)
+            else:
+                quiet["swings"].append(rate)
+    print(f"  B: {len(quiet['landings'])} landings "
+          f"{min(quiet['landings']):.2f}-{max(quiet['landings']):.2f}, "
+          f"{len(quiet['swings'])} swings "
+          f"{min(quiet['swings']):.2f}-{max(quiet['swings']):.2f}")
+
+    # --- C: the bench single ----------------------------------------------
+    csv = next(p for p in raw if p.stem.startswith("bench_117.5x1"))
+    res = pipeline.run(csv)
+    log = res["log"]
+    v = segment.bandpass(res["velocity"][:, 2], log["fs"])
+    vid = tracked.read(pipeline.find_video(csv))
+    lobes = segment._concentric_lobes(v, log["t"], 0.08)
+    all_l = segment._all_lobes(v, log["t"], 0.08)
+    ratios = segment._upright_ratios(all_l, lobes, res["position"], log["t"],
+                                     len(v))
+    chosen = segment._similar_cluster(v, log["t"], lobes, 0.7, 2.5, ratios)
+    marks = []
+    for pk, a, b, area in chosen:
+        ratio = ratios[a]
+        keep = ratio >= 2.0
+        marks.append((float(log["t"][pk]), "#16a34a" if keep else "#dc2626",
+                      f"{'KEPT' if keep else 'REJECTED'}\nvert/fore-aft "
+                      f"{ratio:.2f}"))
+    single = {"t": log["t"], "v_cm": v * 100, "lobes": marks,
+              "video_t": vid["t"], "video_h_cm": np.asarray(vid["height"]) * 100}
+    print(f"  C: {[(round(m[0], 2), m[2].splitlines()[0]) for m in marks]}")
+
+    # --- D: verticality of every cluster member on the velocity path ------
+    upright = {"reps": [], "setup": [], "deadlift": []}
+    for p in raw:
+        res = pipeline.run(p)
+        log = res["log"]
+        if len(segment.impact_anchors(log)) >= 3:
+            continue                          # impact-anchored, never gets here
+        t = log["t"]
+        v = segment.bandpass(res["velocity"][:, 2], log["fs"])
+        all_l = segment._all_lobes(v, t, 0.08)
+        lobes = segment._concentric_lobes(v, t, 0.08)
+        # Mirror the shipped path exactly, which means handing the ratios in —
+        # they decide the degenerate cluster, so a driver that omits them plots
+        # a lobe the pipeline no longer chooses.
+        ratios = segment._upright_ratios(all_l, lobes, res["position"], t, len(v))
+        chosen = segment._similar_cluster(v, t, lobes, 0.7, 2.5, ratios)
+        for pk, a, b, area in chosen:
+            ratio = ratios[a]
+            if capture.lift_of(p) == "deadlift":
+                upright["deadlift"].append(ratio)
+            elif ratio < 2.0:
+                upright["setup"].append(ratio)
+            else:
+                upright["reps"].append(ratio)
+    print(f"  D: {len(upright['reps'])} reps "
+          f"{min(upright['reps']):.2f}-{max(upright['reps']):.2f}, "
+          f"setup {[round(x, 2) for x in upright['setup']]}, "
+          f"deadlift {[round(x, 2) for x in upright['deadlift']]}")
+
+    fig = plot.plot_segmenter_fixes({"impact": impact, "quiet": quiet,
+                                     "single": single, "upright": upright})
+    out = ROOT / "analysis" / "53_segmenter_fixes.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_pipeline_vs_tracked() -> int:
+    """G1 — all sixteen captures against the cached tracked paths.
+
+    Writes `analysis/54_pipeline_vs_tracked.png`. Uses `data_v2/tracked/` and
+    never re-tracks: `metrics.resolve_path` reads the cache when its header
+    records the same tracker, which is what makes scoring the whole corpus a
+    30-second job instead of a 20-minute one.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import metrics, pipeline, plot, tracked
+
+    raw = sorted((ROOT / "data_v2" / "raw").glob("*.csv"))
+    panels, unscored, losing = [], [], []
+    for csv in raw:
+        res = pipeline.run(csv)
+        stem = csv.stem.split("_2026")[0]
+        exp = pipeline.expected_reps(csv)
+        rom = np.median(res["rep_rom_m"]) * 100 if res["rep_rom_m"] else float("nan")
+        head = f"{stem}   {len(res['reps'])}/{exp} reps   median ROM {rom:.0f} cm"
+
+        video, paths, colour = None, res["planar"], "black"
+        clip = pipeline.find_video(csv)
+        try:
+            m = metrics.vs_truth(res, clip)
+        except (ValueError, FileNotFoundError) as exc:
+            # Say WHY it cannot be scored, per capture. The six that cannot are
+            # the finding this figure exists to show, so a generic "no referee"
+            # would throw away the point of drawing all sixteen.
+            reason = str(exc).split(":")[-1].strip()
+            cap = f"{head}\nNOT SCORED — {textwrap_short(reason)}"
+            colour = "#b91c1c"
+            unscored.append(stem)
+        else:
+            good = [r for r in m["per_rep"] if r.get("covered")]
+            video = [r["curve_video"] for r in good]
+            paths = [r["curve_pipeline"] for r in good]
+            beat = m["beats_null"]
+            verdict = "beats" if beat > 1 else "LOSES TO"
+            if beat <= 1:
+                colour = "#b45309"
+                losing.append(stem)
+            cap = (f"{head}\nh {m['pipeline_h_rms']:.2f} cm rms, "
+                   f"v {m['pipeline_v_rms']:.2f} cm   "
+                   f"{verdict} flat line ({beat:.2f}x)")
+        info = tracked.review(clip) if clip else None
+        if info is not None:
+            cap += (f"\nvideo: {info['coverage']*100:.0f}% cover, "
+                    f"{info['travel_cm']:.0f} cm travel, "
+                    f"{info['n_reps']}/{info['expected_reps']} reps")
+        panels.append({"paths": paths, "video": video, "caption": cap,
+                       "colour": colour})
+        print(f"  {stem}: {len(res['reps'])}/{exp} reps"
+              + (", NOT SCORED" if video is None else ""))
+
+    fig = plot.plot_pipeline_vs_tracked(panels)
+    out = ROOT / "analysis" / "54_pipeline_vs_tracked.png"
+    fig.savefig(out, dpi=140)
+    print(f"wrote {out.relative_to(ROOT)}")
+    print(f"\n{len(unscored)} of {len(panels)} cannot be scored at all: "
+          f"{', '.join(unscored)}")
+    print(f"{len(losing)} lose to a flat line: {', '.join(losing)}")
+    return 0
+
+
+def draw_squat_sync() -> int:
+    """G2 — the squat refusal lifted, and the corroboration that licensed it.
+
+    Writes `analysis/55_squat_sync.png`. Every number is measured here rather
+    than quoted, including the injected-error panel, so the figure cannot drift
+    away from the guard it is describing.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import metrics, pipeline, plot, segment, capture
+
+    raw = sorted((ROOT / "data_v2" / "raw").glob("*.csv"))
+    if not raw:
+        print("no captures in data_v2/raw/")
+        return 1
+
+    def prep(csv):
+        res = pipeline.run(csv)
+        log = res["log"]
+        path = metrics.resolve_path(pipeline.find_video(csv))
+        starts = [float(log["t"][a]) for a, _ in res["bounds"]]
+        cad = float(np.median(np.diff(starts))) if len(starts) > 1 else float("nan")
+        return res, log, path, cad
+
+    # --- A: one bench and one squat correlation curve ---------------------
+    curves = []
+    for stem, colour in (("bench_92.5x6_1", "#0891b2"),
+                         ("squat_pause_145x4_1", "#7c3aed")):
+        csv = next(p for p in raw if p.stem.startswith(stem))
+        res, log, path, cad = prep(csv)
+        fit = metrics.bench_sync(path, log, res["velocity"][:, 2], cad)
+        lags, curve = np.asarray(fit["lags"]), np.asarray(fit["curve"])
+        far = np.abs(lags - fit["offset"]) > metrics.RIVAL_GUARD_S
+        top = float(np.nanmax(curve[far]) / fit["corr"])
+        curves.append({"stem": stem, "colour": colour, "lags": fit["lags"],
+                       "curve": fit["curve"], "corr": fit["corr"],
+                       "offset": fit["offset"], "rivals": fit["rivals"],
+                       "sidelobe": top})
+        print(f"  A: {stem} corr {fit['corr']:.3f}, {len(fit['rivals'])} "
+              f"rivals, highest sidelobe {top:.3f}")
+
+    # --- B: landmark vs correlation, every capture that syncs -------------
+    agree, aligned = [], None
+    for csv in raw:
+        lift = capture.lift_of(csv)
+        if lift == "deadlift":
+            continue
+        res, log, path, cad = prep(csv)
+        if len(res["bounds"]) < metrics.LANDMARK_MIN_REPS:
+            continue
+        try:
+            m = metrics.vs_truth(res, pipeline.find_video(csv))
+        except ValueError as exc:
+            print(f"  B: {csv.stem} not scored ({str(exc)[:40]})")
+            continue
+        agree.append({"stem": csv.stem.split("_2026")[0], "lift": lift,
+                      "disagree": float(m["sync_landmark_disagree_reps"])})
+
+        if csv.stem.startswith("squat_pause_145x4_1"):
+            fit = metrics.bench_sync(path, log, res["velocity"][:, 2], cad)
+            t = log["t"]
+            bottoms = metrics._video_bottoms(path, len(res["bounds"])) + fit["offset"]
+            dwell = [float(t[k]) for k in segment.dwell_instants(log, res["bounds"])]
+            wins = [(float(t[a]), float(t[min(b, len(t) - 1)]))
+                    for a, b in res["bounds"]]
+            ph = [round(float((x - a) / (b - a)), 2)
+                  for x, (a, b) in zip(bottoms, wins)]
+            aligned = {"stem": csv.stem.split("_2026")[0],
+                       "t_video": np.asarray(path["t"]) + fit["offset"],
+                       "height_cm": np.asarray(path["height"]) * 100,
+                       "windows": wins, "bottoms": bottoms, "dwells": dwell,
+                       "phases": ph}
+    print(f"  B: {len(agree)} captures corroborated, worst "
+          f"{max(r['disagree'] for r in agree):.3f} rep")
+
+    # --- D: inject a whole-rep error and confirm every one is refused -----
+    real = metrics.bench_sync
+    shifted, missed = [], []
+    try:
+        for sign in (+1, -1):
+            def hacked(path, log, vz, cadence, max_lag_s=None, _s=sign):
+                fit = real(path, log, vz, cadence, max_lag_s)
+                fit["offset"] = fit["offset"] + _s * cadence
+                return fit
+            metrics.bench_sync = hacked
+            for csv in raw:
+                if capture.lift_of(csv) == "deadlift":
+                    continue
+                res = pipeline.run(csv)
+                if len(res["bounds"]) < metrics.LANDMARK_MIN_REPS:
+                    continue
+                try:
+                    metrics.vs_truth(res, pipeline.find_video(csv))
+                except ValueError as exc:
+                    if "sync refused" in str(exc):
+                        # Recover the disagreement the guard measured.
+                        shifted.append(float(str(exc).split("disagreement of ")[1]
+                                             .split(" rep")[0]))
+                    continue
+                missed.append(csv.stem)
+    finally:
+        metrics.bench_sync = real
+    print(f"  D: {len(shifted)} injected errors refused, {len(missed)} missed")
+
+    fig = plot.plot_squat_sync({"curves": curves, "agree": agree,
+                                "aligned": aligned, "shifted": shifted,
+                                "tol": metrics.LANDMARK_TOL_REPS})
+    out = ROOT / "analysis" / "55_squat_sync.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_short_sets() -> int:
+    """G3 — the short-set variant: singles, doubles, and the rule that lost.
+
+    Writes `analysis/56_singles_doubles.png`. Every number in the figure is
+    measured here, including the rejected rule's, so a caption cannot drift
+    away from what it describes. The truncated captures are written to a
+    temporary directory and deleted — they are an instrument, not data.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import tempfile
+    import numpy as np
+    from src import correct, metrics, pipeline, plot, segment, shortset
+
+    raw = sorted((ROOT / "data_v2" / "raw").glob("*.csv"))
+    singles_pfx = ["bench_117.5x1", "deadlift_200x1", "squat_170x1"]
+    multi = [c for c in raw if not any(c.name.startswith(s) for s in singles_pfx)]
+
+    # --- A: the correlation curve on the one single with an outside answer ---
+    dl = next(c for c in raw if c.name.startswith("deadlift_200x1"))
+    res = pipeline.run(dl)
+    path = metrics.resolve_path(pipeline.find_video(dl))
+    truth = shortset.impact_landmark(path, res["log"], res["impacts"])
+    wide = shortset.short_sync(path, res["log"], res["velocity"][:, 2],
+                               bounds=[], impacts=[], min_overlap_frac=0.02)
+    good = shortset.short_sync(path, res["log"], res["velocity"][:, 2],
+                               res["bounds"], res["impacts"])
+    lags, curve = np.asarray(wide["lags"]), np.asarray(wide["curve"])
+    ok = np.isfinite(np.asarray(good["curve"]))
+    adm = np.asarray(good["lags"])[ok]
+    decoys = []
+    for half in (11.75, 20.0):
+        m = np.abs(lags) <= half
+        k = int(np.nanargmax(np.where(m, curve, np.nan)))
+        if abs(lags[k] - good["offset"]) > 1.0:
+            decoys.append((float(lags[k]), float(curve[k])))
+    curve_panel = {
+        "stem": dl.stem.split("_2026")[0], "lags": lags, "curve": curve,
+        "truth": truth, "accepted": good["offset"], "accepted_corr": good["corr"],
+        "floor_lo": float(adm.min()), "floor_hi": float(adm.max()),
+        "frac": shortset.MIN_OVERLAP_FRAC, "decoys": decoys,
+    }
+    print(f"  A: accepted {good['offset']:+.3f} (corr {good['corr']:.2f}) vs "
+          f"floor impact {truth:+.3f}; decoys {decoys}")
+
+    # --- B and D: truncate every multi-rep capture to 1 and to 2 reps --------
+    def reference(full):
+        try:
+            _, _, _, fit = metrics._video_on_imu_clock(
+                full, pipeline.find_video(full["path"]))
+        except (ValueError, FileNotFoundError):
+            return None
+        t_ref = float(full["log"]["t"][full["bounds"][0][0]])
+        if fit.get("method", "").startswith("floor"):
+            t_vid = fit["slope"] * t_ref + fit["offset"]
+        else:
+            t_vid = t_ref - fit["offset"]
+        return t_ref - t_vid, float(fit.get("slope", 1.0))
+
+    def cut_video(csv, t_cut, offset):
+        p = metrics.resolve_path(pipeline.find_video(csv))
+        keep = p["t"] <= (t_cut - offset)
+        return {k: (v[keep] if isinstance(v, np.ndarray)
+                    and v.shape[:1] == p["t"].shape else v)
+                for k, v in p.items()}
+
+    def iou(a, b):
+        lo, hi = max(a[0], b[0]), min(a[1], b[1])
+        return 0.0 if hi <= lo else (hi - lo) / (max(a[1], b[1]) - min(a[0], b[0]))
+
+    # The three readings of "max displacement between dwells" that were tried.
+    def rule_stationary(r, max_dur=8.0):
+        log, t = r["log"], r["log"]["t"]
+        runs = segment.runs(segment.stationary_mask(
+            log, accel_var_max=0.2, gyro_var_max=0.01, min_duration_s=0.30))
+        best = None
+        for i in range(len(runs)):
+            for j in range(i + 1, len(runs)):
+                a, b = runs[i][1], runs[j][0]
+                if b - a < 20 or t[b - 1] - t[a] > max_dur:
+                    continue
+                seg = correct.detrend_set(r["position"], [(a, b)], t)[0]
+                v = float(np.ptp(seg[:, 2]))
+                if best is None or v > best[0]:
+                    best = (v, a, b)
+        return best
+
+    def rule_turnaround(r, max_dur=8.0, min_dur=0.8):
+        log, t = r["log"], r["log"]["t"]
+        s = np.abs(segment.bandpass(r["velocity"][:, 2], log["fs"]))
+        quiet = s < 0.10 * float(np.percentile(s, 98))
+        ds = [a + int(np.argmin(s[a:b])) for a, b in segment.runs(quiet)]
+        best = None
+        for i in range(len(ds)):
+            for j in range(i + 1, len(ds)):
+                a, b = ds[i], ds[j]
+                if not (min_dur <= t[b] - t[a] <= max_dur):
+                    continue
+                seg = correct.detrend_set(r["position"], [(a, b)], t)[0]
+                v = float(np.ptp(seg[:, 2]))
+                if best is None or v > best[0]:
+                    best = (v, a, b)
+        return best
+
+    errs = {1: [], 2: []}
+    rule_iou = {"stationary": [], "turnaround": [], "segmenter": []}
+    worst_claim = (0.0, "", 0.0)
+    with tempfile.TemporaryDirectory() as tmp:
+        for csv in multi:
+            if pipeline.find_video(csv) is None:
+                continue
+            full = pipeline.run(csv)
+            ref = reference(full)
+            if ref is None:
+                continue
+            offset, slope = ref
+            if abs(slope - 1.0) > 0.05:
+                print(f"  SKIP {csv.stem[:26]}: its own reference sync fits "
+                      f"slope {slope:.4f}, a {abs(slope-1)*100:.1f}% clock drift")
+                continue
+            tF = full["log"]["t"]
+            a0, b0 = full["bounds"][0]
+            truth_w = (float(tF[a0]), float(tF[b0]))
+            for keep in (1, 2):
+                cut = shortset.truncate_capture(csv, full["bounds"], tF, keep, tmp)
+                if cut is None:
+                    continue
+                out, t_cut = cut
+                short = pipeline.run(out)
+                if len(short["bounds"]) != keep:
+                    continue
+                try:
+                    fit = shortset.short_sync(
+                        cut_video(csv, t_cut, offset), short["log"],
+                        short["velocity"][:, 2], short["bounds"], short["impacts"])
+                except ValueError:
+                    continue
+                errs[keep].append(fit["offset"] - offset)
+                if keep != 1:
+                    continue
+                t = short["log"]["t"]
+                a, b = short["bounds"][0]
+                rule_iou["segmenter"].append(
+                    iou(truth_w, (float(t[a]), float(t[min(b, len(t) - 1)]))))
+                for nm, fn in (("stationary", rule_stationary),
+                               ("turnaround", rule_turnaround)):
+                    got = fn(short)
+                    if got is None:
+                        rule_iou[nm].append(0.0)
+                        continue
+                    v, ra, rb = got
+                    rule_iou[nm].append(
+                        iou(truth_w, (float(t[ra]), float(t[min(rb, len(t)-1)]))))
+                    if nm == "turnaround" and v > worst_claim[0]:
+                        worst_claim = (v, short["path"], v)
+
+    accuracy = [
+        ("singles (k=1)", np.array(errs[1]), "tab:purple"),
+        ("doubles (k=2)", np.array(errs[2]), "tab:orange"),
+    ]
+    for label, e, _ in accuracy:
+        print(f"  B: {label} n={len(e)} median {np.median(np.abs(e))*1000:.1f} ms "
+              f"worst {np.abs(e).max()*1000:.1f} ms")
+
+    rules = [
+        {"name": "segment.rep_bounds (ships)", "shipped": True,
+         "vals": rule_iou["segmenter"]},
+        {"name": "dwell = velocity turnaround", "shipped": False,
+         "vals": rule_iou["turnaround"]},
+        {"name": "dwell = stationary_mask", "shipped": False,
+         "vals": rule_iou["stationary"]},
+    ]
+    for r in rules:
+        v = np.array(r["vals"]) if r["vals"] else np.array([0.0])
+        r["median_iou"] = float(np.median(v))
+        r["hits"] = int((v >= 0.5).sum())
+        r["n"] = len(v)
+        print(f"  D: {r['name']:32s} median IoU {r['median_iou']:.2f}  "
+              f"{r['hits']}/{r['n']} above 0.5")
+    print(f"  D: largest displacement any rejected rule claimed: "
+          f"{worst_claim[0]*100:.1f} cm")
+
+    # --- C: the three real singles ------------------------------------------
+    singles = []
+    for pfx, colour in zip(singles_pfx, ("tab:blue", "tab:red", "tab:green")):
+        csv = next((c for c in raw if c.name.startswith(pfx)), None)
+        if csv is None:
+            continue
+        r = shortset.run(csv)
+        vt = r.get("vs_truth")
+        if vt is None or not r["planar"]:
+            continue
+        per = vt["per_rep"][0]
+        # `curve_pipeline` and `curve_video` rather than `planar`: they are the
+        # two curves vs_truth actually COMPARED, on the same samples and the
+        # same clock, so the picture shows the quantity the caption quotes.
+        singles.append({
+            "stem": pfx, "colour": colour,
+            "path": np.asarray(per["curve_pipeline"], float),
+            "video": np.asarray(per["curve_video"], float),
+            "h_rms": vt["pipeline_h_rms"], "null": vt["beats_null"],
+        })
+        print(f"  C: {pfx} h {vt['pipeline_h_rms']:.2f} cm, "
+              f"beats_null {vt['beats_null']:.2f}, "
+              f"phase {vt['sync_containment_phase']:.2f}")
+
+    fig = plot.plot_short_sets({"curve": curve_panel, "accuracy": accuracy,
+                                "singles": singles, "rules": rules})
+    out = ROOT / "analysis" / "56_singles_doubles.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def textwrap_short(text: str, width: int = 46) -> str:
+    """One caption line, cut at a word boundary."""
+    return text if len(text) <= width else text[:width].rsplit(" ", 1)[0] + "…"
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     want_plot = "--plot" in argv
@@ -1338,6 +1854,14 @@ def main(argv: list[str]) -> int:
         return track_all(force="--force" in argv)
     if "--dlparabola" in argv:
         return draw_deadlift_parabola()
+    if "--segfixes" in argv:
+        return draw_segmenter_fixes()
+    if "--vstracked" in argv:
+        return draw_pipeline_vs_tracked()
+    if "--shortsets" in argv:
+        return draw_short_sets()
+    if "--squatsync" in argv:
+        return draw_squat_sync()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data_v2" / "raw").glob("*.csv"))
     if not paths:

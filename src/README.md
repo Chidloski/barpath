@@ -19,9 +19,14 @@ descent of one rep followed by the ascent of the next. Half a rep out of phase.
 Counts could never have shown that.
 
 **Clock sync between video and IMU.** `landings()` finds the bar reaching the
-floor; `segment.impact_anchors()` finds the 15–21 g spike. Matching them gives
+floor; `segment.impact_anchors()` finds the spike. Matching them gives
 `sync()`, which fits both an offset *and* a slope so clock drift is measured
 rather than assumed.
+
+*That sentence read "the 15–21 g spike" until 2026-08-15. The 2026-08-08
+captures falsify it in both directions — real landings at 6.69 and 8.18 g, and
+a non-landing at 7.01 g — so `impact_anchors` no longer separates on height at
+all. It rejects a candidate the wrist was already rotating through; see G1.*
 
 **Absolute ROM.** Lockout height above the resting bar, per rep, in metres.
 
@@ -74,11 +79,21 @@ against something other than a guess.
 |---|---|---|---|---|---|
 | deadlift | 445 mm bumper | **timing yes, vertical no** | 0.83–0.94 | 59.1 / **66.8** / **47.6** cm | automatic; sync 11–16 ms rms, drift <0.25%; ROM spread 19 cm on a 61 cm ceiling |
 | bench | 425 mm notched | **yes, from a hand seed** | 0.75–0.95 | 21.8–29.8 cm | `truth.SEEDS`; all 7 sync since C10; radius carries ~4% scale |
-| squat | 450 mm calibrated | **no — `vs_truth` refuses** | ~0.40 | 2 raise, 2 at ~12.5 cm | plate clips top of frame at lockout |
+| squat | 450 mm calibrated | **no, under THIS tracker** | ~0.40 | 2 raise, 2 at ~12.5 cm | plate clips top of frame at lockout. `vs_truth` no longer refuses squat — see `src/vtrack/` below, which is what scores it |
 
 Deadlift's row used to read "yes, unattended" without qualification. It tracks
 unattended and it syncs to the IMU, and on two of three captures its vertical
 scale is wrong — see drawback 1.
+
+**The sync column above is about MULTI-REP captures, and a fourth case was
+added on 2026-08-15.** Both routes in `_video_on_imu_clock` need repeated
+events: deadlift matches landings to impacts and fits a slope (so, two of each),
+and `bench_sync` needs a cadence to tell a whole-rep rival from a real one. A
+SINGLE supplies one of everything, which is why the only three captures in
+`data_v2/` that had never been refereed were the three singles. `src/shortset.py`
+syncs those, with the sweep bounded by overlap instead of by lag; see its
+docstring for what it does and does not measure — notably it assumes the clock
+drift rather than fitting it, so `drift_pct` and `rms_ms` read NaN.
 
 Bench's row read **raises** until 2026-07-31. Two things changed it: a
 hand-placed seed per capture, and a template sized to fit inside the plate
@@ -86,6 +101,10 @@ rather than `track`'s default 97×97 px, which was holding static ceiling in its
 corners and part-anchoring the tracker to the gym. Squat's row got worse rather
 than better, and the ordering of this table changed with it — deadlift is no
 longer the only lift with truth, and squat is now the only one without.
+
+*That last clause stopped being true on 2026-08-15 (G2). This whole table is
+about the deleted plate template; squat is refereed by `src/vtrack/` and scored
+by `vs_truth` like the other two lifts. Read the table as history.*
 
 Pinned by tests in `tests/test_video_truth.py` (the referee itself) and
 `tests/test_real_data.py` (the pipeline judged through it) so the state cannot
@@ -245,15 +264,21 @@ The hand-read `radius` is also the pixels-to-metres scale, at about ±2 px on
 That is larger than the plate-diameter correction that drawback 1 chased, which
 turned out to be worth under 1%.
 
-**4. Squat is not truth, and `metrics.vs_truth` refuses it.** The 2026-07-27
-captures track at NCC ~0.40 against 0.83–0.94 for a clean deadlift, because the
-plate leaves the top of frame at lockout; a warning is raised. The four from
-2026-07-30 are worse — two raise, two report ~12.5 cm of travel against a
-45–76 cm band. `find_plate` was fixed on 2026-07-31 so that a disc hanging off
-the frame edge cannot win by being scored against zero-padding, which stopped
-three of those dying with a numpy broadcast error. **That converted a crash
-into an honest refusal; it did not make squat trackable.** Do not use squat
-output as truth.
+**4. Squat was not truth under this tracker, and `vs_truth` refused it. BOTH
+halves are now history (G2, 2026-08-15).** The 2026-07-27 captures tracked at
+NCC ~0.40 against 0.83–0.94 for a clean deadlift, because the plate leaves the
+top of frame at lockout; the four from 2026-07-30 were worse — two raised, two
+reported ~12.5 cm of travel against a 45–76 cm band. `find_plate` was fixed on
+2026-07-31 so that a disc hanging off the frame edge could not win by being
+scored against zero-padding, which converted a crash into an honest refusal
+without making squat trackable.
+
+None of that is checkable now: this tracker and that footage were both deleted
+with v1 on 2026-08-14. **`src/vtrack/` tracks all four `data_v2` squats at 100%
+coverage and 63–66 cm of travel, and `metrics.vs_truth` scores them** — the
+refusal was removed once `metrics.pause_landmark` gave the squat sync an
+independent check. The drawback is kept because it is the reasoning trail for
+why a second feature was needed, not because it describes anything live.
 
 **5. It tracks the plate, not the bar centre.** Fine while the bar stays level —
 it is rigid — but a tilted lockout moves the plate differently from the centre.

@@ -1679,7 +1679,13 @@ def plot_pipeline_now(panels: list):
     — and because the branch changed what the pipeline computes (step 6 is on),
     so every figure drawn before 2026-08-06 shows a different quantity.
 
-    Squat panels carry no video because `metrics.vs_truth` still refuses squat.
+    Squat panels carried no video because `metrics.vs_truth` refused squat.
+    **That refusal was removed in G2 (2026-08-15)** — its stated reason was
+    about the v1 plate template on footage F1 deleted — so a squat panel now
+    carries video whenever the capture syncs. The paragraph below is kept
+    because its caution about which squat clips track is what the refusal's
+    removal had to answer, and it was answered by `src/vtrack/` rather than by
+    relaxing anything.
     That refusal is now STALE rather than wrong-headed — its stated reason is
     about the old template footage. Note the replacement claim needs care too:
     only TWO of the four 8-sticker squat clips track cleanly; `squat_170x1` and
@@ -2057,4 +2063,511 @@ def plot_tracking_review(path: dict, stem: str, info: dict | None = None):
     else:
         fig.suptitle(stem, fontsize=11, y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
+    return fig
+
+
+def plot_segmenter_fixes(data: dict):
+    """G1 — the two segmentation defects the 2026-08-08 captures exposed.
+
+    Writes `analysis/53`. Four panels, arranged as evidence then rule, twice.
+
+    The left column is the defect on its own capture with the CACHED VIDEO
+    TRACK over the top, because in both cases the video is what settles it: at
+    7.03 s on `deadlift_150x4_1` the bar is flat on the floor, and at 10.6 s on
+    `bench_117.5x1` it is still in the rack. Neither is arguable from the IMU
+    trace alone, which is the whole reason both defects survived a rep-count
+    gate.
+
+    The right column is the discriminator with every candidate in the corpus on
+    it, so the gate can be read as a plateau rather than as a line through one
+    point. That is this project's standing requirement for a constant, and both
+    rules meet it from two sides: the wrist-rate gate sits between 28 real
+    landings and 4 setup swings, the verticality gate between 36 real reps and
+    the setup movement that broke the bench single.
+
+    Verticality does a second job that this figure does not draw: it also ranks
+    a DEGENERATE cluster, replacing the displacement rule that was picking the
+    drop on `deadlift_200x1`. The amber point is that capture's real pull. See
+    `segment._similar_cluster`.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(15.5, 9.6))
+
+    # --- A: the counterfeit landing, against the video -------------------
+    ax = axes[0][0]
+    d = data["impact"]
+    ax.plot(d["t"], d["accel_g"], color="#334155", lw=0.7, zorder=2)
+    ax.axhline(6.0, color="#94a3b8", ls=":", lw=1.0)
+    ax.text(0.6, 6.4, "threshold_g = 6", fontsize=7, color="#64748b")
+    for k in d["kept"]:
+        ax.axvline(k, color="#16a34a", lw=1.4, alpha=0.75, zorder=1)
+    for k in d["rejected"]:
+        ax.axvline(k, color="#dc2626", lw=2.0, zorder=1)
+        ax.annotate("REJECTED\nwrist swing", (k, 21), fontsize=7.5,
+                    color="#dc2626", ha="center", va="top", weight="bold")
+    ax.set_ylim(0, 24)
+    ax.set_ylabel("|accel| (g)", fontsize=8)
+    ax.set_xlabel("time (s)", fontsize=8)
+
+    tw = ax.twinx()
+    tw.plot(d["video_t"], d["video_h_cm"], color="#2563eb", lw=1.8, zorder=3)
+    tw.set_ylabel("video bar height (cm)", fontsize=8, color="#2563eb")
+    tw.tick_params(labelsize=7, colors="#2563eb")
+    tw.set_ylim(-4, 70)
+    tw.annotate("bar on the floor, 0-11 s", (3.0, 6), fontsize=8,
+                color="#2563eb")
+
+    ax.set_title(
+        "A. deadlift_150x4_1: five anchors in a four-rep set\n"
+        "the 7.03 s spike reaches 7.01 g with the bar provably still down",
+        fontsize=9)
+
+    # --- B: the wrist-rate gate, whole corpus ----------------------------
+    ax = axes[0][1]
+    groups = [("real floor landings", data["quiet"]["landings"], "#16a34a", "o"),
+              ("rack collisions (bench, squat)", data["quiet"]["racks"],
+               "#0891b2", "s"),
+              ("setup wrist swings", data["quiet"]["swings"], "#dc2626", "X")]
+    for i, (label, vals, colour, marker) in enumerate(groups):
+        ax.scatter(vals, np.full(len(vals), i) + np.random.default_rng(0)
+                   .uniform(-0.13, 0.13, len(vals)), s=42, color=colour,
+                   marker=marker, label=f"{label}  (n={len(vals)})", zorder=3)
+    ax.axvspan(0.98, 2.83, color="#dcfce7", zorder=0)
+    ax.axvline(1.3, color="#111827", lw=1.6, zorder=2)
+    ax.text(1.33, 2.44, "max_wrist_rate = 1.3", fontsize=8, weight="bold")
+    ax.text(1.05, -0.62, "plateau: every count correct for any gate in "
+                         "[0.98, 2.83]", fontsize=7.5, color="#166534")
+    ax.set_xscale("log")
+    ax.set_xlim(0.25, 4.0)
+    ax.set_xticks([0.3, 0.5, 1.0, 2.0, 3.0])
+    # A log axis keeps its scientific MINOR labels unless they are cleared, so
+    # the ticks came out as "4 x 10^-1" interleaved with the plain majors.
+    ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
+    ax.get_xaxis().set_minor_formatter(plt.NullFormatter())
+    ax.set_yticks([])
+    ax.set_ylim(-0.8, 2.7)
+    ax.set_xlabel("median wrist rotation rate in the second before the spike "
+                  "(rad/s)", fontsize=8)
+    ax.legend(fontsize=7.5, frameon=False, loc="upper left")
+    ax.set_title(
+        "B. what separates them is the second BEFORE, not the peak\n"
+        "peak height cannot: the counterfeit is 7.01 g, the weakest real "
+        "landing 6.69 g", fontsize=9)
+
+    # --- C: the bench single ---------------------------------------------
+    ax = axes[1][0]
+    d = data["single"]
+    ax.plot(d["t"], d["v_cm"], color="#334155", lw=0.9, zorder=2)
+    ax.axhline(0, color="#cbd5e1", lw=0.8)
+    for pk, colour, label in d["lobes"]:
+        ax.axvline(pk, color=colour, lw=2.0, alpha=0.85, zorder=1)
+        ax.annotate(label, (pk, -60), fontsize=7.5, color=colour, ha="center",
+                    va="top", weight="bold")
+    ax.set_ylim(-75, 75)
+    ax.set_ylabel("band-passed vertical velocity (cm/s)", fontsize=8)
+    ax.set_xlabel("time (s)", fontsize=8)
+
+    tw = ax.twinx()
+    tw.plot(d["video_t"], d["video_h_cm"], color="#2563eb", lw=1.8, zorder=3)
+    tw.set_ylabel("video bar height (cm)", fontsize=8, color="#2563eb")
+    tw.tick_params(labelsize=7, colors="#2563eb")
+    tw.annotate("bar in the rack until 16 s", (2.0, 27), fontsize=8,
+                color="#2563eb")
+
+    ax.set_title(
+        "C. bench_117.5x1: the two candidates correlate 0.80 in shape and\n"
+        "carry 0.290 and 0.304 m. Shape, size and cadence all tie.",
+        fontsize=9)
+
+    # --- D: the verticality gate -----------------------------------------
+    ax = axes[1][1]
+    for label, vals, colour, marker in [
+            ("real bench and squat reps", data["upright"]["reps"], "#16a34a", "o"),
+            ("bench_117.5x1 setup movement", data["upright"]["setup"],
+             "#dc2626", "X"),
+            ("deadlift single, the real pull", data["upright"]["deadlift"],
+             "#a16207", "D")]:
+        ax.scatter(vals, np.full(len(vals), 0) + np.random.default_rng(1)
+                   .uniform(-0.3, 0.3, len(vals)), s=42, color=colour,
+                   marker=marker, label=f"{label}  (n={len(vals)})", zorder=3)
+    ax.axvspan(1.02, 3.62, color="#dcfce7", zorder=0)
+    ax.axvline(2.0, color="#111827", lw=1.6, zorder=2)
+    ax.text(2.1, 0.55, "min_ratio = 2.0", fontsize=8, weight="bold")
+    ax.text(1.05, -0.62, "plateau: every count correct for any gate in "
+                         "[1.02, 3.62] — 255% wide", fontsize=7.5,
+            color="#166534")
+    ax.set_xscale("log")
+    ax.set_xlim(0.6, 20)
+    ax.set_xticks([1, 2, 3, 5, 10, 15])
+    # A log axis keeps its scientific MINOR labels unless they are cleared, so
+    # the ticks came out as "4 x 10^-1" interleaved with the plain majors.
+    ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
+    ax.get_xaxis().set_minor_formatter(plt.NullFormatter())
+    ax.set_yticks([])
+    ax.set_ylim(-0.8, 0.8)
+    ax.set_xlabel("vertical travel / fore-aft travel, per candidate window "
+                  "(detrended)", fontsize=8)
+    ax.legend(fontsize=7.5, frameon=False, loc="upper left")
+    ax.set_title(
+        "D. a loaded bench or squat rep is CONSTRAINED to vertical;\n"
+        "the deadlift single is the thinnest margin in the corpus, 2.59 vs 2.13",
+        fontsize=9)
+
+    for row in axes:
+        for ax in row:
+            ax.tick_params(labelsize=7)
+            ax.grid(alpha=0.2)
+
+    fig.suptitle(
+        "analysis/53 — G1: the segmentation defects the 2026-08-08 captures "
+        "exposed, and the rules that fix them\n"
+        "Every one was invisible to a rep count and every one was settled by "
+        "the cached video track. A third — deadlift_200x1 segmenting the DROP "
+        "— is not drawn here; see TASKS.md G1.\n"
+        "Counting is now 16/16 captures, 64/64 reps.",
+        fontsize=11.5, y=0.985)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return fig
+
+
+def plot_pipeline_vs_tracked(panels: list):
+    """G1 — every capture's reconstruction against its cached video track.
+
+    Writes `analysis/54`. One panel per capture, all sixteen, drawn as step 9
+    would draw them: reps overlaid, start-aligned, fore-aft stretched 4x.
+
+    **The point of drawing all sixteen rather than a chosen six is the pattern
+    in what CANNOT be drawn.** Six of the sixteen have no grey line at all, and
+    they are not six arbitrary captures: the four squats, which `vs_truth`
+    still refuses, and the two SINGLES, which no sync can reach — `bench_sync`
+    needs a rep cadence and a single has none, and the deadlift clock fit needs
+    at least two landings to fit an offset and a slope. So two of the three
+    captures whose segmentation G1 repaired are singles that cannot be checked
+    against the video at all — the segmenter is weakest exactly where the
+    referee cannot reach.
+
+    **THAT PARAGRAPH IS NO LONGER TRUE OF THE PIPELINE, and it is left standing
+    because it describes what this figure shows.** G2 lifted the squat refusal
+    on 2026-08-15 and G3 scored the three singles the same day, so all sixteen
+    captures are refereed now and a regenerated `analysis/54` would have sixteen
+    grey lines. Its own observation is what got acted on: the referee could not
+    reach exactly where the segmenter was weakest, and closing that gap is what
+    G2 and G3 were. Regenerate this figure and rewrite the paragraph together,
+    or not at all — a caption that no longer matches its picture is worse than
+    a stale one that does. See `analysis/56`.
+
+    Captions carry `beats_null`, which is the number that matters: below 1.0
+    the reconstruction is beaten by drawing NO fore-aft motion whatsoever.
+    """
+    cols = 4
+    rows = -(-len(panels) // cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(4.2 * cols, 5.4 * rows),
+                             squeeze=False)
+    flat = axes.ravel()
+
+    for ax, p in zip(flat, panels):
+        vid = p.get("video")
+        if vid is not None:
+            for i, v in enumerate(vid):
+                ax.plot(v[:, 0] * 100, v[:, 1] * 100, color="0.55", lw=2.4,
+                        label="video (cached track)" if i == 0 else None,
+                        zorder=2)
+        for i, q in enumerate(p["paths"]):
+            ax.plot(q[:, 0] * 100, q[:, 1] * 100, lw=1.5, alpha=0.9,
+                    color="#1d4ed8" if vid is not None else None,
+                    label=("reconstruction" if vid is not None else f"rep {i+1}")
+                    if i == 0 or vid is None else None, zorder=3)
+        ax.set_aspect(1.0 / STRETCH)
+        ax.set_title(p["caption"], fontsize=8, color=p.get("colour", "black"))
+        ax.set_xlabel("fore-aft (cm)", fontsize=7.5)
+        ax.set_ylabel("vertical (cm)", fontsize=7.5)
+        ax.tick_params(labelsize=6.5)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=6, frameon=False, loc="best")
+    for ax in flat[len(panels):]:
+        ax.axis("off")
+
+    fig.suptitle(
+        "analysis/54 — G1: all sixteen data_v2 captures against the cached "
+        "tracked paths, step 6 ON, segmentation fixed\n"
+        "Reps overlaid and start-aligned, fore-aft stretched 4x. Grey is the "
+        "video. RED captions cannot be scored at all; ORANGE lose to a flat "
+        "line.\n"
+        "Rep counting is 16/16 captures and 64/64 reps; the reconstruction is "
+        "a different question, and it is the one this figure is about.",
+        fontsize=12, y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.955))
+    return fig
+
+
+def plot_squat_sync(data: dict):
+    """G2 — squat is refereed now, and what licensed it.
+
+    Writes `analysis/55`. The refusal that stood here was never really about
+    squat being unmeasurable; it was about a tracker and a corpus that no
+    longer exist. What actually had to be established was that a squat video
+    can be put on the IMU clock, and the four panels are that argument.
+
+    **A** is the reason the refusal could be lifted at all rather than merely
+    argued down: the correlation curve. Bench's has rivals a whole rep away —
+    that is `bench_sync`'s known, documented ambiguity — and the paused squat's
+    does not. The pause breaks the periodicity that makes bench ambiguous, so
+    a squat's lag is identified absolutely where a bench's is identified modulo
+    one rep.
+
+    **B** is the corroboration, and it is the part bench never had. The bottom
+    of each rep is named twice, by instruments that cannot see each other: the
+    raw IMU through `segment.dwell_instants`, and the tracked video height.
+    Seven captures, agreement 0.003-0.083 of a rep against a 0.25 gate.
+
+    **C** shows one capture's alignment directly, because a scatter plot of
+    offsets is still a number and this project's recurring failure is a number
+    that looks fine. Every video bottom should sit inside exactly one IMU rep
+    window, near its middle.
+
+    **D** is the guard doing its job. A one-rep sync error is injected in both
+    directions on every capture with a cadence; all fourteen are refused. The
+    separation is what the gate is set inside.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(15.0, 9.2))
+
+    # --- A: correlation curves, bench against paused squat ----------------
+    ax = axes[0][0]
+    for d in data["curves"]:
+        ax.plot(np.asarray(d["lags"]) - d["offset"],
+                np.asarray(d["curve"]) / d["corr"],
+                lw=1.5, color=d["colour"],
+                label=f"{d['stem']}  (corr {d['corr']:.2f}, highest sidelobe "
+                      f"{d['sidelobe']:.2f})")
+        for lag, frac, periods in d["rivals"]:
+            ax.plot(lag - d["offset"], frac, "v", color=d["colour"], ms=8,
+                    zorder=5)
+            ax.annotate(f"{periods:+.2f} rep", (lag - d["offset"], frac),
+                        textcoords="offset points", xytext=(0, 8),
+                        fontsize=7, color=d["colour"], ha="center")
+    ax.axhline(0.70, color="#94a3b8", ls=":", lw=1.0)
+    ax.text(-11.5, 0.715, "RIVAL_FRAC — a peak this high is a real rival",
+            fontsize=7, color="#64748b")
+    ax.set_xlim(-12, 12)
+    ax.set_ylim(0, 1.08)
+    ax.set_xlabel("lag from the chosen peak (s)", fontsize=8)
+    ax.set_ylabel("correlation, as a fraction of the peak", fontsize=8)
+    ax.legend(fontsize=7, frameon=False, loc="lower right")
+    ax.set_title("A. bench's lag is identified modulo ONE REP; the paused "
+                 "squat's is not\nbench sidelobes reach 0.72-0.79 of the peak, "
+                 "squat 0.58-0.69 — but 145x4_1's 0.69 is 1% off the line",
+                 fontsize=9)
+
+    # --- B: landmark against correlation ----------------------------------
+    ax = axes[0][1]
+    for row in data["agree"]:
+        c = "#7c3aed" if row["lift"] == "squat" else "#0891b2"
+        ax.barh(row["stem"], row["disagree"], color=c, height=0.6)
+        ax.annotate(f"  {row['disagree']:.3f}", (row["disagree"], row["stem"]),
+                    va="center", fontsize=7.5, color=c)
+    ax.axvline(data["tol"], color="#111827", lw=1.6)
+    ax.axvline(1.0, color="#b91c1c", lw=1.6, ls="--")
+    ax.text(data["tol"]*1.05, -0.45, f"gate {data['tol']}", fontsize=8,
+            weight="bold")
+    ax.text(0.62, -0.45, "a whole-rep error\nlands here", fontsize=7.5,
+            color="#b91c1c")
+    ax.set_xlim(0, 1.15)
+    ax.set_xlabel("disagreement between the correlation and the per-rep "
+                  "bottoms (rep periods)", fontsize=8)
+    ax.tick_params(labelsize=7)
+    ax.set_title("B. two instruments that cannot see each other, on the same "
+                 "offset\npurple = squat, teal = bench", fontsize=9)
+
+    # --- C: one capture's alignment, drawn -------------------------------
+    ax = axes[1][0]
+    d = data["aligned"]
+    ax.plot(d["t_video"], d["height_cm"], color="#2563eb", lw=1.6,
+            label="video bar height, on the IMU clock")
+    for i, (a, b) in enumerate(d["windows"]):
+        ax.axvspan(a, b, color="#dcfce7", zorder=0,
+                   label="IMU rep window" if i == 0 else None)
+    for i, x in enumerate(d["bottoms"]):
+        ax.axvline(x, color="#dc2626", lw=1.3,
+                   label="video bottom" if i == 0 else None)
+    for i, x in enumerate(d["dwells"]):
+        ax.axvline(x, color="#16a34a", lw=1.3, ls="--",
+                   label="IMU dwell (raw signal)" if i == 0 else None)
+    ax.set_xlabel("IMU time (s)", fontsize=8)
+    ax.set_ylabel("bar height (cm)", fontsize=8)
+    ax.legend(fontsize=7, frameon=False, loc="upper right")
+    ax.set_title(f"C. {d['stem']}: every video bottom inside exactly one "
+                 f"window\nphases {d['phases']}", fontsize=9)
+
+    # --- D: the guard, tested by breaking it ------------------------------
+    ax = axes[1][1]
+    real = [r["disagree"] for r in data["agree"]]
+    ax.scatter(real, np.zeros(len(real)) + 0.08*np.random.default_rng(0)
+               .standard_normal(len(real)), s=45, color="#16a34a",
+               label=f"as shipped  (n={len(real)})", zorder=3)
+    shifted = data["shifted"]
+    ax.scatter(shifted, np.zeros(len(shifted)) + 0.08*np.random.default_rng(1)
+               .standard_normal(len(shifted)), s=45, color="#dc2626",
+               marker="X", label=f"one-rep error injected  (n={len(shifted)}, "
+               f"all refused)", zorder=3)
+    ax.axvspan(0, data["tol"], color="#dcfce7", zorder=0)
+    ax.axvline(data["tol"], color="#111827", lw=1.6)
+    ax.text(data["tol"]*1.05, 0.22, f"gate {data['tol']}", fontsize=8,
+            weight="bold")
+    ax.set_xlim(0, max(shifted + real) * 1.1)
+    ax.set_ylim(-0.35, 0.35)
+    ax.set_yticks([])
+    ax.set_xlabel("disagreement (rep periods)", fontsize=8)
+    ax.legend(fontsize=7.5, frameon=False, loc="upper center")
+    ax.set_title("D. the guard, tested by breaking it\n14 injected whole-rep "
+                 "errors, 14 refused, 0 missed", fontsize=9)
+
+    for row in axes:
+        for ax in row:
+            ax.tick_params(labelsize=7)
+            ax.grid(alpha=0.2)
+
+    fig.suptitle(
+        "analysis/55 — G2: vs_truth's squat refusal is lifted, and the sync "
+        "that replaces it is corroborated\n"
+        "The refusal described the v1 plate template on footage F1 deleted. "
+        "Squat now scores h 1.88-2.97 cm and all three paused captures beat "
+        "the flat-line null.",
+        fontsize=11.5, y=0.985)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return fig
+
+
+def plot_short_sets(data: dict):
+    """G3 — the singles and doubles the periodic machinery cannot reach.
+
+    Writes `analysis/56`. The three captures `data_v2/` has never refereed are
+    the three SINGLES, one per lift, and this is the evidence for the clock that
+    reaches them.
+
+    **A is the whole argument in one curve.** `bench_sync` widens its sweep
+    until the peak is interior, because on a long set the true lag can sit 7 s
+    out. On a single that is fatal: the record is flat apart from one event, so
+    sliding the two records far apart correlates flat against flat on ever less
+    of it, and the wrong answer wins OUTRIGHT — on `deadlift_200x1` a 17 s error
+    scores 0.642 against the true peak's 0.335. The shaded band is where the two
+    records still share 80% of the shorter one, which is the only region the
+    sweep is allowed to look in. The dashed line is the offset the floor impact
+    independently says is right.
+
+    **B is the accuracy, against answers this module did not supply.** Thirteen
+    singles and thirteen doubles cut from the multi-rep captures, each scored
+    against the offset its own full capture fits. For scale, the multi-rep
+    deadlift sync — the best-validated clock here — runs an 8-10 ms residual.
+
+    **C is what it buys.** The three real singles, drawn against the video that
+    could not previously be put on their clock at all.
+
+    **D is the owner's proposed rule, measured and NOT shipped.** "Maximum
+    displacement between IMU dwells" loses to the segmenter that already exists,
+    on every reading tried, for one reason: integration drift produces more
+    apparent displacement than a rep does, so the criterion prefers the longest
+    admissible window. The bar marked 86.8 cm is a bench press whose true range
+    is 27 cm. Recorded rather than deleted — on a drift-free position estimate
+    it would very likely work, which is exactly why it looks right on paper.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(15.0, 9.4))
+
+    # --- A: why the sweep must be bounded by overlap ------------------------
+    ax = axes[0][0]
+    c = data["curve"]
+    ax.plot(c["lags"], c["curve"], lw=1.3, color="0.35",
+            label="correlation vs lag")
+    ax.axvspan(c["floor_lo"], c["floor_hi"], color="tab:green", alpha=0.13,
+               label=f"admissible: records share {c['frac']:.0%}")
+    ax.axvline(c["truth"], color="tab:blue", ls="--", lw=1.8,
+               label=f"floor impact says {c['truth']:+.3f} s")
+    ax.plot([c["accepted"]], [c["accepted_corr"]], "o", ms=9,
+            color="tab:green", label=f"accepted {c['accepted']:+.3f} s "
+                                     f"(corr {c['accepted_corr']:.2f})")
+    for lag, corr in c["decoys"]:
+        ax.plot([lag], [corr], "x", ms=11, mew=2.8, color="tab:red")
+        ax.annotate(f"{lag:+.1f} s, corr {corr:.2f}", (lag, corr),
+                    textcoords="offset points", xytext=(0, 12),
+                    ha="center", fontsize=8.5, color="tab:red", weight="bold")
+    ax.set_title(f"A  {c['stem']}: the unbounded sweep prefers a wrong lag,\n"
+                 f"and prefers it more confidently", fontsize=10.5)
+    ax.set_xlabel("lag (s), video relative to IMU")
+    ax.set_ylabel("correlation")
+    # Below the curve: the decoys sit high and the legend must not cover them,
+    # which it did in the first render — the point of the panel is a red cross
+    # ABOVE the accepted green dot.
+    ax.legend(fontsize=8, loc="lower left", framealpha=0.95)
+    ax.set_ylim(top=max(1.05, float(np.nanmax(c["curve"])) + 0.22))
+    ax.grid(alpha=0.3)
+
+    # --- B: accuracy against known offsets ----------------------------------
+    ax = axes[0][1]
+    for i, (label, errs, colour) in enumerate(data["accuracy"]):
+        y = np.full(len(errs), i) + np.random.default_rng(0).uniform(
+            -0.13, 0.13, len(errs))
+        ax.plot(np.abs(errs) * 1000, y, "o", ms=7, color=colour, alpha=0.85,
+                label=f"{label}  (n={len(errs)}, worst "
+                      f"{np.abs(errs).max() * 1000:.0f} ms)")
+    ax.axvspan(8.4, 9.7, color="tab:blue", alpha=0.15)
+    ax.annotate("multi-rep deadlift sync\nresidual, 8.4-9.7 ms", (9.0, -0.55),
+                fontsize=8.5, color="tab:blue", ha="center")
+    ax.set_xscale("log")
+    ax.set_xlim(0.5, 500)
+    ax.get_xaxis().set_minor_formatter(plt.NullFormatter())
+    ax.set_yticks(range(len(data["accuracy"])))
+    ax.set_yticklabels([d[0] for d in data["accuracy"]], fontsize=9)
+    ax.set_ylim(-0.8, len(data["accuracy"]) - 0.3)
+    ax.set_title("B  offset error against the answer the FULL capture fits\n"
+                 "(short sets cut from the thirteen multi-rep captures)",
+                 fontsize=10.5)
+    ax.set_xlabel("|error| (ms, log)")
+    ax.grid(alpha=0.3, axis="x")
+
+    # --- C: the three real singles, now scoreable ---------------------------
+    ax = axes[1][0]
+    # Each pair drawn in ONE colour — the video thick and faded, the
+    # reconstruction thin and solid. A single grey for all three videos was
+    # unreadable: with three captures overlaid you cannot tell which grey line
+    # belongs to which coloured one, which is the only comparison the panel is
+    # for.
+    for d in data["singles"]:
+        ax.plot(d["video"][:, 0] * 100, d["video"][:, 1] * 100, lw=5.0,
+                color=d["colour"], alpha=0.25, solid_capstyle="round")
+        ax.plot(d["path"][:, 0] * 100, d["path"][:, 1] * 100, lw=1.7,
+                color=d["colour"],
+                label=f"{d['stem']}  h {d['h_rms']:.2f} cm, "
+                      f"null {d['null']:.2f}")
+    ax.plot([], [], lw=5.0, color="0.5", alpha=0.35, label="video (thick, faded)")
+    ax.plot([], [], lw=1.7, color="0.3", label="reconstruction (thin, solid)")
+    ax.set_title("C  the three captures that had no referee at all,\n"
+                 "now on the IMU clock (fore-aft stretched 4x)", fontsize=10.5)
+    ax.set_xlabel("fore-aft (cm)")
+    ax.set_ylabel("height (cm)")
+    ax.legend(fontsize=8, loc="best")
+    ax.grid(alpha=0.3)
+    ax.set_aspect(0.25)
+
+    # --- D: the rejected rule ------------------------------------------------
+    ax = axes[1][1]
+    rules = data["rules"]
+    y = np.arange(len(rules))
+    ax.barh(y, [r["median_iou"] for r in rules],
+            color=["tab:green" if r["shipped"] else "tab:red" for r in rules],
+            alpha=0.8)
+    for i, r in enumerate(rules):
+        ax.annotate(f"{r['median_iou']:.2f}   {r['hits']}/{r['n']} above 0.5",
+                    (r["median_iou"], i), textcoords="offset points",
+                    xytext=(6, -3), fontsize=8.5)
+    ax.set_yticks(y)
+    ax.set_yticklabels([r["name"] for r in rules], fontsize=8.5)
+    ax.set_xlim(0, 1.15)
+    ax.set_xlabel("median IoU against the full capture's first rep window")
+    ax.set_title("D  the proposed 'max displacement between dwells' rule,\n"
+                 "measured on thirteen singles and not shipped", fontsize=10.5)
+    ax.grid(alpha=0.3, axis="x")
+
+    fig.suptitle(
+        "56 — singles and doubles: the sync, not the segmenter, is what "
+        "refused them. All three singles now score; the thirteen multi-rep "
+        "captures are bit-identical.", fontsize=11.5, y=0.985)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     return fig

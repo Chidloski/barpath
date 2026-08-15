@@ -25,11 +25,17 @@ near-identical to each other and the setup matches nothing, so the reps are the
 largest mutually-similar cluster.
 
 **Where the bar hits the floor, use that instead.** A deadlift's floor impact
-is a 15-21 g spike, exactly one per rep, and unmistakable — it gets 6/6, 6/6
-and 3/3 on the three deadlift captures including one rep that shape-matching
-misses. This is not a per-lift lookup table: the anchors are used when the
-physics provides them and ignored when it does not, which the signal decides
-for itself. Bench and squat produce at most one spurious impact (the re-rack).
+is one spike per rep — it gets 6/6, 6/6 and 3/3 on the three deadlift captures
+including one rep that shape-matching misses. This is not a per-lift lookup
+table: the anchors are used when the physics provides them and ignored when it
+does not, which the signal decides for itself. Bench and squat produce at most
+one spurious impact (the re-rack).
+
+*This paragraph said "a 15-21 g spike ... and unmistakable" until 2026-08-15.
+It is neither. The 2026-08-08 captures hold real landings at 6.69 and 8.18 g,
+and a wrist swing on `deadlift_150x4_1` that reaches 7.01 g with the bar
+provably still on the floor. Height does not separate them; see
+`impact_anchors`.*
 
 Shape clustering alone is NOT sufficient and it is worth recording why, so this
 is not re-litigated. On `deadlift_155x6_1` two setup lobes correlate 0.73-0.82
@@ -104,11 +110,34 @@ unfalsified on bench rather than verified there.
 Neither is helped by the C3 `phase` column: the lifter re-racks before pressing
 "Finish Set", so both spurious windows sit inside `phase == 1`.
 
+**Two defects the 2026-08-08 captures added, fixed 2026-08-15 (G1), and the
+second one needed a FOURTH discriminator rather than a better constant.**
+
+`deadlift_150x4_1` counted five. `impact_anchors` reads acceleration magnitude,
+and a wrist rotation arrested hard enough clears 6 g on the watch's ~9.5 cm
+lever. No threshold separates it from a real landing; the wrist's rotation rate
+in the second BEFORE the spike does. See `impact_anchors`.
+
+`bench_117.5x1` counted two, and it is the corpus's first bench SINGLE. All
+three discriminators above compare candidates with EACH OTHER — shape, size,
+cadence — so each needs a majority of real reps to out-vote the setup. A single
+has no majority, and its real press clusters with a setup arm movement at 0.80
+correlation and near-identical displacement. The fourth discriminator does not
+compare candidates at all: it asks whether the window's bar path is VERTICAL,
+which a loaded bench or squat rep is and an arm reach is not. See `_upright`,
+including why it abstains on deadlift and why raising `similarity` is a trap.
+
 Honest limit: **bench and squat have no impact anchor and still segment on the
 integrated velocity**, which carries 145 cm of in-band error against a 69 cm
 signal. Their counts are right; their boundaries are only as good as that
 signal. Fixing it is B2 and B6 — removing the in-band error — not a change
 here.
+
+Second honest limit, and it is new: **the cadence discriminator is currently
+unexercised.** Every capture that constrained it lived in v1, which was deleted
+on 2026-08-14, and on the live corpus disabling the cadence rule outright still
+counts 16/16. It is kept because its evidence was real, not because anything
+here still tests it. See `_longest_cadence` and TASKS.md G1.
 
 ---
 
@@ -128,7 +157,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.signal import butter, filtfilt
 
-from . import io
+from . import correct, io
 
 
 def _rolling_var(x: np.ndarray, w: int) -> np.ndarray:
@@ -192,17 +221,91 @@ def bandpass(v: np.ndarray, fs: float, lo: float = 0.12, hi: float = 3.0) -> np.
     return filtfilt(b, a, v)
 
 
+def _quiet_before(log: dict, k: int, look_s: float = 1.00,
+                  settle_s: float = 0.25, span_s: float = 0.30) -> float:
+    """Median wrist rotation rate in the second before the spike at `k`.
+
+    `settle_s` stops short of the spike itself, because the impact JOLTS the
+    wrist and the gyro peaks at 9-51 rad/s at every real landing — measuring
+    across the peak would score a collision the same as a swing. `span_s` is
+    the window the peak sample is located in, so the lead-in is measured from
+    the top of the spike rather than from its onset.
+    """
+    t, fs = log["t"], log["fs"]
+    mag = np.linalg.norm(log["accel"], axis=1)
+    rate = np.linalg.norm(log["gyro"], axis=1)
+
+    w = int(round(span_s * fs))
+    lo, hi = max(k - w, 0), min(k + w, len(t))
+    peak = int(np.argmax(mag[lo:hi])) + lo
+
+    lead = slice(max(peak - int(round(look_s * fs)), 0),
+                 max(peak - int(round(settle_s * fs)), 1))
+    return float(np.median(rate[lead]))
+
+
 def impact_anchors(log: dict, threshold_g: float = 6.0,
                    refractory_s: float = 1.5,
-                   skip_s: float = 5.0) -> list[int]:
+                   skip_s: float = 5.0,
+                   max_wrist_rate: float = 1.3) -> list[int]:
     """Indices of floor impacts — one per rep, on lifts where the bar is set down.
 
-    A deadlift lands with a 15-21 g spike that nothing else in a gym produces.
-    `refractory_s` collapses the ringing that follows into one event, and
-    `skip_s` ignores the calibration pause and walk-in.
+    A deadlift lands with a 7-24 g spike. `refractory_s` collapses the ringing
+    that follows into one event, and `skip_s` ignores the calibration pause and
+    walk-in.
 
     Returns [] on lifts that never touch down, which is the correct answer for
     bench and squat and is why the caller can apply this unconditionally.
+
+    **A WRIST SWING COUNTERFEITS A LANDING, and `max_wrist_rate` is what
+    rejects it (G1, 2026-08-15).** `deadlift_150x4_1` reported five impacts in
+    a four-rep set, and the video is unambiguous: the bar sits flat on the floor
+    at 1.4-1.5 cm from 0 s to 11 s, and the extra anchor is at 7.03 s. Read off
+    the raw samples it is not a collision at all but a 250 ms RAMP — |a| climbs
+    0.7 -> 1.6 -> 3.6 -> 6.9 g while |omega| climbs to 27 rad/s and then snaps
+    to a stop. The watch sits ~9.5 cm from the wrist axis (`correct.
+    WRIST_OFFSET_M`), so a rotation arrested that hard puts alpha * r = 6.3 g at
+    the sensor against the 6.9 g measured. The lifter set their grip; the
+    accelerometer cannot tell that from the bar hitting the floor, because on
+    magnitude alone it isn't.
+
+    **The threshold could never have separated them.** That is why the rule is
+    not a higher `threshold_g`: the counterfeit peaks at 7.01 g and the weakest
+    REAL landing in the corpus is 6.69 g. Disjoint, like C31a's cadence
+    tolerance before it. The docstring above used to claim "a 15-21 g spike that
+    nothing else in a gym produces" — the 2026-08-08 captures falsify it in both
+    directions, with real landings at 6.69 and 8.18 g and a non-landing at 7.01.
+
+    **What separates them is the second BEFORE the spike.** A bar in free
+    descent hangs off a passive arm: across 28 video- and label-confirmed
+    landings the median wrist rate in that second is **0.39-0.98 rad/s**. A
+    counterfeit is a movement the lifter is already making, and it is moving
+    beforehand. Measured, the whole class:
+
+        28 real floor landings, 6 captures        0.39 - 0.98 rad/s
+        5 genuine rack collisions (bench, squat)  0.33 - 0.56   (kept, correctly)
+        4 setup wrist swings, 4 captures          1.65 - 2.83   (rejected)
+
+    The rack collisions matter: they are the control. This gate rejects a
+    ROTATION, not a quiet impact, so a bar meeting a rack still reads as the
+    collision it is. Rep counting is correct across the corpus for any gate in
+    [0.98, 2.83]; 1.3 is 33% above the busiest real landing and 21% below the
+    quietest counterfeit, and is deliberately below 1.65 so the three bench
+    setup swings are rejected too — they change no count today, only because
+    they never reach the three anchors `rep_bounds` requires.
+
+    **Three other discriminators were measured and are worse.** Peak-to-
+    precursor ratio separates by only 1.41x (1.87 against a worst real 2.64).
+    High-frequency energy fraction looks good on the deadlift (0.040 against
+    0.112-0.383) and inverts on the control: it flags the squat rack collision
+    at 0.030 while passing all four setup swings. And the rotational term
+    evaluated AT the peak does not separate at all (0.45-1.64 real against 0.53)
+    because the impact itself spins the wrist.
+
+    This stays on raw accelerometer and gyro — no attitude, no integration, no
+    filtering — which is the property that makes an anchor worth having. Note
+    what it costs: the gate is one-sided, and a lifter who resets their grip in
+    the last second of a descent would be refused a real landing.
     """
     t, fs = log["t"], log["fs"]
     mag = np.linalg.norm(log["accel"], axis=1) / 9.80665
@@ -212,7 +315,10 @@ def impact_anchors(log: dict, threshold_g: float = 6.0,
     for i in np.flatnonzero(mag[start:] > threshold_g) + start:
         if not peaks or t[i] - t[peaks[-1]] > refractory_s:
             peaks.append(int(i))
-    return peaks
+
+    if max_wrist_rate is None:
+        return peaks
+    return [k for k in peaks if _quiet_before(log, k) < max_wrist_rate]
 
 
 def rest_instants(log: dict, impacts: list[int] | None = None,
@@ -278,6 +384,64 @@ def rest_instants(log: dict, impacts: list[int] | None = None,
     return out
 
 
+def dwell_instants(log: dict, bounds: list[tuple[int, int]],
+                   interior: float = 0.6, window_s: float = 0.10) -> list[int]:
+    """The quietest instant inside each rep — the bottom of a paused rep. G2.
+
+    The bench and squat analogue of `rest_instants`, and it exists for the same
+    reason: to give a lift with no floor impact a LANDMARK, an instant both the
+    IMU and the video can name independently. `metrics.pause_landmark` matches
+    these against the video's per-rep lowest point, and
+    `metrics._video_on_imu_clock` uses the match to corroborate `bench_sync`'s
+    correlation — which until now was validated only by transfer from deadlift.
+
+    Found from raw acceleration and gyro only: no attitude, no integration, no
+    filtering, the same discipline `impact_anchors` and `rest_instants` keep.
+    A landmark derived from the reconstruction could not check a sync that the
+    reconstruction is scored through.
+
+    **`interior` is the whole trick and it was found by the rule failing
+    without it.** Searched over the WHOLE window this returns the standing
+    brace at the window edge rather than the bottom — the lifter holding a
+    racked bar is quieter than the same lifter braced at depth under it. On the
+    three paused squats that happened on 4 of 12 reps, at phase 0.02-0.16, and
+    it wrecked the fit: residual 55-677 ms and an implied clock drift of
+    1.6-5.3% where the deadlift's landmark sync measures under 0.25%.
+    Restricted to the middle 60% the instants land at phase 0.31-0.54, where
+    the video puts the bottom. Every value in 0.4-0.6 gives bit-identical
+    answers on all three captures; 0.7 and above lets the brace back in.
+
+    **What this is NOT.** It is not as sharp as a floor impact. Against the
+    video's bottoms the per-rep scatter is 83-223 ms, where matched landings
+    give the deadlift 11-16 ms. So it corroborates a correlation and bounds a
+    whole-rep error; it does not replace `capture.sync` and must not be used to
+    fit a slope. `pause_landmark` fits an offset only, for that reason.
+
+    Returns one index per window, so the caller can pair them with rep windows
+    positionally. Empty windows are skipped rather than filled.
+    """
+    fs = log["fs"]
+    w = max(int(round(window_s * fs)), 3)
+    av = _rolling_var(np.linalg.norm(log["accel"], axis=1), w)
+    gv = _rolling_var(np.linalg.norm(log["gyro"], axis=1), w)
+
+    # Scale each channel by its own spread over the record, exactly as
+    # `rest_instants` does, so neither dominates the sum by unit choice.
+    score = av / (np.median(av) + 1e-12) + gv / (np.median(gv) + 1e-12)
+
+    out = []
+    for a, b in bounds:
+        n = b - a
+        if n < 3:
+            continue
+        margin = (1.0 - interior) / 2.0
+        lo, hi = a + int(margin * n), a + int((1.0 - margin) * n)
+        if hi <= lo:
+            lo, hi = a, b
+        out.append(int(lo + int(np.argmin(score[lo:hi]))))
+    return out
+
+
 def _all_lobes(v: np.ndarray, t: np.ndarray,
                min_area: float) -> list[tuple[int, int, int, float]]:
     """Every velocity lobe carrying at least `min_area` of displacement.
@@ -337,7 +501,8 @@ def _shape(v: np.ndarray, t: np.ndarray, i: int,
 def rep_bounds(log: dict, vertical_velocity: np.ndarray,
                similarity: float = 0.7,
                peak_ratio: float = 2.5,
-               min_area: float = 0.08) -> list[tuple[int, int]]:
+               min_area: float = 0.08,
+               position: np.ndarray | None = None) -> list[tuple[int, int]]:
     """Rep boundaries, as [start, stop) index pairs into the log.
 
     `vertical_velocity` is the world-frame vertical velocity from step 4. It
@@ -345,7 +510,7 @@ def rep_bounds(log: dict, vertical_velocity: np.ndarray,
 
     Two mechanisms, in priority order:
 
-    1. Floor impacts, if the lift has them. Exact on all three deadlift
+    1. Floor impacts, if the lift has them. Exact on all six deadlift
        captures and immune to every setup false positive.
     2. Otherwise the largest cluster of mutually similar concentric lobes,
        compared in fixed-duration windows so a brief sharp unrack cannot
@@ -355,6 +520,13 @@ def rep_bounds(log: dict, vertical_velocity: np.ndarray,
     the cluster median by more than this factor. A grinding rep is slower and
     weaker than a fresh one but not by 3x; an unrack is (1.88 m/s against
     0.26 m/s in `bench_92.5x2`). Physical, not fitted.
+
+    `position` is the step-4 integrated position, and supplying it turns on the
+    fourth discriminator — how VERTICAL each candidate window is — which acts in
+    two places: `_upright` filters a cluster with it, and `_similar_cluster`
+    ranks a degenerate cluster by it. It is optional because the three above
+    need only the vertical channel, and a caller with nothing but that still
+    gets the old behaviour rather than an exception.
 
     Boundaries run from the turnaround before each concentric to the turnaround
     after it.
@@ -369,8 +541,137 @@ def rep_bounds(log: dict, vertical_velocity: np.ndarray,
     if len(anchors) >= 3:
         return _cycles_from_impacts(t, anchors)
 
-    chosen = _similar_cluster(v, t, lobes, similarity, peak_ratio)
-    return _full_cycles(_all_lobes(v, t, min_area), chosen, False, len(v))
+    all_lobes = _all_lobes(v, t, min_area)
+    upright = _upright_ratios(all_lobes, lobes, position, t, len(v))
+    chosen = _similar_cluster(v, t, lobes, similarity, peak_ratio, upright)
+    chosen = _upright(chosen, upright)
+
+    # ONE IMPACT PER REP means the bar is set down every rep, which decides
+    # which side of the concentric the eccentric sits on. `_full_cycles` has
+    # always documented `sets_down` as coming from the signal — "so the lift is
+    # never named" — and this call site passed a hardcoded False, so on the
+    # velocity path it never did (G1, 2026-08-15). Harmless while only bench and
+    # squat reached here, and wrong the moment a deadlift did: `deadlift_200x1`
+    # has one impact and one rep, and under the bench convention its window ran
+    # 13.17-16.97 s at 28.1 cm — the approach plus half a pull, cut off before
+    # lockout, against a 40-61 cm band. Under the right one it is 15.51-19.43 s
+    # at 55.0 cm, and the video has the pull at 15.7-17.5 s with the bar back
+    # down by 19.8.
+    #
+    # The count comparison is what keeps bench out of it. `bench_92.5x6_1` fires
+    # one anchor — the re-rack — against six reps, so it is not one per rep and
+    # the bench convention stands. Anything with three or more anchors never
+    # reaches this line; it segments on the impacts themselves.
+    sets_down = bool(anchors) and len(anchors) == len(chosen)
+    return _full_cycles(all_lobes, chosen, sets_down, len(v))
+
+
+def _upright_ratios(all_lobes: list, lobes: list, position: np.ndarray | None,
+                    t: np.ndarray, n: int) -> dict[int, float] | None:
+    """Verticality of the window each concentric lobe would produce, by start.
+
+    Computed once and shared, because both users of it — `_similar_cluster`'s
+    degenerate-cluster key and `_upright`'s filter — are asking the same
+    question of the same windows, and a rule applied twice from two
+    computations is a rule that can disagree with itself.
+    """
+    if position is None:
+        return None
+
+    starts = [l[1] for l in all_lobes]
+    out = {}
+    for peak, a, b, area in lobes:
+        k = starts.index(a) if a in starts else None
+        window = (a, b) if k is None else _absorb(
+            all_lobes, k, a, b, area, False, -1, n, 0.5)
+        out[a] = _verticality(position, t, window)
+    return out
+
+
+def _upright(chosen: list, upright: dict[int, float] | None,
+             min_ratio: float = 2.0) -> list:
+    """Drop cluster members whose window is not a near-vertical bar path.
+
+    **The fourth discriminator, and the first one that is not a property of the
+    vertical channel alone (G1, 2026-08-15).** Shape, size and cadence all
+    compare candidates with each other, so all three need a MAJORITY of real
+    reps to out-vote the setup. `bench_117.5x1` is the corpus's first bench
+    single and there is no majority: its winning cluster is the real press at
+    21.9 s together with a setup arm movement at 10.6 s, the two correlating
+    0.80 in fixed-duration shape and carrying 0.304 and 0.290 m of displacement.
+    Nothing that ranks candidates against each other can split that pair.
+
+    **This capture is the one `_similar_cluster` predicted.** That docstring
+    records the singleton displacement rule as "unfalsified on bench rather than
+    verified there", and says a bench single would land there and pick the
+    unrack. It arrived on 2026-08-08 and the prediction held exactly: raising
+    `similarity` to 0.83 breaks the false pair and then the singleton rule picks
+    the 5.4 s unrack, which carries 0.455 m — the RIGHT COUNT on the WRONG
+    WINDOW, `squat_160x1`'s failure again and invisible to a count gate. Do not
+    re-try the tolerance; the plateau [0.798, 0.872] is real and it is measuring
+    the wrong thing.
+
+    **What separates them is a fact about lifting, not about the signal.** A
+    loaded bench or squat rep is a closed kinematic chain — the bar is
+    constrained to travel up and down — while setting up is an arm reaching
+    freely through as much fore-aft as vertical. Per candidate window, detrended
+    by step 7's own `correct.detrend_set` so the drift is not counted as
+    excursion:
+
+        36 real bench and squat reps, 9 captures    3.64 - 15.08
+        setup movement, bench_117.5x1 at 10.6 s     1.00
+
+    Correct counts hold for `min_ratio` anywhere in [1.02, 3.62] — a 255%
+    plateau, bounded below by that setup movement and above by the least
+    vertical real rep in the corpus (`bench_92.5x6_2`, 3.64). 2.0 is the round
+    value nearest the geometric midpoint, 1.96x clear of the floor and 1.81x
+    clear of the ceiling. Within that whole span it changes exactly one capture.
+
+    **It abstains rather than guessing.** When no member of a cluster clears
+    `min_ratio` the rule has nothing to say about that capture and returns the
+    cluster untouched, on this module's standing preference for silence over a
+    false assertion. Nothing in the corpus currently exercises the abstention —
+    the only capture that did was `deadlift_200x1`, and it did so because the
+    cluster it was handed was the WRONG LOBE. See `_similar_cluster`.
+
+    *An earlier draft of this docstring justified the abstention by claiming
+    "`deadlift_200x1`'s real pull scores 2.13, below several of its own
+    non-reps". That was wrong, and it was wrong because the lobe at 19.8 s had
+    been assumed to be the pull without checking the video. The real pull is at
+    16.6 s and scores 2.59 — the HIGHEST of that capture's ten lobes. Verticality
+    ranks it correctly; it was the displacement rule that did not. The
+    abstention is kept because a deadlift's fore-aft is genuinely real and a
+    future capture may need it, not because this one did.*
+
+    **A deadlift is still the lift to watch here.** A pull sweeps the bar in to
+    the shins and its fore-aft also carries the invented excursion C12 found, so
+    its margins are the corpus's thinnest: 2.59 against a 2.13 runner-up, where
+    bench and squat run 4.4x and 12.6x clear. Deadlifts otherwise never reach
+    this path at all; they segment on impacts.
+
+    **Measure it on POSITION, not on velocity.** Integrating the band-passed
+    velocity inside the window instead — which needs no `position` argument and
+    was tried first — collapses the separation to overlapping (worst real 1.69
+    against best non-rep 2.35). The detrend is doing the work.
+    """
+    if upright is None or len(chosen) < 2:
+        return chosen
+
+    keep = [upright.get(a, 0.0) >= min_ratio for _, a, _, _ in chosen]
+    if all(keep) or not any(keep):
+        return chosen
+    return [l for l, k in zip(chosen, keep) if k]
+
+
+def _verticality(position: np.ndarray, t: np.ndarray,
+                 window: tuple[int, int]) -> float:
+    """Vertical travel over horizontal travel, for one candidate rep window."""
+    reps = correct.detrend_set(position, [window], t)
+    if not reps:
+        return 0.0
+    rep = reps[0]
+    horizontal = float(np.hypot(np.ptp(rep[:, 0]), np.ptp(rep[:, 1])))
+    return float(rep[:, 2].max() - rep[:, 2].min()) / max(horizontal, 1e-9)
 
 
 def _cycles_from_impacts(t: np.ndarray, anchors: list[int]) -> list[tuple[int, int]]:
@@ -666,7 +967,7 @@ def _grow(shapes, peaks, seed, similarity, peak_ratio):
     return keep
 
 
-def _similar_cluster(v, t, lobes, similarity, peak_ratio) -> list:
+def _similar_cluster(v, t, lobes, similarity, peak_ratio, upright=None) -> list:
     """Largest mutually-similar set of lobes, by fixed-duration shape.
 
     Every candidate is tried as a seed and the clusters are ranked by size,
@@ -695,22 +996,37 @@ def _similar_cluster(v, t, lobes, similarity, peak_ratio) -> list:
     capture of the 17 whose winning cluster has size 1 — every other has 4 or
     more — so ranking singletons differently cannot disturb the other sixteen.
 
-    **The judgement for singletons:** rank by concentric displacement, because
-    a working rep moves the bar further than the movements that bracket it. On
-    `squat_160x1` the rep carries 0.602 m against 0.384 for the walkout and
-    0.170 for the re-rack, a 1.57x margin over the runner-up. It is an argmax,
-    so there is no threshold to fit.
+    **The judgement for singletons WAS concentric displacement** — a working rep
+    moves the bar further than the movements that bracket it. On `squat_160x1`
+    the rep carried 0.602 m against 0.384 for the walkout and 0.170 for the
+    re-rack. It was an argmax, so there was no threshold to fit.
 
-    **What would falsify it, and it is not hypothetical — it is bench.** The
-    claim fails wherever the unrack lifts the bar further than the rep does.
-    `bench_92.5x2` is exactly that capture: its unrack lobe carries 0.433 m
-    against 0.295 and 0.239 for its two real reps. Clustering saves it today
-    (its winning cluster has size 4, so this branch never runs), but a bench
-    SINGLE would land here and this rule would pick the unrack. There is no
-    bench single in `data/raw/`, so this rule is unfalsified on bench rather
-    than verified there, and it should not be trusted on one until a capture
-    exists. Duration does not rescue it either: area x duration also prefers
-    that capture's setup, 0.302 against 0.280.
+    **It was predicted to fail on bench, it does, and it also fails on a
+    deadlift single (G1, 2026-08-15). It is replaced by VERTICALITY.** The
+    prediction, kept because it was right: the claim fails wherever the unrack
+    lifts the bar further than the rep does, `bench_92.5x2`'s unrack carried
+    0.433 m against 0.295 and 0.239 for its two real reps, and "a bench SINGLE
+    would land here and this rule would pick the unrack".
+
+    Measured on the three singles the live corpus now holds, against the cached
+    video track, displacement gets ONE of three right:
+
+        capture           real rep   argmax displacement   argmax verticality
+        squat_170x1         35.0 s   35.0 s  correct       35.0 s  correct
+        bench_117.5x1       21.9 s    5.4 s  the unrack    21.9 s  correct
+        deadlift_200x1      16.6 s   19.8 s  the DROP      16.6 s  correct
+
+    `deadlift_200x1` is the one that was shipping wrong and nobody had looked:
+    the video has the pull at 15.7-17.5 s and the bar back down by 19.8 s, and
+    the chosen lobe at 19.77 s carried the largest displacement of the ten
+    because the reconstruction invents velocity across the drop. Right count,
+    wrong window, `squat_160x1`'s shape exactly.
+
+    So singletons now rank by `_upright_ratios` — the same quantity `_upright`
+    filters clusters with, computed once and shared. Still an argmax, still no
+    threshold. Margins over the runner-up: 12.6x on the squat, 4.4x on the
+    bench, and **1.22x on the deadlift**, which is thin and is the value to
+    watch. Displacement remains the fallback when no `position` is supplied.
 
     **`phase` cannot help.** The C3 column marks the closing hold, not the
     re-rack, and the lifter re-racks before pressing "Finish Set" — so on both
@@ -731,8 +1047,13 @@ def _similar_cluster(v, t, lobes, similarity, peak_ratio) -> list:
         n = int(keep.sum())
         # Clusters are only ever compared at equal `n`, so the second key
         # never mixes units across a comparison.
-        score = (n, float(np.median(times[keep])) if n > 1
-                 else float(areas[keep].sum()))
+        if n > 1:
+            second = float(np.median(times[keep]))
+        elif upright is not None:
+            second = upright.get(lobes[int(np.argmax(keep))][1], 0.0)
+        else:
+            second = float(areas[keep].sum())
+        score = (n, second)
         if best_score is None or score > best_score:
             best, best_score = keep, score
 

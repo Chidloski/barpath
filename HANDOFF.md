@@ -37,6 +37,30 @@ Suite is **525 passed, 1 skipped, 8 xfailed, 7 xpassed**, ~23 minutes.
 The 7 xpassed are expected and are *good news*: all seven template-refereed
 benches now beat the flat-line null, where four used to.
 
+## Newest first: the corpus is fully refereed as of 2026-08-15
+
+**16 of 16 captures now score.** G2 lifted `vs_truth`'s squat refusal and G3
+added `src/shortset.py`, a variant clock for sets too short for the periodic
+machinery — the three SINGLES (`bench_117.5x1`, `deadlift_200x1`,
+`squat_170x1`) had never been refereed by anything. They come in at h 0.96 /
+2.66 / 2.05 cm, all three beating the flat-line null.
+
+Three things to carry forward rather than rediscover:
+
+- **The singles never had a segmentation problem** — only a sync one. The
+  proposed "maximum displacement between IMU dwells" rule was built and lost to
+  the existing segmenter, because integration drift produces more apparent
+  displacement than a rep does. Don't re-propose it without removing the drift.
+- **`deadlift_170x4_3` is scored through a clock fitting 22.8% drift** (slope
+  0.7715, 216 ms residual, against ~0.4% and ~9 ms everywhere else). Nothing
+  gates on `drift_pct` or `rms_ms`. Unfixed, pinned by a test.
+- **`capture.sync` and `metrics.bench_sync` return `fit["offset"]` with
+  opposite signs.** Safe until someone compares them; it caught G3 mid-measure.
+
+Still open and worth a capture: **a real deadlift double.** A deadlift set has
+no gap between reps, so no truncation of a longer set can imitate one, and
+deadlift doubles are the one short-set case still unvalidated end to end.
+
 ## The one thing that changes how you read every number here
 
 **Step 6 is ON by default.** `pipeline.run(wrist_offset=)` defaults to `"auto"`
@@ -59,8 +83,13 @@ the **negative** of that. B2 still stands: `d` cannot be *fitted* from video.
 - **C30's "the horizontal channel is EMPTY" is overturned.** It was an artefact
   of step 6 being off. Deadlift accel correlation 0.12–0.23 → **0.43–0.64**.
 - **C31a fixed the paused-squat short-count.** `_longest_cadence` now admits on
-  LOCAL drift, not global spread. Counting is **30/30 captures, 124/124 reps**.
+  LOCAL drift, not global spread. Counting was **30/30 captures, 124/124 reps**.
   No constant could have counted both binding captures — they were disjoint.
+  *Superseded twice since: F1 deleted v1 and found the 2026-08-08 captures had
+  never been under test (two miscounted), and G1 fixed both on 2026-08-15.
+  Counting is **16/16 captures, 64/64 reps** on the live corpus. Note C31a's
+  disjointness no longer reproduces — the capture that made it disjoint went
+  with v1. See TASKS.md G1.*
 - **C28's ladder survives `d` being known.** Pinning `lever` improves
   leave-one-out on 4 of 5 rungs, but the family is still dead: best LOO 4.25 cm
   against a null of ~1.6.
@@ -146,4 +175,6 @@ This is the most interesting open thread in the session.
 - 8 GB of RAM: do not run many concurrent full-res clip decodes. Disk got tight
   during this session.
 - Drivers added: `--pausedsquat` (47), `--dpaths` (48), `--pauseattitude` (49),
-  `--pipelinenow` (50), `--jumpd` (51). Next free analysis number is **52**.
+  `--pipelinenow` (50), `--jumpd` (51). *Since: `--dlparabola` (52), and G1's
+  `--segfixes` (53) and `--vstracked` (54). Next free analysis number is
+  **55**.*

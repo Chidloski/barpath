@@ -1875,6 +1875,12 @@ squats. Replacing the refusal needs a validated squat sync, which nobody has
 built, AND half the footage fixed. Until then the squat panels show a
 reconstruction nothing has checked, and should be read that way.
 
+*Both conditions were met and the refusal is gone (G2, 2026-08-15). F1's
+`src/vtrack/` fixed the footage — all four squats track — and `bench_sync`
+turned out to work better on a paused squat than on any bench, corroborated by
+`metrics.pause_landmark`. Squat panels drawn after that date carry video. See
+`analysis/55`.*
+
 ## 51 — do the impact correction and the wrist lever COMPOSE?
 
 `python run.py --jumpd`. Branch `c29-jump-state`. **No.** They correct the same
@@ -1928,4 +1934,191 @@ marker-refereed deadlifts.
 
 ---
 
-*Numbering: 47 through 51 are taken. The next free number is 52.*
+## G1 — two segmentation defects, and the whole corpus against the cached tracks (2026-08-15)
+
+### `53_segmenter_fixes.png`
+
+The two defects the 2026-08-08 captures exposed, evidence on the left and the
+rule on the right. Both were invisible to a rep count and both were settled by
+the cached video track — which is the reusable lesson, not the fixes.
+
+**A/B — `deadlift_150x4_1` segmented five windows for four reps.**
+`impact_anchors` read acceleration MAGNITUDE alone, and the extra anchor at
+7.03 s is a 250 ms RAMP: |a| climbing 0.7 → 1.6 → 3.6 → 6.9 g while |ω| climbs
+to 27 rad/s and then snaps to a stop. The watch sits ~9.5 cm from the wrist
+axis, so `α·r` = 6.3 g against the 6.9 g measured. It is the lifter setting
+their grip, and the video has the bar flat on the floor at 1.4–1.5 cm from 0 to
+11 s. No threshold separates it: the counterfeit peaks at **7.01 g** and the
+weakest real landing in the corpus is **6.69 g**. Panel B is the discriminator
+that does — the median wrist rate in the second BEFORE the spike, measured on
+every candidate above 4 g in all sixteen captures:
+
+    28 real floor landings, 6 captures        0.39 - 0.98 rad/s
+    5 genuine rack collisions (bench, squat)  0.33 - 0.56       kept, correctly
+    4 setup wrist swings, 4 captures          1.65 - 2.83       rejected
+
+The rack collisions are the control: the rule rejects a ROTATION, not a quiet
+impact. Counts are correct for any gate in [0.98, 2.83] and 1.3 ships.
+**Three other discriminators were measured and are worse**, recorded so they
+are not re-tried: peak-to-precursor ratio separates by only 1.41×; the
+high-frequency energy fraction looks good on deadlift and INVERTS on the
+control, flagging the squat rack collision at 0.030 while passing all four
+swings; and the rotational term evaluated AT the peak does not separate at all
+(0.45–1.64 real against 0.53), because the impact itself spins the wrist.
+
+**C/D — `bench_117.5x1`, the corpus's first bench single, segmented two.** The
+real press at 21.9 s and a setup arm movement at 10.6 s correlate **0.80** in
+fixed-duration shape and carry 0.290 against 0.304 m, so shape, size and
+cadence all tie; the video has the bar in the rack until 16 s. Panel D is the
+rule: a loaded bench or squat rep is a closed kinematic chain and is CONSTRAINED
+to vertical, where setting up is an arm reaching freely.
+
+    36 real bench and squat reps, 9 captures   3.64 - 15.08
+    setup movement, bench_117.5x1 at 10.6 s    1.00
+
+Correct for any gate in [1.02, 3.62] — a 255% plateau — and 2.0 ships. The amber
+point is `deadlift_200x1`'s real pull at 2.59: a pull sweeps the bar to the
+shins and also carries C12's invented lockout excursion, so a deadlift has the
+corpus's thinnest margin — 2.59 against a 2.13 runner-up, where bench and squat
+run 4.4× and 12.6× clear. The rule abstains when no member of a cluster passes;
+nothing exercises that today.
+
+**Verticality does a second job this figure does not draw, and it caught a third
+defect.** It also ranks a DEGENERATE cluster, replacing a displacement rule that
+had put `deadlift_200x1`'s only window on the DROP — 18.97–19.92 s at a
+plausible 43.8 cm, where the video has the pull at 15.7–17.5 s. On the three
+singles the corpus holds, displacement is right once and verticality three
+times. With `_full_cycles`'s `sets_down` also fixed (it was hardcoded `False`,
+so a lift resting on the floor got the bench convention), that window is now
+15.51–19.43 s at 55.0 cm. See TASKS.md G1 defect 3.
+
+**The tempting fix is a trap and it is drawn here so nobody re-tries it.**
+Raising `similarity` from 0.7 to 0.83 does break the false pair — and then the
+singleton fallback picks the 5.4 s unrack at 0.455 m. Right count, wrong window,
+`squat_160x1`'s failure again, and invisible to every count gate.
+
+### `54_pipeline_vs_tracked.png`
+
+All sixteen `data_v2` captures against `data_v2/tracked/`, step 6 ON, drawn as
+step 9 would: reps overlaid, start-aligned, fore-aft stretched 4×. Counting is
+**16/16 captures, 64/64 reps**. The reconstruction is a different question and
+this figure is about that.
+
+**Six of sixteen could not be scored at all**, and they were not six arbitrary
+captures:
+
+    squat x4              `vs_truth` refuses squat outright
+    bench_117.5x1         `bench_sync` needs a rep cadence; a single has none
+    deadlift_200x1        the clock fit needs >=2 landings for offset + slope
+
+*G2 removed the squat refusal on 2026-08-15 and the four squats now score, so
+this figure was re-rendered and reads THREE unscored — and they are exactly the
+three singles. See `analysis/55`.*
+
+So **two of the three captures G1 repaired are singles that cannot be checked
+against the video at all** — the segmenter is weakest exactly where the referee
+cannot reach. Of the ten that scored when this was written:
+
+    bench_92.5x6_1        h 1.23 cm   v 2.21   beats null 3.05
+    bench_92.5x6_2        h 1.61      v 1.67   beats null 2.55
+    bench_spoto_95x5_2    h 2.41      v 2.13   beats null 1.52
+    bench_spoto_95x5_1    h 3.64      v 2.11   LOSES 0.89
+    deadlift_150x4_1      h 2.66      v 4.14   LOSES 0.81
+    deadlift_160x4_2      h 3.98      v 4.90   LOSES 0.38
+    deadlift_160x6_2      h 4.40      v 3.69   LOSES 0.35
+    deadlift_170x4_3      h 5.54      v 12.14  LOSES 0.25
+    deadlift_160x6_1      h 7.52      v 3.54   LOSES 0.20
+    deadlift_185x3        h 10.72     v 1.69   LOSES 0.14
+
+**All six deadlifts lose to drawing no fore-aft motion whatsoever**, and the
+picture says why: the blue reconstructions sweep 20–35 cm of fore-aft where the
+grey video paths stay inside ±5 cm. Three of four benches beat the flat line and
+the best capture in the corpus is still 1.23 cm against a 1 cm spec.
+
+---
+
+## G2 — the squat refusal lifted, and the sync corroborated (2026-08-15)
+
+### `55_squat_sync.png`
+
+Squat is refereed for the first time. The refusal in `metrics.vs_truth` was
+never really about squat being unmeasurable — it described the v1 plate template
+on footage F1 deleted — so what actually had to be established was that a squat
+video can be put on the IMU clock at all. The four panels are that argument.
+
+**A — the correlation curve, bench against paused squat.** Bench's has rivals a
+whole rep away above `RIVAL_FRAC`; the squat's does not. That is `bench_sync`'s
+documented ambiguity, and the pause is what breaks it. Read the sidelobe
+heights rather than the rival counts: bench 0.720–0.794, squat 0.578–0.693, so
+`squat_pause_145x4_1` is **one percent** from having a rival. The rival test
+would not have survived a noisier capture.
+
+**B — the corroboration, which is what the claim actually rests on.** The bottom
+of each rep is named twice by instruments that cannot see each other: the raw
+IMU through `segment.dwell_instants`, and the tracked video height. Seven
+captures, agreement 0.003–0.083 of a rep against a 0.25 gate. This is also the
+first on-lift evidence any BENCH sync has had — its validation was transferred
+from deadlift until now.
+
+**C — one capture's alignment, drawn.** A scatter of offsets is still a number,
+and this project's recurring failure is a number that looks fine. Every video
+bottom sits inside exactly one IMU rep window, at phase 0.41–0.52.
+
+**D — the guard, tested by breaking it.** A whole-rep sync error injected in
+both directions on every capture with a cadence: 14 injected, 14 refused, 0
+missed, with the real captures clustered two orders of magnitude below the gate.
+
+Scored: **h 1.88 / 2.97 / 2.65 cm, beats_null 1.71 / 1.24 / 1.50** on the three
+paused squats — all three beating the flat line, which no deadlift does, and
+second only to `bench_92.5x6_1/2` on horizontal. `squat_170x1` is still refused,
+because it is a single and has no cadence; the three unscored captures in the
+corpus are now exactly the three singles. *(All three scored the same day by
+G3 — see 56.)*
+
+## 56 — singles and doubles: the sync, not the segmenter, refused them (G3)
+
+`56_singles_doubles.png`, `run.py --shortsets`. The corpus reaches **16 of 16
+scored**: `bench_117.5x1`, `deadlift_200x1` and `squat_170x1` had never been
+refereed, and they are one single per lift.
+
+**A — why the sweep must be bounded by overlap, not by lag.** `bench_sync`
+widens until its peak is interior, which is right for a long set and fatal for a
+single. On `deadlift_200x1` the shipping 11.75 s window picks a lag **10.5 s
+wrong** and a 20 s window picks one **18.8 s wrong** — and both score HIGHER
+than the true peak (0.490 and 0.688 against 0.335). A single is a flat record
+with one event in it, so sliding the records apart correlates flat against flat
+on ever less of it. The shaded band is where the two records still share 80% of
+the shorter one; the dashed line is what that capture's own floor impact says.
+
+**B — accuracy against answers the module did not supply.** Twelve singles and
+nine doubles cut out of the multi-rep captures, each scored against the offset
+its own full capture fits: **median 7.5 ms / worst 103.9 ms** for singles,
+**5.0 / 15.0 ms** for doubles. The shaded band is the multi-rep deadlift sync's
+own 8.4–9.7 ms residual — the best-validated clock in the project.
+
+**C — what it buys.** The three singles drawn against video that could not
+previously be put on their clock at all. h **0.96 / 2.66 / 2.05 cm**, and all
+three beat the flat-line null (**3.31 / 1.08 / 2.01**). `deadlift_200x1` is the
+first deadlift in the project to beat the null — but its `beats_null` is a
+median over ONE rep, so it is far weaker evidence than the six-rep figures it
+sits beside.
+
+**D — the owner's proposed rule, measured and NOT shipped.** "Maximum
+displacement between IMU dwells" loses to the existing segmenter on every
+reading tried (median IoU 0.00 and 0.29 against 0.70). The cause is one number:
+integration drift produces more apparent displacement than a rep does, so the
+criterion prefers the longest admissible window — the window it picks on
+`bench_92.5x6_1` claims 86.8 cm on a 27 cm bench press. Recorded rather than
+deleted: on a drift-free position estimate it would very likely work.
+
+*Not shown, and it is the honest gap: **deadlift doubles are not validated.** A
+deadlift set has no gap between reps (measured 0.00 s on all six), so truncating
+to two reps ends the record exactly at the second landing and cannot imitate a
+real double. Bench and squat doubles are validated, 7 of 7.*
+
+---
+
+*Numbering: 47 through 56 are taken. The next free number is 57. **52
+(`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
+file** — it predates G1 and is not G1's to caption, but it is doc debt and
+somebody should.*
