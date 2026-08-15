@@ -75,11 +75,15 @@ def test_resolve_path_prefers_the_cache_and_agrees_with_a_fresh_track():
     1-2 minutes of ffmpeg per clip. Tolerance is 1e-6 cm, i.e. the CSV's
     12-significant-figure write, NOT a physically meaningful tolerance.
     """
-    from src import metrics, tracked
+    from src import metrics
 
-    clip = next((p for p in CACHED if "bench_95x2" in p.stem), None)
+    # `bench_95x2` until 2026-08-16 — a v1 capture F1 deleted, so this test
+    # SILENTLY SKIPPED rather than failing and had stopped checking anything.
+    # `deadlift_200x1` is the shortest clip in the live corpus at 20.3 s, which
+    # matters because the whole cost of this test is the fresh track.
+    clip = next((p for p in CACHED if "deadlift_200x1" in p.stem), None)
     if clip is None:
-        pytest.skip("bench_95x2 not present")
+        pytest.skip("deadlift_200x1 not present")
 
     cached = metrics.resolve_path(clip)
     fresh = metrics.resolve_path(clip, use_cache=False)
@@ -92,34 +96,102 @@ def test_resolve_path_prefers_the_cache_and_agrees_with_a_fresh_track():
             f"{np.nanmax(np.abs(a[ok] - b[ok])):.2e} m")
 
 
-def test_the_implausible_flag_fires_on_the_clips_known_to_be_broken():
+def _fake_cached_clip(tmp_path, stem, travel_m, n=900):
+    """A cached track with a chosen vertical travel, in a throwaway dataset.
+
+    Returns the .mov path `tracked.review` should be pointed at. The clip itself
+    never exists — `review` reads the CACHE, and `csv_path` derives that from the
+    video path, so a directory layout is all this needs. The stem carries the
+    lift and the rep count because `capture.lift_of` and `pipeline.expected_reps`
+    both read the filename.
+    """
+    from src import tracked
+
+    video = tmp_path / "data_v2" / "video" / f"{stem}.mov"
+    video.parent.mkdir(parents=True, exist_ok=True)
+    t = np.linspace(0.0, 30.0, n)
+    # One smooth descent and return, which is what `video_reps` looks for.
+    height = travel_m * 0.5 * (1.0 - np.cos(2.0 * np.pi * (t - t[0]) / (t[-1] - t[0])))
+    tracked.write({"t": t, "height": height, "x": np.zeros(n)}, video)
+    return video
+
+
+def test_the_implausible_flag_fires_on_a_track_that_is_too_short(tmp_path):
     """The gate that six unusable squat clips got past for days.
 
-    `squat_170x1` reports 14.0 cm of travel and `squat_pause_140x4_3` 24.7 cm,
-    against squats of 65-70 cm. Coverage reads 96.7-97.8% and the whole-clip
+    `squat_170x1` reported 14.0 cm of travel and `squat_pause_140x4_3` 24.7 cm,
+    against squats of 65-70 cm. Coverage read 96.7-97.8% and the whole-clip
     residual 1.11-1.12 px on both, because the tracker locked onto gym furniture
     and two static points pin a similarity fit (D2, 2026-08-07). Every summary
     statistic said healthy. Travel against the lift's own range of motion is the
     statistic that does not.
+
+    **This used to name those clips and it no longer can, which is the point.**
+    Two of the four it listed were v1 captures F1 deleted on 2026-08-14, and the
+    other two NOW TRACK CORRECTLY under the rebuilt `src/vtrack/` — `squat_170x1`
+    at 63.7 cm and `squat_pause_140x4_3` at 65.8 cm. Measured 2026-08-16, all
+    sixteen cached clips are plausible, so there is no mis-tracked capture left
+    in the corpus for a positive test to point at, and editing the list could not
+    have fixed that. See `test_every_cached_clip_is_plausible_now` below, which
+    is the finding stated as a gate.
+
+    So the flag is driven from a CONSTRUCTED track instead. That is strictly
+    better than what it replaced: the flag's behaviour is what is under test, not
+    the corpus, and this keeps a positive gate on it that cannot rot when the
+    tracking improves again. 14.0 cm is D2's real measurement, kept so the test
+    still records the defect it came from.
     """
     from src import tracked
 
-    known_bad = ["squat_170x1_20260806", "squat_pause_140x4_3_20260806",
-                 "squat_140x4_1_20260730", "squat_140x4_2_20260730"]
-    seen = 0
-    for stem in known_bad:
-        clip = next((p for p in CACHED if p.stem == stem), None)
-        if clip is None:
-            continue
-        seen += 1
-        assert tracked.review(clip)["implausible"], (
-            f"{stem} is known to be mis-tracked and the flag stopped firing")
-    if not seen:
-        pytest.skip("none of the known-bad clips are present")
+    clip = _fake_cached_clip(tmp_path, "squat_140x1_20260101", 0.140)
+    r = tracked.review(clip)
+    assert r["travel_cm"] == pytest.approx(14.0, abs=0.1)
+    assert r["implausible"], (
+        f"a squat tracking {r['travel_cm']:.1f} cm must be flagged; the floor "
+        f"is 0.9 x the bottom of capture.VERTICAL_ROM_M['squat']")
+
+
+def test_the_implausible_flag_is_not_merely_always_on(tmp_path):
+    """The same constructed route, at a plausible travel. Must NOT fire.
+
+    Paired with the test above deliberately: a flag exercised only on bad input
+    cannot be shown to discriminate, and `_fake_cached_clip` makes it cheap to
+    show both halves on the same synthetic path.
+    """
+    from src import tracked
+
+    clip = _fake_cached_clip(tmp_path, "squat_140x1_20260101", 0.650)
+    assert not tracked.review(clip)["implausible"]
+
+
+def test_every_cached_clip_is_plausible_now():
+    """No capture in the corpus is mis-tracked. Recorded as a gate, not prose.
+
+    This is the state that made the old registry unfixable, so it is asserted
+    rather than left in a docstring — if a future capture or tracker change
+    breaks one, this fails and names it, which is what the registry was for.
+
+    Measured 2026-08-16: travel 26.1-65.8 cm against floors of 18.0-40.5,
+    coverage 97.4-100%, every rep count matching its filename.
+    """
+    from src import tracked
+
+    if not CACHED:
+        pytest.skip("no cached tracks present")
+    bad = []
+    for clip in CACHED:
+        r = tracked.review(clip)
+        if r["implausible"]:
+            bad.append(f"{clip.stem} travel {r['travel_cm']:.1f} cm")
+    assert not bad, "mis-tracked clips are back: " + "; ".join(bad)
 
 
 @pytest.mark.parametrize(
-    "stem", ["squat_pause_145x4_1_20260806", "bench_95x2_20260803",
+    # `bench_95x2_20260803` until 2026-08-16 — a v1 capture F1 deleted, so that
+    # parametrisation skipped silently and the bench arm of this gate had not
+    # run since. Replaced with a live bench rather than dropped: the three
+    # entries are one per lift on purpose.
+    "stem", ["squat_pause_145x4_1_20260806", "bench_92.5x6_1_20260808",
              "deadlift_160x6_1_20260804"])
 def test_the_implausible_flag_does_NOT_fire_on_good_clips(stem):
     """The other half of the gate. A flag that fires on everything says nothing."""

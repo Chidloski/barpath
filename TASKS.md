@@ -14,6 +14,72 @@ Related, and deliberately not duplicated here:
 ---
 
 
+## G4 — the two stale test registries F1's deletion left behind (2026-08-16)
+
+Owner's instruction after G3. **Two of the six standing failures were not
+defects — they were tests asserting a world that no longer exists.** Both were
+left by F1's 2026-08-14 deletion of the v1 corpus and the plate tracker, and
+neither had been looked at since. The suite goes 6 failed to **4**, and the four
+that remain are real.
+
+### The implausible-flag registry could not be edited into correctness
+
+`test_the_implausible_flag_fires_on_the_clips_known_to_be_broken` named four
+mis-tracked squat clips. Two (`squat_140x4_1_20260730`, `squat_140x4_2_20260730`)
+are v1 captures F1 deleted. **The other two now track correctly** under the
+rebuilt `src/vtrack/` — `squat_170x1` at 63.7 cm and `squat_pause_140x4_3` at
+65.8 cm, against the 14.0 and 24.7 cm that D2 measured on 2026-08-07.
+
+Measured across the whole corpus, there is nothing left for it to point at:
+
+    all 16 cached clips    travel 26.1-65.8 cm   floors 18.0-40.5
+                           coverage 97.4-100%    every rep count matches
+
+So the fix is not a shorter list. The flag is now driven from a **constructed**
+track — `_fake_cached_clip` writes a cache with a chosen travel — which is
+strictly better than what it replaced: the flag's behaviour is under test rather
+than the corpus, both halves (fires / does not fire) run on the same synthetic
+path, and it cannot rot the next time the tracking improves. 14.0 cm is kept as
+the bad case because it is D2's real measurement, so the test still records the
+defect it came from.
+
+The corpus-wide finding is asserted rather than left in prose, as
+`test_every_cached_clip_is_plausible_now` — if a future capture or tracker
+change breaks one, that fails and names it, which is what the registry was for.
+
+### Two more silent skips in the same file, from the same cause
+
+`bench_95x2` is also a deleted v1 capture, and it was the clip chosen by
+`test_resolve_path_prefers_the_cache_and_agrees_with_a_fresh_track` and by one
+parametrisation of `test_the_implausible_flag_does_NOT_fire_on_good_clips`.
+Both **skipped silently** rather than failing, so neither had run since
+2026-08-14 — the cache-equivalence check in particular had stopped checking
+anything at all. Repointed at `deadlift_200x1` (the shortest live clip, 20.3 s,
+and this test's whole cost is the fresh track) and `bench_92.5x6_1`. The
+equivalence check now runs and passes: the cache matches a fresh vtrack track to
+1e-8 m. `tests/test_tracked.py` is 18 passed, **0 skipped**.
+
+### And one assertion that asserted deleted behaviour
+
+`test_data_v2_infers_vtrack` asserted
+`infer_tracker("data/video/squat_130x5.mov") == "plate"`. F1 deleted both that
+clip and that tracker, and `infer_tracker` now raises — correctly, since
+inferring a tracker that is gone would hand footage to something that cannot
+read it. The test says that instead, and additionally pins `"plate" not in
+TRACKERS` so the removal itself is gated.
+
+### Scope
+
+Tests only. No `src/` module, no threshold and no measurement moved; the one
+non-test edit is an unused import removed from a line already being changed.
+**The four remaining failures are real defects and were deliberately left**:
+3x `test_oracle` parabola (one of them G1 correctly re-windowing
+`deadlift_200x1`) and `deadlift_170x4_3`'s 67.5 cm ROM, the only entry in
+`KNOWN_ROM_FAILURES`.
+
+---
+
+
 ## G3 — a pipeline variant for singles and doubles (2026-08-15)
 
 Owner's task, following G2. **The corpus is now 16 of 16 scored.** The three
@@ -143,7 +209,9 @@ None, and `shortset.sync` returns None for anything over two reps.
 Owner's task, following G1's investigation.
 
 **Suite, run file by file:** 330 passed, 169 skipped, 1 xfailed, **6 failed** —
-the same six as after G1, so G2 adds no new failures. Five pre-date this
+the same six as after G1, so G2 adds no new failures. *(Two of the six were
+stale TESTS rather than defects and were fixed by G4 on 2026-08-16; the count
+is 4 now. See the G4 entry above.)* Five pre-date this
 session entirely and the sixth is `test_oracle[deadlift_200x1]`, which G1 caused
 by making that capture's window right.
 
@@ -275,6 +343,8 @@ was found only by checking the second fix's own output against the video.
 correct produces **bit-identical** windows — only the three broken ones move.
 
 **Suite, run file by file:** 324 passed, 173 skipped, 1 xfailed, **6 failed**.
+*(Two of these six were stale tests, not defects — G4 fixed them 2026-08-16 and
+the standing count is 4.)*
 Five of the six pre-date this session (`test_segmentation` deadlift_170x4_3 ROM,
 two `test_oracle` parabolas, `test_tracked`'s stale implausible flag,
 `test_vtrack`'s stale `data/video/` assertion) and the sixth is

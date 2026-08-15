@@ -24,12 +24,23 @@ CLIPS = sorted(VIDEO.glob("*.mov")) if VIDEO.is_dir() else []
 
 
 def test_data_v2_infers_vtrack():
-    """`data_v2/` is refereed by vtrack; everything else by the template."""
+    """`data_v2/` is refereed by vtrack; anything else has no referee at all.
+
+    The second assertion read `infer_tracker("data/video/squat_130x5.mov") ==
+    "plate"` until 2026-08-16. F1 deleted the plate template tracker AND the
+    `data/video/` corpus it scored on 2026-08-14, so both that clip and that
+    answer stopped existing, and this test had been failing ever since. It now
+    asserts what the function actually does, which is REFUSE: inferring a
+    tracker that is gone would hand footage to something that cannot read it,
+    and the error names the way out instead.
+    """
     assert metrics.infer_tracker("data_v2/video/deadlift_160x6_1.mov") == "vtrack"
-    assert metrics.infer_tracker("data/video/squat_130x5.mov") == "plate"
+    with pytest.raises(ValueError, match="only data_v2/ footage has a referee"):
+        metrics.infer_tracker("data/video/squat_130x5.mov")
     assert "vtrack" in metrics.TRACKERS
     # markers.py is NOT deleted and stays reachable by name.
     assert "markers" in metrics.TRACKERS
+    assert "plate" not in metrics.TRACKERS
 
 
 def test_rom_prior_is_tighter_than_the_capture_gate():

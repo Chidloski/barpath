@@ -61,6 +61,16 @@ Still open and worth a capture: **a real deadlift double.** A deadlift set has
 no gap between reps, so no truncation of a longer set can imitate one, and
 deadlift doubles are the one short-set case still unvalidated end to end.
 
+**The standing failure count is 4, not 6 (G4, 2026-08-16).** Two of the six were
+stale TESTS rather than defects, both left by F1's deletion of the v1 corpus: a
+registry of "known mis-tracked" clips of which two were deleted and the other two
+now track fine, and an assertion that `infer_tracker` returns `"plate"` for a
+tracker that no longer exists. Both fixed. Watch for the same shape elsewhere —
+two further tests in the same file had been **skipping silently** on a deleted
+capture since 2026-08-14, so they were not failing and nobody noticed; a skip is
+not a pass. The four that remain are real defects, and `deadlift_170x4_3` is in
+two of them.
+
 ## The one thing that changes how you read every number here
 
 **Step 6 is ON by default.** `pipeline.run(wrist_offset=)` defaults to `"auto"`
