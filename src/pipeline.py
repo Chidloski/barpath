@@ -24,7 +24,7 @@ is worth more than an exception.
 statement about coverage and about nothing else. `blocked` now empties on every
 capture in `data/raw/` that segments at all, and the pipeline is still 5-15x
 outside its horizontal spec (P2) with a display axis whose sign it cannot
-resolve (B4). A completing pipeline is not a working one; read `confident` and
+resolve (B4, closed 2026-08-16). A completing pipeline is not a working one; read `confident` and
 the vs-video numbers, not the absence of blocked entries.
 
 The result dict is deliberately fat. Every intermediate stays in it, because
@@ -124,6 +124,10 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
       best-possible axis of 2.24, so there was nothing to win. `deadlift_170x4_3`
       5.54 -> 7.76 is the capture whose video clock fits 22.8% drift at a 216 ms
       residual and whose score is untrustworthy either way.
+    * **the axis is DIRECTED as of 2026-08-16 (B4).** `project.FORE_AFT_SENSE`
+      turns the line into a direction from the wrist, the grip and the attitude,
+      checked against the video through `tracked.CAMERA_SIDE`. `vs_truth`
+      reports `sign_agrees_with_geometry`; it holds on 12 of 13.
     * **nothing crosses `beats_null` on deadlift yet, 0 of 6.** `160x6_2` at 1.72
       against a 1.54 null is close where it was 4.40, but no deadlift is yet
       demonstrably better than drawing a straight vertical line.
@@ -377,7 +381,8 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     # asks whether the axis is identifiable, not whether the path along it is
     # right — see project.confidence, which is explicit that no function of a
     # ratio and an excursion can ask the second question. The sign of the axis
-    # remains unresolved (B4), so a confident set can still be drawn mirrored.
+    # is resolved as of 2026-08-16 (B4) from the wrist, the grip and the
+    # attitude, and checked against the video on 8 of 9 checkable captures.
     if reps:
         axis, ratio, excursion = project.principal_axis(reps)
         # H9. The variance axis is not the fore-aft axis: H2 measured it sitting
@@ -392,8 +397,20 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
         # leaving them alone. See `confidence`, which is explicit that the ratio
         # says nothing about accuracy.
         if anatomical_axis:
+            # The lift is passed so the axis comes back DIRECTED — B4, closed
+            # 2026-08-16. Without it the axis is a line and the rendered path
+            # can silently mirror, which `plot.py` correctly calls worse than no
+            # path at all. A capture whose lift cannot be named still gets the
+            # undirected axis rather than a guessed direction.
             try:
-                axis = project.anatomical_axis(quat, bounds)
+                lift_name = capture.lift_of(path)
+            except ValueError:
+                lift_name = None
+                result["notes"].append(
+                    "step 8 axis is UNDIRECTED: cannot tell which lift this is, "
+                    "so the fore-aft sign is unresolved and the path may mirror")
+            try:
+                axis = project.anatomical_axis(quat, bounds, lift=lift_name)
             except ValueError as e:
                 result["notes"].append(f"step 8 fell back to max variance: {e}")
         else:
@@ -473,7 +490,8 @@ def summary(result: dict) -> str:
             lines.append("  confident  axis is identifiable; the 4x stretch is "
                          "allowed. This says NOTHING about accuracy — see "
                          "project.confidence — and the axis SIGN is unresolved "
-                         "(B4), so the path may be drawn mirrored")
+                         "(B4) — RESOLVED 2026-08-16 unless a note above says "
+                         "the axis is undirected")
         else:
             for why in result["confidence_reasons"]:
                 lines.append(f"  LOW CONFIDENCE  {why}")

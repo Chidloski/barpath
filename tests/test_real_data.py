@@ -1096,3 +1096,53 @@ def test_vs_truth_scores_the_axis_the_pipeline_actually_DRAWS():
     assert abs(rotated - shipped) > 0.2, (
         f"turning the axis 90 degrees moved the score by "
         f"{abs(rotated - shipped):.3f} cm — vs_truth is not reading result['axis']")
+
+
+@needs_data
+def test_the_fore_aft_SIGN_agrees_with_the_video_B4_closed():
+    """B4's verdict, and the only INDEPENDENT check on it. 2026-08-16.
+
+    `project.FORE_AFT_SENSE` derives the fore-aft DIRECTION from the wrist, the
+    grip and the attitude. The video supplies a reference the reconstruction
+    never touches: `vtrack` measures fore-aft as IMAGE-RIGHT, and for an upright
+    lifter image-right is the posterior when the camera stands on the lifter's
+    left and the anterior when it stands on their right.
+
+    So this is a check rather than a fit — nothing in the derivation looked at
+    `camera_side`, and nothing in the sign was chosen to make this pass.
+
+    **Measured 2026-08-16: 8 of 9 checkable captures.** The one miss is
+    `deadlift_170x4_3`, whose along-axis correlation with the video is 0.16 —
+    there is no direction for the video to prefer — and whose clock fits 22.8%
+    drift at a 216 ms residual. Bench returns None and is excluded by design: a
+    supine lifter's horizontal axis is head-to-toe and the upright derivation
+    does not reach it, so `FORE_AFT_SENSE["bench"]` is a convention and checking
+    it here would be circular.
+
+    If this drops, the pipeline is drawing somebody's bar path MIRRORED. Check
+    the grip before the code — a double-overhand deadlift supinates neither hand
+    and flips the deadlift entry.
+    """
+    from src import metrics, pipeline
+
+    agree, checked, misses = 0, 0, []
+    for path in CAPTURES:
+        video = VIDEO / f"{path.stem.rsplit('_', 1)[0]}.mov"
+        if not video.exists():
+            continue
+        try:
+            m = metrics.vs_truth(pipeline.run(path), video)
+        except (ValueError, FileNotFoundError):
+            continue
+        verdict = m.get("sign_agrees_with_geometry")
+        if verdict is None:
+            continue
+        checked += 1
+        agree += bool(verdict)
+        if not verdict:
+            misses.append(path.stem.split("_2026")[0])
+
+    assert checked >= 8, f"only {checked} captures could be checked"
+    assert agree >= checked - 1, (
+        f"the geometric fore-aft sign disagrees with the video on {misses} "
+        f"({agree}/{checked}); those captures would render MIRRORED")

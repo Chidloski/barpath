@@ -261,3 +261,62 @@ def test_the_shipped_bar_angle_is_inside_the_basin_both_lifts_agreed_on():
     assert 20.0 <= project.BAR_ANGLE_DEG <= 26.0, (
         "BAR_ANGLE_DEG left the interval the two lifts agreed on; re-sweep it "
         "(analysis/63) rather than widening this")
+
+
+# --------------------------------------------- B4, the fore-aft SIGN (2026-08-16) --
+
+def test_the_axis_is_undirected_without_a_lift_and_directed_with_one():
+    """`lift=None` keeps the old contract; naming the lift resolves B4.
+
+    A caller who cannot name the lift must not be handed a guessed direction —
+    it would render mirrored without saying so, which `plot.py` calls worse than
+    no path at all.
+    """
+    n = 40
+    quat = _quat_from_matrix_columns([0, 0, -1], [0, 1, 0], [1, 0, 0], n)
+    undirected = project.anatomical_axis(quat, [(0, n)], angle_deg=0.0)
+    deadlift = project.anatomical_axis(quat, [(0, n)], angle_deg=0.0, lift="deadlift")
+    squat = project.anatomical_axis(quat, [(0, n)], angle_deg=0.0, lift="squat")
+
+    assert np.allclose(np.abs(deadlift), np.abs(undirected))
+    assert np.allclose(deadlift, -squat), (
+        "deadlift and squat have opposite FORE_AFT_SENSE, so the same attitude "
+        "must give opposite directions")
+    for v in (undirected, deadlift, squat):
+        assert np.isclose(np.linalg.norm(v), 1.0)
+
+
+def test_the_sign_comes_from_the_geometry_not_from_eigh():
+    """The direction must follow the watch, not LAPACK's eigenvector convention.
+
+    `numpy.linalg.eigh` fixes eigenvector signs by its own rule, and a display
+    orientation resting on that would be a silent mirror waiting to happen —
+    which is exactly what B4 was. Rotating the watch 180 degrees about the
+    forearm must REVERSE the returned direction; if it does not, the sign is
+    coming from the decomposition rather than from the wrist.
+    """
+    n = 40
+    forward = _quat_from_matrix_columns([0, 0, -1], [0, 1, 0], [1, 0, 0], n)
+    # Same forearm (body +x still world -z), watch rolled 180 about it: body +z
+    # now points along world -x instead of +x.
+    rolled = _quat_from_matrix_columns([0, 0, -1], [0, -1, 0], [-1, 0, 0], n)
+
+    a = project.anatomical_axis(forward, [(0, n)], angle_deg=0.0, lift="deadlift")
+    b = project.anatomical_axis(rolled, [(0, n)], angle_deg=0.0, lift="deadlift")
+    assert np.allclose(a, -b, atol=1e-9), (
+        f"rolling the watch 180 degrees gave {b} against {a}; the sign is not "
+        f"tracking the screen normal")
+
+
+def test_an_unnamed_lift_refuses_rather_than_assuming_a_direction():
+    """A lift with no recorded sense raises, and says what to do about it."""
+    n = 30
+    quat = _quat_from_matrix_columns([0, 0, -1], [0, 1, 0], [1, 0, 0], n)
+    with pytest.raises(ValueError, match="FORE_AFT_SENSE"):
+        project.anatomical_axis(quat, [(0, n)], angle_deg=0.0, lift="overhead_press")
+
+
+def test_fore_aft_sense_covers_every_lift_the_corpus_holds():
+    """The table and the corpus must not drift apart silently."""
+    assert set(project.FORE_AFT_SENSE) >= {"deadlift", "bench", "squat"}
+    assert all(v in (-1.0, 1.0) for v in project.FORE_AFT_SENSE.values())

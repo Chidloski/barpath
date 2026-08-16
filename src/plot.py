@@ -19,7 +19,8 @@ What "confident" means here, because it is narrower than the word
 `project.confidence` decides the flag, and it can only test whether the
 DISPLAY AXIS is identifiable. It cannot test whether the path drawn along that
 axis is right, and on real captures the path is 5-15x outside spec (P2) with
-its fore-aft sign unresolved (B4). So a stretched plot is not a certified plot;
+its fore-aft sign resolved only since 2026-08-16 (B4). So a stretched plot is
+not a certified plot;
 it is one whose axis is not obviously meaningless. Every function here that
 draws a bar path therefore says on its face what external evidence exists for
 that lift, and nothing here reads the absence of a low-confidence label as an

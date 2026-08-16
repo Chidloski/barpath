@@ -196,10 +196,58 @@ EXCURSION_MAX_M = 0.20
 # SIGN. See `anatomical_axis` and B4.
 BAR_ANGLE_DEG = 23.0
 
+# Which anatomical direction the body-frame fore-aft vector points, per lift.
+# +1 means it points ANTERIOR (the way the lifter faces); -1 means POSTERIOR.
+# This is B4 — the sign — and it is closed for the two UPRIGHT lifts and left
+# as a convention for bench. 2026-08-16.
+#
+# THE DERIVATION, which is what makes this geometry rather than a fitted sign.
+#
+# 1. `vtrack.track` sets `fore_aft_m = (cx - median(cx)) * scale`, so **+video_x
+#    is IMAGE-RIGHT**.
+# 2. For an UPRIGHT lifter, image-right is `D x U` where `D` is the camera's
+#    view direction and `U` is up. A camera on the lifter's LEFT looks along
+#    `D = F x U`, giving image-right `= -F`, the POSTERIOR. A camera on the
+#    RIGHT gives `+F`, ANTERIOR. `tracked.CAMERA_SIDE` records deadlift left,
+#    bench and squat right — the owner's note, not inferred from footage.
+# 3. So the video supplies an ANATOMICAL reference the reconstruction never
+#    touches, and the screen normal can be checked against it.
+#
+# MEASURED, and consistent within every lift on all 13 scoreable captures. The
+# mean world-horizontal screen normal dotted with the direction that correlates
+# positively with +video_x:
+#
+#     deadlift  +0.06 .. +0.92    so the screen points POSTERIOR   -> -1
+#     squat     +0.45 .. +0.97    so the screen points ANTERIOR    -> +1
+#     bench     -1.00 .. -0.38    consistent, but see below        -> -1
+#
+# **Deadlift corroborates the owner independently.** They grip MIXED with the
+# left hand supinated and wear the watch on the left, so the screen faces toward
+# them — posterior. The camera-side derivation says the same thing without using
+# that fact, which is why this is a check rather than a restatement.
+#
+# **BENCH IS A CONVENTION, NOT A DERIVATION, and the difference is recorded
+# because it is the kind of thing that gets forgotten.** Step 2 assumes an
+# UPRIGHT lifter. A bench presser is SUPINE: their anterior points at the
+# ceiling, and the horizontal axis is head-to-toe, which the camera-side
+# argument says nothing about. The bench entry is the empirical relation (4 of
+# 4, consistent) with an arbitrary anatomical label. It gives a stable
+# orientation, which is what the display needs; it does not give a derived one.
+#
+# WHAT WOULD FALSIFY IT. Turning the watch to the other wrist, or a grip that
+# rotates the wrist relative to the bar — for deadlift that means dropping the
+# mixed grip, since a double-overhand pull supinates neither hand and would flip
+# this entry. The owner confirmed the mixed grip is stable across sets
+# (2026-08-16); if that changes, this table changes with it. Filming a lift from
+# the OTHER side is the cheap experiment that would test the whole chain: every
+# sign here should invert and `sign_agrees_with_geometry` should stay true.
+FORE_AFT_SENSE = {"deadlift": -1.0, "squat": +1.0, "bench": -1.0}
+
 
 def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
-                    angle_deg: float = BAR_ANGLE_DEG) -> np.ndarray:
-    """The display axis from ATTITUDE alone. Step 8, H9.
+                    angle_deg: float = BAR_ANGLE_DEG,
+                    lift: str | None = None) -> np.ndarray:
+    """The display axis from ATTITUDE alone, DIRECTED when the lift is known.
 
     Returns a unit vector in world xy, like `principal_axis`'s first element,
     and takes no position at all — which is the entire point. **The variance
@@ -219,8 +267,25 @@ def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
     is a property of how the hand holds the bar, and this function is only as
     good as that constant.
 
-    Sign is NOT resolved here and B4 still stands: this returns an axis, not a
-    direction.
+    **THE SIGN IS RESOLVED WHEN `lift` IS GIVEN. B4 is closed (2026-08-16),
+    open since 2026-07-30.** With `lift=None` this returns an undirected axis and
+    behaves as it did before, which is what a caller with an unknown lift should
+    get.
+
+    Two things had to become true, and both are measurements rather than
+    arguments. **First, the reconstruction had to agree with itself.** This
+    module refused a per-set sign because reps WITHIN a set disagreed about
+    forward — 4 of 6, 2 of 6 and 1 of 3 on the three deadlifts — so no per-set
+    answer could be right however derived. After H8/H9 that is **6 of 61 reps**,
+    five of them inside the two captures already known bad. **Second, an
+    anatomical reference had to exist that the reconstruction does not touch**,
+    and `tracked.CAMERA_SIDE` plus `vtrack`'s image-right convention is one. See
+    `FORE_AFT_SENSE` for the derivation and for what is derived versus assumed.
+
+    The sign is taken from the MEAN of the world-projected body vector, not from
+    the eigenvector: `numpy.linalg.eigh` fixes eigenvector signs by its own
+    convention, and a display orientation resting on a LAPACK detail would be a
+    silent mirror waiting to happen — which is exactly what B4 was.
 
     **But B4's stated blocker has largely dissolved, and that is worth knowing
     before anyone re-reads the refusal above.** This module declined a per-set
@@ -261,10 +326,28 @@ def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
             "has no horizontal projection to take an axis from")
     world = world[keep] / norms[keep]
 
-    # Dominant AXIS rather than mean direction: the sign is arbitrary (B4) and
-    # averaging signed vectors would let two halves of a set cancel.
+    # Dominant AXIS rather than mean direction, because averaging signed vectors
+    # would let two halves of a set cancel if the wrist turned through 180.
     eigenvalues, eigenvectors = np.linalg.eigh(world.T @ world / len(world))
-    return eigenvectors[:, -1]
+    axis = eigenvectors[:, -1]
+
+    # ...then ORIENT it from the mean, which eigh cannot supply. `world` is the
+    # fore-aft direction in watch coordinates rotated out to the world, so its
+    # mean already points somewhere anatomically meaningful; the eigenvector
+    # only supplies a well-conditioned line for it to snap to.
+    mean = world.mean(axis=0)
+    if float(mean @ axis) < 0.0:
+        axis = -axis
+
+    if lift is None:
+        return axis
+    try:
+        return FORE_AFT_SENSE[lift] * axis
+    except KeyError:
+        raise ValueError(
+            f"no fore-aft sense recorded for lift {lift!r}; add it to "
+            f"FORE_AFT_SENSE with its derivation, or pass lift=None to get an "
+            f"undirected axis") from None
 
 
 def principal_axis(paths: list[np.ndarray]):

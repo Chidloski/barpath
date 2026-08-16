@@ -1061,6 +1061,44 @@ def _close(arr: np.ndarray, t: np.ndarray,
     return correct.detrend_rep(arr, 0, len(arr), t, axes=axes)
 
 
+
+def _sign_agrees(result: dict, video, tracker, flip: bool) -> bool | None:
+    """Does the geometric fore-aft sign match the video's? B4's check.
+
+    The camera supplies an anatomical reference the reconstruction never sees.
+    `vtrack` measures fore-aft as image-right, and for an UPRIGHT lifter
+    image-right is the POSTERIOR when the camera stands on the lifter's left and
+    the ANTERIOR when it stands on their right (see `project.FORE_AFT_SENSE` for
+    the derivation). `project.anatomical_axis` returns an axis pointing anterior,
+    so:
+
+        camera right -> +axis should correlate POSITIVELY with +video_x
+        camera left  -> NEGATIVELY
+
+    `flip` is what the correlation actually wanted, so agreement is just those
+    two lining up.
+
+    Returns None rather than a guess when the camera side is unrecorded, and for
+    BENCH — a supine lifter's horizontal axis is head-to-toe and the upright
+    derivation does not reach it, so `FORE_AFT_SENSE["bench"]` is a convention
+    and checking it here would be circular.
+    """
+    try:
+        side = resolve_path(video, tracker).get("camera_side")
+    except Exception:
+        return None
+    if side not in ("left", "right"):
+        return None
+    try:
+        if capture.lift_of(result["path"]) == "bench":
+            return None
+    except (ValueError, KeyError):
+        return None
+    # flip=True means the correlation preferred -axis.
+    correlates_positively = not flip
+    return correlates_positively == (side == "right")
+
+
 def vs_truth(result: dict, video: str | Path | dict,
              tracker: str | None = None, sync=None) -> dict:
     """Reconstructed rep paths against the video, in cm. Deadlift and bench.
@@ -1347,6 +1385,17 @@ def vs_truth(result: dict, video: str | Path | dict,
                                                float("nan")),
         "axis_flipped": bool(flip),
         "reps_disagreeing_on_sign": int(disagreeing),
+        # B4's verdict, and the only INDEPENDENT check on the fore-aft sign
+        # (2026-08-16). `project.FORE_AFT_SENSE` derives the direction from the
+        # wrist, the grip and the attitude; this asks whether the video agrees,
+        # using `camera_side` to convert the camera's image-right into an
+        # anatomical direction. None when the camera side is unrecorded.
+        #
+        # It is deliberately a REPORT rather than a correction: `flip` above
+        # still chooses the sign by correlation, so `pipeline_h_rms` stays
+        # comparable with every number measured before B4 closed. When this is
+        # False the pipeline would have drawn that capture MIRRORED.
+        "sign_agrees_with_geometry": _sign_agrees(result, video, tracker, flip),
         "axis": axis,
         "per_rep": per_rep,
         "raw_h_rms": med("raw_h_rms"),

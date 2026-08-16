@@ -724,6 +724,97 @@ Squat needs its own constant and will not inherit this one: its watch +x sits at
 came out 68° from bench's.
 
 
+## B4 — CLOSED: the fore-aft sign, from the wrist, the grip and the attitude (2026-08-16)
+
+Open since 2026-07-30. The eigenvector carries an arbitrary sign, so the
+rendered path could silently MIRROR — which `plot.py` rightly calls worse than
+no path at all. Closed on the owner's instruction after they confirmed the grip
+is stable.
+
+### Why it could not be closed before, and what changed
+
+`project.py` refused a per-set sign for a measured reason, not a shrug: reps
+WITHIN one set disagreed about which way is forward — **4 of 6, 2 of 6 and 1 of
+3** on the three deadlifts — so no per-set answer could be right however it was
+derived. Two things had to become true.
+
+**The reconstruction had to agree with itself.** After H8/H9 the disagreement is
+**6 of 61 reps**, five of them inside the two captures already known bad. Four of
+six deadlifts disagree on nothing.
+
+**An anatomical reference had to exist that the reconstruction does not touch.**
+`vtrack.track` sets `fore_aft_m = (cx - median(cx)) * scale`, so **+video_x is
+IMAGE-RIGHT**. For an UPRIGHT lifter, image-right is `D x U`: a camera on the
+lifter's LEFT looks along `F x U` and sees image-right `= -F`, the POSTERIOR; a
+camera on the RIGHT sees `+F`, the ANTERIOR. `tracked.CAMERA_SIDE` records
+deadlift left, bench and squat right — the owner's note, not inferred from
+footage. **So the video can referee a direction, and nothing in the derivation
+below looked at it.**
+
+### The derivation
+
+The screen normal's world direction, dotted with the direction that correlates
+positively with +video_x — consistent within every lift, on all 13 captures:
+
+    deadlift  +0.06 .. +0.92   camera LEFT  -> the screen points POSTERIOR
+    squat     +0.45 .. +0.97   camera RIGHT -> the screen points ANTERIOR
+    bench     -1.00 .. -0.38   consistent; see the caveat
+
+**Deadlift corroborates the owner independently.** They grip MIXED with the left
+hand supinated and wear the watch on the left, so the screen faces toward them —
+posterior. The camera-side chain says the same without using that fact.
+
+`project.FORE_AFT_SENSE = {"deadlift": -1, "squat": +1, "bench": -1}`, and
+`anatomical_axis(..., lift=)` returns a DIRECTED vector. `lift=None` keeps the
+old undirected contract, because a caller who cannot name the lift must not be
+handed a guessed direction.
+
+**The sign comes from the MEAN of the world-projected body vector, not from the
+eigenvector.** `numpy.linalg.eigh` fixes eigenvector signs by its own
+convention, and an orientation resting on a LAPACK detail is a silent mirror
+waiting to happen — which is what B4 was. Gated:
+`test_the_sign_comes_from_the_geometry_not_from_eigh` rolls the watch 180
+degrees and requires the direction to reverse.
+
+### Verdict: 8 of 9 checkable captures
+
+`metrics.vs_truth` now reports `sign_agrees_with_geometry`. It is a REPORT, not
+a correction — `axis_flipped` still chooses by correlation, so every
+`pipeline_h_rms` stays comparable with numbers measured before this landed.
+
+The one miss is `deadlift_170x4_3`, whose along-axis correlation with the video
+is **0.16** — there is no direction for the video to prefer — and whose clock
+fits 22.8% drift at a 216 ms residual. Corroborating detail: `axis_flipped` is
+True on every deadlift and False on every squat, which is exactly what
+camera-left versus camera-right predicts.
+
+### What is a CONVENTION and not a derivation, recorded because it gets forgotten
+
+**Bench.** The image-right argument assumes an UPRIGHT lifter. A bench presser is
+SUPINE — their anterior points at the ceiling and the horizontal axis is
+head-to-toe, which the camera-side chain says nothing about. The bench entry is
+the empirical relation (4 of 4, consistent) with an arbitrary anatomical label:
+it gives a stable orientation, which is what a display needs, not a derived one.
+`sign_agrees_with_geometry` returns None for bench rather than checking a
+convention against itself.
+
+### What would falsify it
+
+Moving the watch to the other wrist, or a grip that rotates the wrist relative
+to the bar — for deadlift that means **dropping the mixed grip**, since a
+double-overhand pull supinates neither hand and would flip that entry. The owner
+confirmed the mixed grip is stable (2026-08-16); if it changes, the table
+changes with it.
+
+**The cheap experiment that would test the whole chain is filming one lift from
+the OTHER side.** Every sign here should invert and
+`sign_agrees_with_geometry` should stay true. Nothing in this corpus does that,
+so the camera-side step is derived and self-consistent but not yet varied.
+
+Suite: **4 failed, 379 passed, 4 skipped, 1 xfailed**; the four are the standing
+set, byte-identical.
+
+
 ## H11 — the owner's grip is MIXED, and it corrects H9 and unblocks B4 (2026-08-16)
 
 The owner deadlifts with a **mixed grip, left hand supinated**, and wears the
@@ -4598,6 +4689,8 @@ principled λ above still wants a source for per-rep non-closure other than the
 video.
 
 ### B4 — step 8 implemented; the SIGN is still open  (2026-07-30)
+***CLOSED 2026-08-16 — see the B4 entry near the top of this file.***
+
 `project_to_plane` and `confidence` no longer raise, and `principal_axis` uses
 `eigh` — the `eig` call on a symmetric matrix was why every caller wrapped the
 result in `np.real`. All nine steps now run on all 17 captures.

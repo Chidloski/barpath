@@ -190,7 +190,11 @@ Nine steps, one module each, numbered to match.
    it. PCA on horizontal displacement is still computed and still supplies
    `ratio` and `excursion` for `confidence`, but **it is no longer the axis** —
    H2 measured it sitting 4 degrees from the axis of the INVENTED parabola, with
-   11 of 13 captures outside this module's own 20-degree tolerance.
+   11 of 13 captures outside this module's own 20-degree tolerance. **And the
+   SIGN is resolved too (B4, closed 2026-08-16)**: `FORE_AFT_SENSE` turns the
+   line into a direction from the wrist, the grip and the attitude, checked
+   against the video through `tracked.CAMERA_SIDE` on 8 of 9 checkable captures.
+   A path can no longer silently mirror unless the lift cannot be named.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
 
 ### Two classes of lift: IMPACT and SMOOTH (owner, 2026-08-07)
