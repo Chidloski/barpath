@@ -4793,6 +4793,45 @@ confirm nothing behavioural survives.
 
 Not code, and the highest value per effort available:
 
+- **TWO DEADLIFT SETS FOR THE NEXT GYM SESSION (added 2026-08-16, H10/B4).**
+  These are the cheapest things that would de-risk what just landed on `main`,
+  and each tests something **no capture in this corpus can**. One set each.
+
+  1. **A deadlift filmed from the lifter's RIGHT.** Every deadlift ever shot
+     here is filmed from the LEFT, so `tracked.CAMERA_SIDE` is perfectly
+     confounded with the lift — B4's derivation reads the video through camera
+     side and nothing varies it. **Prediction, written down before the capture:
+     every sign in `project.FORE_AFT_SENSE` should invert while
+     `metrics.vs_truth`'s `sign_agrees_with_geometry` stays TRUE.** If the flag
+     goes false, the camera-side step in B4 is wrong and the axis is being
+     signed by something else. Same session, same grip, same everything else —
+     the point is to vary ONE thing.
+  2. **A DOUBLE-OVERHAND deadlift.** The owner grips mixed with the left hand
+     supinated, and the watch is on the left wrist, so the screen faces toward
+     them and `FORE_AFT_SENSE["deadlift"]` is -1. A double-overhand pull
+     supinates neither hand. **Prediction: the screen normal flips to point
+     ANTERIOR and that entry becomes +1.** If it does not flip, the sign is not
+     coming from the grip and `BAR_ANGLE_DEG`'s falsification note is wrong
+     again. Lighter is fine — this is a geometry capture, not a strength one.
+
+  *Both are worth more than another set at the same angle, because what limits
+  the deadlift horizontal now is not the pipeline. It is that every corrected
+  number sits inside the `vtrack` referee's own 3.0 cm of fore-aft wander at
+  lockout, and that the two constants which carry the result — `BAR_ANGLE_DEG`
+  and `FORE_AFT_SENSE` — are fitted or derived on a corpus that varies neither
+  camera side nor grip.*
+
+- **A deadlift DOUBLE, still (carried from the G3 session).** A deadlift set has
+  no gap between reps, so no truncation of a longer set can imitate one, and
+  deadlift doubles remain the one short-set case unvalidated end to end.
+
+- **A set whose reps genuinely DIFFER in shape.** `correct.fit_drift_tilt`
+  assumes a set's reps should agree and pulls them together when they do not.
+  Nothing in this corpus can tell that premise from a correct one. A set with a
+  deliberately changing bar path — first reps clean, last reps drifting forward
+  — is the capture that would falsify it, and it is the only named way to catch
+  the new step 5b removing real signal.
+
 - ~~**Measure a plate.**~~ **DONE 2026-07-30.** Black notched 425 mm, black
   bumper 445 mm, blue calibrated 450 mm. `truth.PLATE_DIAMETER_M` is now a
   per-lift table keyed on the largest plate in shot. It moved A3's numbers by
