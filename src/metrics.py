@@ -1149,7 +1149,10 @@ def vs_truth(result: dict, video: str | Path | dict,
     ---------------------------------
     The video's fore-aft is a camera axis; the reconstruction's horizontal is
     world x/y with heading unknown until step 8. So the reps are projected onto
-    `project.principal_axis`, whose eigenvector sign is arbitrary and currently
+    **the axis the pipeline chose**, `result["axis"]` — which is
+    `project.anatomical_axis` as of 2026-08-16 and was `principal_axis` before.
+    Falling back to `principal_axis` when a caller hands in a result dict without
+    one keeps hand-built fixtures working. Either way the sign is arbitrary and
     unresolved (B4). Vertical needs none of this.
 
     The sign is chosen ONCE for the set, from the summed correlation against
@@ -1193,7 +1196,19 @@ def vs_truth(result: dict, video: str | Path | dict,
     t_vid, fore_aft, height, fit = _video_on_imu_clock(result, video, tracker,
                                                        sync=sync)
 
-    axis = np.real(project.principal_axis(reps)[0])
+    # THE AXIS COMES FROM THE RESULT, NOT FROM A SECOND ESTIMATE (2026-08-16).
+    # This line used to be `project.principal_axis(reps)[0]` unconditionally,
+    # which meant `vs_truth` scored an axis the pipeline does not necessarily
+    # draw. That was harmless only while step 8 had exactly one estimator; it
+    # stopped being harmless the moment `project.anatomical_axis` gave it two,
+    # and it hid the entire effect of that change from every number here.
+    #
+    # It is the same defect shape `plot`'s module docstring records — step 8 was
+    # on screen in two figures before the stage had ever executed — and the same
+    # rule fixes it: the thing that judges the pipeline must read what the
+    # pipeline produced. The fallback keeps every caller that hands in a
+    # hand-built result dict working, and the tests do exactly that.
+    axis = np.real(result.get("axis", project.principal_axis(reps)[0]))
     raw_pos = result["bar_position"]
     t = log["t"]
 

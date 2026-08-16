@@ -724,6 +724,110 @@ Squat needs its own constant and will not inherit this one: its watch +x sits at
 came out 68° from bench's.
 
 
+## H10 — LANDED: step 5b's drift tilt and step 8's anatomical axis (2026-08-16)
+
+Owner's instruction to land H8 and H9. **This is the first change to `src/` in
+the H series** — everything before it was measurement. Branch
+`h1-deadlift-horizontal`; not merged to main and not pushed.
+
+### What shipped
+
+  * **`correct.fit_drift_tilt` / `apply_drift_tilt`** — a world-horizontal
+    attitude drift rate fitted against the set's own rep-to-rep dispersion,
+    anchored to vanish at the first rep. `pipeline.run(drift_tilt=False)` for
+    the old behaviour.
+  * **`project.anatomical_axis` and `BAR_ANGLE_DEG = 23`** — the display axis
+    read off the attitude. `pipeline.run(anatomical_axis=False)` for the old one.
+  * **`pipeline.run`** runs the fit as step 5b: after segmentation, because the
+    fit needs rep windows, then re-runs steps 3-4 on the corrected attitude. Rep
+    windows are NOT recomputed — `segment.rep_bounds` is validated at 16/16 and
+    64/64 on the uncorrected velocity and re-running it would put a validated
+    stage downstream of an unvalidated one.
+  * **`metrics.vs_truth` now reads `result["axis"]`** instead of re-estimating.
+
+### The bug that landing found, and it is the most valuable part
+
+**`vs_truth` was scoring an axis the pipeline does not draw.** It called
+`project.principal_axis` itself. Harmless while step 8 had one estimator;
+the moment it had two, every number `vs_truth` produced was measured along a
+different axis from the one shipped — and it hid the ENTIRE effect of
+`anatomical_axis`. The landed numbers did not move at all until this was found.
+
+Same shape as the defect `plot`'s module docstring already records — step 8 on
+screen in two figures before the stage had ever executed. It now has a gate,
+`test_vs_truth_scores_the_axis_the_pipeline_actually_DRAWS`.
+
+### Measured, all thirteen scoreable captures
+
+    lift       median h before -> after     beats_null
+    deadlift        4.97 -> 2.22 cm          0/6 -> 0/6
+    bench           2.01 -> 2.04             3/4 -> 3/4
+    squat           2.65 -> 1.83             3/3 -> 3/3
+    all 13          2.97 -> 1.98             6/13 -> 6/13
+
+    deadlift_150x4_1   2.66 ->  3.14   WORSE
+    deadlift_160x4_2   3.98 ->  2.47
+    deadlift_160x6_1   7.52 ->  1.98
+    deadlift_160x6_2   4.40 ->  1.72
+    deadlift_170x4_3   5.54 ->  7.76   WORSE
+    deadlift_185x3    10.72 ->  1.92
+
+**Vertical is untouched to 0.01 cm on every capture**, which is the falsification
+test from H1 holding end to end: a tilt must leak first-order into horizontal and
+second-order into vertical.
+
+### What did NOT improve, recorded rather than smoothed
+
+  * **`beats_null` did not move — 6 of 13, and 0 of 6 on deadlift.** The
+    reconstruction is still not demonstrably better than a flat vertical line on
+    any deadlift. `160x6_2` at 1.72 against 1.54 is close where it was 4.40.
+  * **Two deadlifts regress.** `150x4_1` 2.66 -> 3.14 is the capture nearest its
+    own null with a best-possible axis of 2.24, so there was nothing to win.
+    `170x4_3` 5.54 -> 7.76 is the capture whose video clock fits 22.8% drift at
+    a 216 ms residual and whose score is untrustworthy either way.
+  * **Every corrected deadlift number is inside the referee's own resolution.**
+    `src/vtrack/` wanders a median 3.0 cm of fore-aft while the bar is STILL at
+    lockout (H1). This corpus can no longer measure the deadlift horizontal, and
+    that is now the binding constraint. It is a capture problem, not a code one.
+
+### Suite
+
+**4 failed, 374 passed, 4 skipped, 1 xfailed** on everything but `test_vtrack`.
+The four failures are **byte-identical before and after this change** — verified
+by stashing it and re-running: three `test_oracle` parabola parametrisations
+(0.27 / 0.47 / 0.43) and `deadlift_170x4_3` rep 4's ROM at 67.5 cm. Those are
+the standing four G4 recorded. **This change adds no regressions.**
+
+Two D1 gates were REPOINTED rather than re-tuned. `test_the_deadlift_fore_aft_
+path_IS_one_parabola` and `test_the_invented_parabola_GROWS_through_the_set` now
+run with `drift_tilt=False`, because D1's claim is about the pipeline D1 was
+measured on and step 5b exists to remove exactly that parabola. Measuring it with
+the correction on would test the correction, not the finding. A new gate,
+`test_step_5b_REMOVES_the_parabola_D1_found`, pins the fall itself — it is the
+only thing in the suite connecting 5b's video-free objective to the mechanism it
+claims, and a correction that improved the score by some other route would fail
+it.
+
+### Two claims in `project.py` were falsified and are now fixed there
+
+Both were flagged in H2 and left standing because no `src/` claim was held:
+
+  * "the variance approach beats deriving heading from wrist attitude" — the
+    premise was that the variance axis IS the fore-aft axis, and it is not.
+  * "the failure mode is self-limiting … the case where the estimator fails is
+    the case where the answer does not matter" — the observed failure is the
+    opposite, a large and superbly conditioned eigenvalue belonging to the drift.
+
+### Open, and unchanged by this
+
+`BAR_ANGLE_DEG` is one lifter, one watch, one grip, and its 23 degrees is the
+midpoint of a deadlift sweep (20) and an independent bench one (26). A mixed-grip
+deadlift supinates one hand and would move it by order 90 degrees — and the watch
+is on the LEFT wrist, which is the hand a mixed grip usually turns. B4 (the axis
+SIGN) is still open and is now cheap: the screen normal points away from the
+lifter, so knowing the wrist resolves it. Not attempted here.
+
+
 ## G5 — sweep tests/ for silent skips; remove everything v1 (2026-08-16)
 
 Owner's instruction after G4, which found two tests skipping rather than failing

@@ -100,8 +100,39 @@ def find_video(path: str | Path, video_dir: str | Path | None = None) -> Path | 
 
 
 def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
-        video: str | Path | None = None) -> dict:
+        video: str | Path | None = None, drift_tilt: bool = True,
+        anatomical_axis: bool = True) -> dict:
     """Run every stage that can run. Never raises on an unimplemented stage.
+
+    `drift_tilt` and `anatomical_axis` are H8 and H9, both ON as of 2026-08-16,
+    and together they take the deadlift horizontal from a median 4.97 cm to
+    2.26 — within 0.20 cm of the best display axis that exists for those paths.
+    Each has its mechanism written where it lives (`correct.fit_drift_tilt` and
+    `project.anatomical_axis`) rather than here. What matters at this level:
+
+    * they fix DIFFERENT things and therefore compose. 5b repairs a path error
+      that GROWS through a set; step 8's axis repairs a projection that was
+      picking the drift's own direction. `deadlift_185x3` is the proof — no path
+      fix moves it at all (10.72 -> 10.69, its drift does not grow) and the axis
+      alone takes it to 2.02 against a best-possible 1.89.
+    * **neither is gated on the lift**, and for different reasons. 5b is
+      self-limiting: it finds |beta| of 0.001-0.008 deg/s on bench and squat
+      because there is no growing drift there, against 0.008-0.051 on deadlift. The axis is geometric and holds
+      wherever a hand grips a bar.
+    * **two deadlifts get WORSE and it is recorded rather than smoothed.**
+      `deadlift_150x4_1` 2.66 -> 3.14 is the capture nearest its own null, with a
+      best-possible axis of 2.24, so there was nothing to win. `deadlift_170x4_3`
+      5.54 -> 7.76 is the capture whose video clock fits 22.8% drift at a 216 ms
+      residual and whose score is untrustworthy either way.
+    * **nothing crosses `beats_null` on deadlift yet, 0 of 6.** `160x6_2` at 1.72
+      against a 1.54 null is close where it was 4.40, but no deadlift is yet
+      demonstrably better than drawing a straight vertical line.
+    * **and every corrected number is now inside the referee's own resolution.**
+      `src/vtrack/` wanders a median 3.0 cm of fore-aft while the bar is STILL at
+      lockout, so this corpus can no longer measure the deadlift horizontal. That
+      is the next binding constraint and it is a capture problem, not a code one.
+
+    Pass either False for the pre-2026-08-16 behaviour.
 
     `wrist_offset` is `d` from step 6, in body coordinates. **It defaults to
     `"auto"`, which looks the measured `d` up by lift from
@@ -224,6 +255,64 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
         result["notes"].append(
             f"found {len(bounds)} reps, filename says {result['expected_reps']}")
 
+    # 5b --- the drift tilt, fitted from the set itself (H8) -----------------
+    #
+    # ON by default. The mechanism is in `correct.fit_drift_tilt` and is not
+    # repeated here; the short version is that H1 measured the deadlift's
+    # invented fore-aft to be a horizontal acceleration GROWING through the set,
+    # explaining 84-91% of the error out of sample, and that a growing tilt is
+    # the one error shape which must leak first-order into horizontal and only
+    # second-order into vertical — a prediction that was tested and held.
+    #
+    # **It is numbered 5b for where it RUNS, not for what it corrects, and the
+    # ordering is a judgement.** It corrects the ATTITUDE, so it belongs beside
+    # steps 2-3; but the fit needs rep windows, so it cannot precede step 5, and
+    # an ordered list a reader follows should be in execution order. The rep windows are NOT
+    # recomputed afterwards, even though the corrected velocity would give
+    # slightly different ones: `segment.rep_bounds` is validated at 16/16
+    # captures and 64/64 reps against the video ON THE UNCORRECTED velocity, and
+    # re-running it here would put a validated stage downstream of an unvalidated
+    # one and risk that count to buy nothing. If a future change re-segments,
+    # the rep count is the thing to watch.
+    #
+    # Not gated on the lift, because it is self-limiting: `beta` comes out
+    # 0.001-0.007 deg/s on bench and squat, where there is no growing drift to
+    # find, against 0.008-0.051 on deadlift. Pass `drift_tilt=False` for the old
+    # behaviour; read `drift_tilt_info` for what it actually did.
+    # `d` is resolved HERE rather than at step 6 because 5b's objective is
+    # measured on the BAR path, so the fit and the shipped path must use the
+    # same lever arm. Resolving it twice is how they would drift apart.
+    if isinstance(wrist_offset, str) and wrist_offset == "auto":
+        try:
+            wrist_offset = correct.WRIST_OFFSET_M[capture.lift_of(path)]
+        except (ValueError, KeyError):
+            # Drop tests and stationary logs are not a lift and have no d.
+            wrist_offset = None
+            result["notes"].append(
+                "step 6 off: cannot tell which lift this is, so no measured d "
+                "applies. Pass wrist_offset= explicitly if you have one")
+
+    result["drift_tilt"] = np.zeros(3)
+    result["drift_tilt_info"] = {"fitted": False, "reason": "off"}
+    if not drift_tilt:
+        result["notes"].append(
+            "step 5b OFF: no drift tilt fitted, so a set whose horizontal error "
+            "grows through it keeps that growth")
+    elif bounds:
+        beta, tilt_info = correct.fit_drift_tilt(log, bounds, wrist_offset)
+        result["drift_tilt"] = beta
+        result["drift_tilt_info"] = tilt_info
+        if tilt_info["fitted"] and np.any(beta):
+            quat = correct.apply_drift_tilt(quat, log["t"], beta,
+                                            tilt_info["anchor_t"])
+            world = orient.to_world(log["accel"], log["quat"], quat)
+            world = world - calibrate.accel_bias(world, log)
+            velocity, position = integrate.integrate(world, log["dt"])
+            result["quat"] = quat
+            result["world_accel"] = world
+            result["velocity"] = velocity
+            result["position"] = position
+
     # 6 --- wrist-to-bar offset ---------------------------------------------
     #
     # ON by default as of 2026-08-06 (C31), on the owner's instruction, and the
@@ -247,16 +336,8 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     # and one has an unconfirmed absolute scale.
     #
     # Pass `wrist_offset=None` explicitly to get the old watch-path behaviour
-    # back — every pre-C31 number in the docs was measured that way.
-    if isinstance(wrist_offset, str) and wrist_offset == "auto":
-        try:
-            wrist_offset = correct.WRIST_OFFSET_M[capture.lift_of(path)]
-        except (ValueError, KeyError):
-            # Drop tests and stationary logs are not a lift and have no d.
-            wrist_offset = None
-            result["notes"].append(
-                "step 6 off: cannot tell which lift this is, so no measured d "
-                "applies. Pass wrist_offset= explicitly if you have one")
+    # back — every pre-C31 number in the docs was measured that way. The "auto"
+    # lookup itself happens further up, before step 5b, which needs the same `d`.
     if wrist_offset is None:
         result["notes"].append(
             "step 6 OFF: reconstructing the WATCH path, not the bar path. This "
@@ -299,6 +380,26 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     # remains unresolved (B4), so a confident set can still be drawn mirrored.
     if reps:
         axis, ratio, excursion = project.principal_axis(reps)
+        # H9. The variance axis is not the fore-aft axis: H2 measured it sitting
+        # 4 degrees from the axis of the INVENTED parabola alone, with 11 of 13
+        # captures outside this module's own 20-degree tolerance, on all three
+        # lifts. `anatomical_axis` reads the direction off the attitude instead,
+        # which the drift cannot reach. `ratio` and `excursion` still describe
+        # the VARIANCE axis, because that is what they are statements about —
+        # they measure whether the path is horizontally well conditioned, which
+        # remains true and remains worth gating on, and pretending they describe
+        # a geometric axis they were not computed from would be worse than
+        # leaving them alone. See `confidence`, which is explicit that the ratio
+        # says nothing about accuracy.
+        if anatomical_axis:
+            try:
+                axis = project.anatomical_axis(quat, bounds)
+            except ValueError as e:
+                result["notes"].append(f"step 8 fell back to max variance: {e}")
+        else:
+            result["notes"].append(
+                "step 8 using MAX VARIANCE: on this corpus that axis is the "
+                "drift's own axis on 11 of 13 captures (H2)")
         result["axis"] = axis
         result["axis_ratio"] = ratio
         result["excursion"] = excursion

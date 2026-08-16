@@ -24,6 +24,27 @@ heading, which means a lookup table to extend for every new exercise and
 which breaks on unusual grips. PCA does not use a taxonomy, so there is
 nothing to enumerate and nothing to get wrong.
 
+**THAT ARGUMENT LOST, AND `anatomical_axis` IS WHAT REPLACED IT (H9,
+2026-08-16).** Its premise was that the variance axis is the fore-aft axis, and
+it is not: H2 measured this module's choice sitting **4 degrees from the axis of
+the INVENTED parabola** and **11 of 13 captures outside the 20-degree tolerance
+declared below**, on all three lifts. The objection to attitude survives in
+weakened form and is answered rather than ignored — `anatomical_axis` needs ONE
+constant (`BAR_ANGLE_DEG`), not a per-exercise table, because the geometry it
+encodes is "a hand is clamped to a bar" rather than anything about a lift. An
+unusual grip does still move it, and that is named as the thing that falsifies
+it.
+
+**The paragraph below about the failure mode being self-limiting is also
+false**, and it is the more expensive of the two errors. "The case where the
+estimator fails is the case where the answer does not matter" assumes failure
+looks like two similar eigenvalues. The observed failure is the opposite: the
+drift is smooth and common-mode, so it produces a LARGE, superbly conditioned
+eigenvalue that every rep agrees on — bootstrap spread of 1-10 degrees on an
+axis up to 84 degrees wrong, and a ratio uncorrelated with the error
+(Spearman +0.03). The estimator fails hardest exactly where the excursion is
+largest and the ratio highest. See TASKS.md H2 and `analysis/60`.
+
 Accuracy needed is low. If the estimated axis is off by an angle phi, the
 displayed fore-aft excursion is scaled by cos(phi). At 20 degrees that is
 still 94% of the signal. So the problem is not "estimate heading precisely",
@@ -92,6 +113,7 @@ sets is a later step, not a now step.
 from __future__ import annotations
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 # The angle the module docstring calls acceptable: cos(20 deg) = 0.94, so an
 # axis 20 degrees out still renders 94% of the fore-aft excursion. Everything
@@ -103,6 +125,106 @@ AXIS_TOLERANCE_DEG = 20.0
 # and for what would move them.
 EXCURSION_MIN_M = 0.05
 EXCURSION_MAX_M = 0.20
+
+
+# The angle of the bar around the wrist, in the plane perpendicular to the
+# forearm, measured from the watch's SCREEN NORMAL (+z, out through the
+# display). H9, 2026-08-16.
+#
+# **Why one angle is the whole parameter.** The hand is clamped to the bar, so
+# the watch's orientation relative to the bar is fixed by the GRIP. Fore-aft is
+# perpendicular to the bar and horizontal, so once the forearm's direction is
+# known from the attitude — which it is, and well: attitude is the
+# best-conditioned quantity in this system and is never double-integrated — the
+# only thing left to know is where the bar sits AROUND the wrist. That is one
+# number, and it is a constant of the grip rather than something to estimate per
+# capture.
+#
+# **Why near the screen normal.** With a pronated grip the back of the wrist
+# faces away from the lifter, so fore-aft points roughly out through the
+# display. The measurement puts it 20-26 degrees off that, toward +y.
+#
+# HOW THIS WAS OBTAINED, because it is a fitted constant and must be read as one.
+# Swept over the six deadlifts against the video, the best single value is 20
+# degrees (median horizontal 2.20 cm). **The four BENCH captures put it at 26
+# degrees independently**, having been used to fit nothing here — and
+# `correct.WRIST_OFFSET_M` already records that bench and deadlift share the
+# same tape-measured `d`, so two lifts and two routes agree on one geometry to 6
+# degrees. 23 is the midpoint and is what ships.
+#
+# **The basin is 20 degrees wide** (11-31 within 0.5 cm of the optimum), which
+# is why this is a shipped constant and not a tape measure. `d` was the opposite
+# case: B2 found no interior optimum at all and it had to be measured with a
+# ruler.
+#
+# What it costs, measured on all thirteen scoreable captures. Deadlift median
+# horizontal 4.97 -> 3.15 cm on its own and 4.97 -> 2.22 with `correct.
+# fit_drift_tilt`; squat 2.65 -> 1.68; bench 2.01 -> 2.03, unchanged, and its
+# `beats_null` count goes 3 of 4 to 4 of 4. **It was NOT separately optimised on
+# squat** — 23 degrees is a deadlift-and-bench number that squat happens to like,
+# and a squat sweep is the obvious next measurement.
+#
+# WHAT WOULD FALSIFY IT. A different grip. A mixed-grip deadlift supinates one
+# hand, which rotates that wrist relative to the bar and moves this angle by
+# something of order 90 degrees — and the watch is on the LEFT wrist, which is
+# the hand a mixed grip usually turns. A false grip, a thumbless bench, or a
+# squat with a much wider hand position would each want their own value. This is
+# one lifter, one watch, one grip.
+BAR_ANGLE_DEG = 23.0
+
+
+def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
+                    angle_deg: float = BAR_ANGLE_DEG) -> np.ndarray:
+    """The display axis from ATTITUDE alone. Step 8, H9.
+
+    Returns a unit vector in world xy, like `principal_axis`'s first element,
+    and takes no position at all — which is the entire point. **The variance
+    axis cannot be trusted because the variance is the drift**: H2 measured
+    step 8's axis sitting 4 degrees from the axis of the invented parabola
+    alone, with 11 of 13 captures outside the 20-degree tolerance this module
+    declares for itself, on all three lifts. This axis is computed from a
+    quantity the drift cannot reach.
+
+    The construction. `angle_deg` fixes the fore-aft direction in WATCH
+    coordinates (see `BAR_ANGLE_DEG`); rotate it into the world at every sample
+    inside a rep, drop the vertical component, and take the dominant direction
+    of what is left. Dropping the vertical rather than assuming it is zero
+    matters on squat, where the forearm is nowhere near vertical.
+
+    **Read `BAR_ANGLE_DEG` before using this on a new lift or grip.** The angle
+    is a property of how the hand holds the bar, and this function is only as
+    good as that constant.
+
+    Sign is NOT resolved here and B4 still stands: this returns an axis, not a
+    direction. Knowing the wrist and the grip WOULD resolve it — the screen
+    normal points away from the lifter — and that is the obvious follow-on, but
+    it is a separate change and is not smuggled in here.
+    """
+    quat = np.asarray(quat, dtype=float)
+    inside = np.zeros(len(quat), dtype=bool)
+    for start, stop in bounds:
+        inside[start:stop] = True
+    if not inside.any():
+        raise ValueError("anatomical_axis needs at least one rep window")
+
+    phi = np.deg2rad(angle_deg)
+    body = np.array([0.0, np.sin(phi), np.cos(phi)])
+
+    R = Rotation.from_quat(quat[inside], scalar_first=True)
+    world = R.apply(np.tile(body, (int(inside.sum()), 1)))[:, :2]
+
+    norms = np.linalg.norm(world, axis=1, keepdims=True)
+    keep = norms[:, 0] > 1e-9
+    if not keep.any():
+        raise ValueError(
+            "anatomical_axis: the bar direction is vertical throughout, so it "
+            "has no horizontal projection to take an axis from")
+    world = world[keep] / norms[keep]
+
+    # Dominant AXIS rather than mean direction: the sign is arbitrary (B4) and
+    # averaging signed vectors would let two halves of a set cancel.
+    eigenvalues, eigenvectors = np.linalg.eigh(world.T @ world / len(world))
+    return eigenvectors[:, -1]
 
 
 def principal_axis(paths: list[np.ndarray]):

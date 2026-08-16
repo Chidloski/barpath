@@ -181,3 +181,83 @@ def test_every_capture_gets_a_projected_path_and_a_verdict(path):
         assert flat.shape == (len(rep), 2)
         assert np.isfinite(flat).all()
     assert isinstance(result["confident"], (bool, np.bool_))
+
+
+# ------------------------------------------- H9, the anatomical display axis --
+
+def _quat_from_matrix_columns(x, y, z, n):
+    """N copies of the attitude whose body axes map to the given world axes."""
+    from scipy.spatial.transform import Rotation
+    m = np.column_stack([np.asarray(x, float), np.asarray(y, float),
+                         np.asarray(z, float)])
+    q = Rotation.from_matrix(m).as_quat()          # x, y, z, w
+    return np.tile(np.array([q[3], q[0], q[1], q[2]]), (n, 1))
+
+
+def test_anatomical_axis_reads_the_bar_direction_off_the_attitude():
+    """The construction, on an attitude whose answer is known by hand.
+
+    Put the watch in the deadlift posture: +x (crown, toward the hand) pointing
+    DOWN, +z (screen normal) pointing along world +x. At `angle_deg = 0` the
+    fore-aft direction IS the screen normal, so the axis must come back as world
+    x. This is an algebraic identity and it is the only thing about this
+    function that can be checked without a gym.
+    """
+    n = 50
+    quat = _quat_from_matrix_columns([0, 0, -1], [0, 1, 0], [1, 0, 0], n)
+    axis = project.anatomical_axis(quat, [(0, n)], angle_deg=0.0)
+
+    assert axis.shape == (2,)
+    assert np.isclose(np.linalg.norm(axis), 1.0)
+    assert abs(abs(axis[0]) - 1.0) < 1e-9, (
+        f"screen normal points along world x, so the axis should too; got {axis}")
+
+
+def test_anatomical_axis_rotates_with_the_angle_it_is_given():
+    """`angle_deg` turns the axis in the plane perpendicular to the forearm.
+
+    Same posture as above. The forearm is along world z, so rotating the bar
+    around the wrist by phi must turn the world-horizontal axis by phi. That is
+    what makes `BAR_ANGLE_DEG` a meaningful constant rather than a fudge factor.
+    """
+    n = 50
+    quat = _quat_from_matrix_columns([0, 0, -1], [0, 1, 0], [1, 0, 0], n)
+    a0 = project.anatomical_axis(quat, [(0, n)], angle_deg=0.0)
+    a30 = project.anatomical_axis(quat, [(0, n)], angle_deg=30.0)
+
+    turned = np.degrees(np.arccos(np.clip(abs(float(a0 @ a30)), 0, 1)))
+    assert abs(turned - 30.0) < 1e-6, f"expected 30 degrees of turn, got {turned}"
+
+
+def test_anatomical_axis_refuses_rather_than_guessing_when_it_cannot_see():
+    """No rep windows, or a bar direction with no horizontal projection.
+
+    It raises instead of returning something. A display axis invented from a
+    degenerate geometry is exactly the failure `confidence` exists to prevent,
+    and returning a unit vector anyway would hide it from the caller.
+    """
+    n = 20
+    quat = _quat_from_matrix_columns([1, 0, 0], [0, 1, 0], [0, 0, 1], n)
+    with pytest.raises(ValueError):
+        project.anatomical_axis(quat, [])
+
+    # Screen normal straight up: at angle 0 the "bar direction" is vertical and
+    # has no horizontal projection to take an axis from.
+    with pytest.raises(ValueError):
+        project.anatomical_axis(quat, [(0, n)], angle_deg=0.0)
+
+
+def test_the_shipped_bar_angle_is_inside_the_basin_both_lifts_agreed_on():
+    """`BAR_ANGLE_DEG` is a fitted constant; this pins where it came from.
+
+    H9 swept it: the six deadlifts put the optimum at 20 degrees, the four bench
+    captures put it at 26 INDEPENDENTLY, and the basin within 0.5 cm of the
+    optimum runs 11-31. The shipped value is the midpoint of the two lifts.
+
+    A unit test cannot re-derive that — it needs the video — so what it can do is
+    stop the constant drifting away from the evidence without the evidence
+    moving. If this fails, `analysis/63` is what has to be redrawn.
+    """
+    assert 20.0 <= project.BAR_ANGLE_DEG <= 26.0, (
+        "BAR_ANGLE_DEG left the interval the two lifts agreed on; re-sweep it "
+        "(analysis/63) rather than widening this")

@@ -486,10 +486,24 @@ def test_the_deadlift_fore_aft_path_IS_one_parabola(csv):
     If this ever drops materially, the deadlift horizontal has acquired
     structure it did not have, and `parabola_detrend`'s rejection (which rests
     on there being nothing else in there) needs re-measuring.
+
+    **IT RUNS WITH `drift_tilt=False`, AND THAT IS THE POINT (2026-08-16).**
+    D1's claim is about the pipeline as it stood when D1 measured it. Step 5b
+    now removes exactly the growing parabola D1 identified, so with the default
+    on, this r2 FALLS — `deadlift_160x4_2` goes 0.47 to 0.20 — and that fall is
+    the correction working, not the finding failing. Pinning the claim against
+    the pipeline it was made about keeps both readable; the companion test below
+    pins the fall itself.
+
+    *This gate was ALREADY RED on 2 of 6 before 5b existed, and still is. G1
+    measured it: `deadlift_150x4_1` 0.27 and `deadlift_170x4_3` 0.47, both
+    2026-08-08 captures, so D1's headline holds on the captures it was derived
+    from and does not generalise to the newest ones. Left failing rather than
+    re-pinned — it is a finding, not a stale gate. See TASKS.md G1.*
     """
     from src import pipeline, project
 
-    res = pipeline.run(csv)
+    res = pipeline.run(csv, drift_tilt=False)
     axis = project.principal_axis(res["reps"])[0]
     t = res["log"]["t"]
     r2 = []
@@ -511,12 +525,16 @@ def test_the_invented_parabola_GROWS_through_the_set():
 
     Gated as "the last rep's tilt exceeds the first's on at least 4 of 6",
     which is the claim, rather than on any one capture's ratio.
+
+    Runs with `drift_tilt=False` for the same reason as the test above: step 5b
+    exists to remove this growth, so measuring it with the correction on would
+    test the correction rather than the finding.
     """
     from src import pipeline, project
 
     grew = []
     for csv in _DL:
-        res = pipeline.run(csv)
+        res = pipeline.run(csv, drift_tilt=False)
         if len(res["reps"]) < 3:
             continue
         axis = project.principal_axis(res["reps"])[0]
@@ -528,3 +546,46 @@ def test_the_invented_parabola_GROWS_through_the_set():
         grew.append(tilt[-1] > tilt[0])
         assert max(tilt) < 2.0, f"{csv.stem}: {max(tilt):.2f} deg is not a tilt"
     assert sum(grew) >= 4, f"grew on {sum(grew)} of {len(grew)}"
+
+
+@_needs_deadlifts
+def test_step_5b_REMOVES_the_parabola_D1_found():
+    """The correction is aimed at D1's finding, and hits it. 2026-08-16.
+
+    The two tests above pin D1 against the pipeline D1 was measured on. This one
+    pins the consequence: turning `drift_tilt` on must make the deadlift fore-aft
+    LESS well described by a single constant-acceleration parabola, because that
+    parabola is what step 5b removes.
+
+    It is the cheapest possible check that 5b targets the mechanism it claims to.
+    A correction that improved the video score while leaving this untouched would
+    be improving the number by some other route, and that is worth catching —
+    `correct.fit_drift_tilt`'s objective never sees the video, so nothing else in
+    the suite connects the two.
+    """
+    from src import oracle as _oracle
+    from src import pipeline, project
+
+    fell = 0
+    tested = 0
+    for csv in _DL:
+        def median_r2(**kw):
+            res = pipeline.run(csv, **kw)
+            axis = project.principal_axis(res["reps"])[0]
+            t = res["log"]["t"]
+            return float(np.median([
+                _oracle.parabola_fit(np.asarray(rep, float)[:, :2] @ axis,
+                                     t[b - 1] - t[a])["r2"]
+                for rep, (a, b) in zip(res["reps"], res["bounds"])]))
+
+        before = median_r2(drift_tilt=False)
+        after = median_r2(drift_tilt=True)
+        tested += 1
+        if after < before - 0.01:
+            fell += 1
+
+    assert fell >= 4, (
+        f"step 5b lowered the parabola r2 on only {fell} of {tested} deadlifts. "
+        f"It is supposed to be REMOVING that parabola — if the video score still "
+        f"improved, it improved by some other route and the mechanism in "
+        f"correct.fit_drift_tilt is not what is doing the work")
