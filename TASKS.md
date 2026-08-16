@@ -857,6 +857,15 @@ by stashing it and re-running: three `test_oracle` parabola parametrisations
 (0.27 / 0.47 / 0.43) and `deadlift_170x4_3` rep 4's ROM at 67.5 cm. Those are
 the standing four G4 recorded. **This change adds no regressions.**
 
+***`test_vtrack` HAS now been run and is clean — 19 passed in 22:57*** (2026-08-16,
+after H10 was committed). The H10 commit message says the slow 16-clip gate was
+not re-run, on the argument that it uses only `metrics.infer_tracker` and
+`TRACKERS` rather than `vs_truth`; the argument was right and it has now been
+checked rather than argued. It ran against the behavioural state of this commit
+— everything committed afterwards (the 3b→5b renumbering, the `project.py` and
+`metrics.py` docstring corrections, H11) touches comments and docstrings only.
+**The full suite is therefore 4 failed, 393 passed.**
+
 Two D1 gates were REPOINTED rather than re-tuned. `test_the_deadlift_fore_aft_
 path_IS_one_parabola` and `test_the_invented_parabola_GROWS_through_the_set` now
 run with `drift_tilt=False`, because D1's claim is about the pipeline D1 was
