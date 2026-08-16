@@ -648,6 +648,82 @@ product already has — which end of the bar the watch is on, or which way the
 lifter faces.
 
 
+## H9 — the deadlift arm hangs vertical, so ATTITUDE ALONE fixes the plane (2026-08-16)
+
+**The owner's two observations, and both hold.** The watch knows which wrist it
+is on (left). And on a deadlift the forearm hangs vertical — measured here, the
+watch's +x (crown, toward the hand) sits at **−80° elevation**, so the forearm is
+within 10° of vertical and **the watch's y–z plane IS the horizontal plane**.
+
+That collapses the whole axis problem to **one angle**: where the bar sits around
+the wrist within that plane, which the grip fixes. It is not something to
+estimate per capture — it is a constant, like `d`. `analysis/63`.
+
+### The prediction, and it is corroborated from the other lift
+
+With a pronated grip the back of the wrist faces forward, so fore-aft should sit
+near the **screen normal**. Sweeping the angle over the six deadlifts, the best
+single value is **20°** off the screen normal (median 2.20 cm).
+
+**The bench captures put it at 26°, derived independently** — four bench sets,
+never used to fit anything here. Six degrees apart, and `WRIST_OFFSET_M` already
+records that bench and deadlift share the same tape-measured `d`. Two lifts, two
+independent routes, one geometry.
+
+**And the basin is 20° wide** (11–31° within 0.5 cm of the optimum), so this
+wants a shipped constant rather than a tape measure — unlike `d`, which had no
+interior optimum at all (B2).
+
+### Combined with H8's path fix
+
+    capture            ships   H8+screen   H8+anatomical   best axis   null
+    deadlift_150x4_1    2.66      2.25          3.26          2.24      2.15
+    deadlift_160x4_2    3.98      3.40          2.50          2.23      1.50
+    deadlift_160x6_1    7.52      1.72          2.00          1.02      1.54
+    deadlift_160x6_2    4.40      1.69          1.72          1.41      1.54
+    deadlift_170x4_3    5.54      7.21          7.79          4.57      1.39
+    deadlift_185x3     10.72      4.57          2.02          1.89      1.55
+    median              4.97      2.82          2.26          2.06
+
+**Median 4.97 → 2.26 cm, within 0.20 cm of the best axis that exists.** The two
+halves fix different things and compose: H8's tilt ramp repairs the GROWING path
+error, the anatomical axis repairs step 8. `deadlift_185x3` is the proof — no
+path fix could move it (10.72 → 10.69, its drift does not grow) and the
+anatomical axis alone takes it to **2.02 against a best-possible 1.89**.
+
+### What this does NOT yet do, stated plainly
+
+  * **Nothing crosses `beats_null`, still 0 of 6.** `160x6_2` at 1.72 against
+    1.54 and `160x6_1` at 2.00 against 1.54 are close, where they were 4.40 and
+    7.52. But the reconstruction is not yet demonstrably better than drawing a
+    straight vertical line on any deadlift.
+  * **Everything is now inside the referee's own resolution.** The `vtrack`
+    referee wanders a median 3.0 cm of fore-aft while the bar is still at lockout
+    (H1), and every corrected number above is at or under that. **The deadlift
+    horizontal can no longer be measured by this corpus** — which is a result
+    about the referee, and the next binding constraint.
+  * **`170x4_3` regresses** (5.54 → 7.79). It is the capture whose clock fits
+    22.8% drift at a 216 ms residual, so its score is not trustworthy either way.
+  * **`150x4_1` regresses** (2.66 → 3.26) and is the capture nearest its own
+    null, with almost nothing to win.
+  * **The 20° optimum is in-sample** on these six. The out-of-sample evidence is
+    the bench-derived 26° landing inside the basin, not a held-out deadlift.
+  * **One lifter, one watch, one grip.** A mixed grip rotates one wrist relative
+    to the bar and would need its own constant — and the watch is on the LEFT
+    wrist, which is the hand a mixed-grip deadlift usually supinates.
+
+### What follows
+
+The wrist being known also bears on **B4, the unresolved axis SIGN**. Fore-aft's
+direction (not just its line) is fixed once the wrist and grip are known, because
+the screen normal points away from the lifter's body. B4 has stood since
+2026-07-30 for want of exactly this. Not attempted here.
+
+Squat needs its own constant and will not inherit this one: its watch +x sits at
++21° elevation rather than −80°, the bar is on the back, and its body-frame axis
+came out 68° from bench's.
+
+
 ## G5 — sweep tests/ for silent skips; remove everything v1 (2026-08-16)
 
 Owner's instruction after G4, which found two tests skipping rather than failing

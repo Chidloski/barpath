@@ -2216,9 +2216,34 @@ the flat-line null and score well by drawing nothing, and unanchored dispersion
 equalises the reps in the wrong direction (`150x4_1` 2.66 → 8.17 while its
 dispersion fell). Full record in TASKS.md H8.
 
+## 63 — the deadlift plane from attitude alone (H9, 2026-08-16)
+
+`63_deadlift_anatomical_axis.png`. The owner's observation, and it holds: on a
+deadlift the forearm hangs vertical — the watch's crown sits at −80° elevation —
+so **the watch's y–z plane IS the horizontal plane**, and the display axis
+collapses to ONE angle, where the bar sits around the wrist. That is a constant,
+like `d`, not a per-capture estimate.
+
+Panel A sweeps it. The best single value over the six deadlifts is 20° off the
+screen normal, **the four bench captures put it at 26° independently**, and the
+basin is 20° wide (11–31° within 0.5 cm) — so a shipped constant will do, unlike
+`d`, which had no interior optimum at all.
+
+Panel B: combined with H8's path fix, median **4.97 → 2.26 cm, within 0.20 cm of
+the best axis that exists**. The halves compose because they fix different
+things — `deadlift_185x3` is the proof, immovable by any path fix (10.72 → 10.69)
+and taken to 2.02 by the axis alone against a best-possible 1.89.
+
+Read the limits with it: nothing crosses `beats_null` yet (0 of 6, though
+`160x6_2` is at 1.72 against 1.54 where it was 4.40); `170x4_3` and `150x4_1`
+regress; the 20° optimum is in-sample and the out-of-sample evidence is bench's
+26°; and **every corrected number is now inside the referee's own 3.0 cm
+fore-aft error at lockout**, so this corpus can no longer measure the deadlift
+horizontal. Full record in TASKS.md H9.
+
 ---
 
-*Numbering: 47 through 62 are taken. The next free number is 63. **52
+*Numbering: 47 through 63 are taken. The next free number is 64. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*
