@@ -552,6 +552,102 @@ The `vtrack` referee's own fore-aft error at lockout is a median **3.0 cm**
 and must not be used to rank the arms.**
 
 
+## H8 — a SINGLE-SET deadlift fix: half the problem solved, and the half that is not (2026-08-16)
+
+**The owner ruled out H7's per-lift axis on product grounds, and the constraint
+is the useful part**: the program must show a side-on view after ONE completed
+set — no history, no prior sets of that lift, no video at runtime. That deletes
+`AX` outright and every video-derived quantity. What survives is the set's own
+reps and its attitude. Figures `analysis/61` and `analysis/62`.
+
+### The state of play, drawn (analysis/61)
+
+Deadlift per-rep fore-aft, reconstruction against the bar:
+
+    capture            reconstruction sweeps    the bar sweeps
+    deadlift_150x4_1      5.7 - 15.9 cm           5.1 -  9.4 cm
+    deadlift_160x4_2      4.6 - 15.0              3.6 - 11.2
+    deadlift_160x6_1      7.6 - 34.8              4.2 -  5.4
+    deadlift_160x6_2      2.8 - 20.2              3.1 -  5.9
+    deadlift_170x4_3      4.7 - 25.9              3.6 - 10.5
+    deadlift_185x3       12.0 - 17.6              4.6 -  6.2
+
+Drawn at TRUE aspect with no 4x stretch, the bottom row of `analysis/61` shows
+what the shape actually is: every rep bows the SAME WAY, to −10 to −20 cm at
+mid-phase, while the bar stays inside ±5 cm.
+
+### The fix, and the objective is the whole design
+
+H1 modelled the error as a world-horizontal tilt ramp. Fitting it against the
+video was an oracle; fit it instead against something one set supplies alone.
+
+**The objective must not be "minimise horizontal excursion"** — that collapses
+to the flat-line null and scores well by drawing nothing, the exact cheat
+`beats_null` exists to catch. The true bar path REPEATS every rep while the
+drift GROWS, so the objective is **rep-to-rep dispersion**, which leaves a set
+whose reps already agree untouched.
+
+**And it must be anchored, which cost one iteration to learn.** Dispersion is
+symmetric: it can equalise the reps by making rep 1 as wrong as rep 6 rather
+than the reverse. Unanchored it did exactly that — `deadlift_150x4_1` went
+2.66 → **8.17** while its dispersion fell 4.45 → 2.17, the objective succeeding
+while the answer got worse. Anchoring the ramp to vanish at the first rep,
+`dtheta(t) = beta·max(t − t_rep0, 0)`, gives the objective a direction. That is
+V2's logic moved from the PATH to the ATTITUDE, so it is a physical correction
+rather than a kinematic subtraction.
+
+    capture            ships    fixed    best axis on the fixed path   null
+    deadlift_150x4_1    2.66     5.03            2.24                  2.15
+    deadlift_160x4_2    3.98     2.53            2.23                  1.50
+    deadlift_160x6_1    7.52     1.97            1.02                  1.54
+    deadlift_160x6_2    4.40     1.74            1.41                  1.54
+    deadlift_170x4_3    5.54     5.60            4.57                  1.39
+    deadlift_185x3     10.72    10.69            1.89                  1.55
+    median              4.97     3.78            2.06
+
+Fitted beta is 0.007–0.044 deg/s, the same range H1's video-fitted oracle found
+and still an order below what the pre-set pause can measure — so this recovers
+without the video what B1 correctly refused to estimate from a hold.
+
+### What it fixes and what it does not, which splits cleanly
+
+**It fixes the GROWING component.** The three fastest-growing sets take the
+three largest gains — `160x6_1` 7.52 → 1.97 (4x), `160x6_2` 4.40 → 1.74 (2.5x),
+`160x4_2` 3.98 → 2.53 — and the two that do not grow are untouched.
+
+**It cannot touch a set whose drift does not grow.** `deadlift_185x3` moves
+10.72 → 10.69, and its beta comes out near zero because there is no growth to
+find. Its best axis on the same path is **1.89 cm**, so its entire error is the
+AXIS, not the path.
+
+**And growth alone does not predict the outcome.** `150x4_1` grows 2.1x and
+REGRESSES, 2.66 → 5.03. It is also the capture nearest its own null (2.66
+against 2.15), so there was almost nothing to win and a mis-set beta costs it.
+A gate that declined to correct where the reconstruction is already within a
+centimetre or two of the null would protect it, but that gate needs the null,
+which needs the video. Unsolved.
+
+**Nothing crosses `beats_null` yet — 0 of 6**, though `160x6_2` at 1.74 against
+1.54 is now close where it was 4.40.
+
+### What is left is the AXIS, and no single-set rule finds it
+
+On the corrected paths the best available axis is 1.02–2.24 cm on four of six.
+Three single-set rules were measured against it — pooled PCA (what ships), PCA
+of the MEAN REP on a phase grid, and the rotation axis — and **all three give
+essentially the same answer**, 4.49 / 4.50 / 5.59 median against a best of 2.03.
+On `185x3` all three land at 7.8–8.9 against a best of 1.89.
+
+So the problem is now sharply stated and it is smaller than it was: **the path
+is largely repairable from one set; the display axis is not.** H2 showed no
+statistic built from the path can find it, H3/H6 showed the rotation axis is
+right only where the wrist hinges about the bar, and H8 shows the mean-rep
+axis does not help either. The remaining candidates are a measured per-lift bar
+direction in watch axes (a tape measure, as `d` was) or a runtime input the
+product already has — which end of the bar the watch is on, or which way the
+lifter faces.
+
+
 ## G5 — sweep tests/ for silent skips; remove everything v1 (2026-08-16)
 
 Owner's instruction after G4, which found two tests skipping rather than failing

@@ -2189,9 +2189,36 @@ between odd and even reps, so single-capture angles are soft — but adjacent se
 of the same lift agree to 1–17°, which is the evidence for locking a
 per-session, per-lift axis.
 
+## 61, 62 — the deadlift side-on view, and a single-set fix (H8, 2026-08-16)
+
+**61 `61_deadlift_side_on_now.png` — the current state, at TRUE aspect with no
+4x stretch.** Top row is the side-on view the product would show, reconstruction
+and bar on the same axes; bottom row is the horizontal channel alone against rep
+phase. Every rep bows the SAME WAY to −10 to −20 cm at mid-phase while the bar
+stays inside ±5 cm. Reconstruction sweeps 2.8–34.8 cm against a bar sweeping
+3.1–11.2.
+
+**62 `62_deadlift_single_set_fix.png` — a fix that uses ONE set and nothing
+else.** No history, no prior sets, no video at runtime: a world-horizontal tilt
+ramp fitted against the set's own REP-TO-REP DISPERSION, anchored to vanish at
+the first rep. Median 4.97 → 3.78 cm, and the three fastest-growing sets take
+the three largest gains (`160x6_1` 7.52 → 1.97, `160x6_2` 4.40 → 1.74). Panel A
+draws it: the corrected paths hug the bar where the shipping ones sprawl.
+
+Two things the figure is careful to show rather than hide. `deadlift_185x3` does
+not move at all (10.72 → 10.69) because its drift does not grow — its best axis
+on the same path is 1.89 cm, so its whole error is the AXIS. And `150x4_1` grows
+2.1x yet REGRESSES 2.66 → 5.03, so growth alone does not predict the outcome; it
+is also the capture nearest its own null, with least to win.
+
+The objective is the design: "minimise horizontal excursion" would collapse to
+the flat-line null and score well by drawing nothing, and unanchored dispersion
+equalises the reps in the wrong direction (`150x4_1` 2.66 → 8.17 while its
+dispersion fell). Full record in TASKS.md H8.
+
 ---
 
-*Numbering: 47 through 60 are taken. The next free number is 61. **52
+*Numbering: 47 through 62 are taken. The next free number is 63. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*
