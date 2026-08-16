@@ -197,6 +197,57 @@ Nine steps, one module each, numbered to match.
    A path can no longer silently mirror unless the lift cannot be named.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
 
+### Step 10, which is not a step: `display.py`, the product view (H13, 2026-08-16)
+
+**A layer AFTER step 9, not a change to any of the nine.** It consumes
+`planar` / `vs_truth`'s `curve_pipeline` and returns curves to draw: a smoothed
+path, a speed to colour it by, and one average rep with the odd one labelled.
+No reconstruction module was touched and **no shipped number moved**. Run it on
+the video's tracked path and it does the identical thing, which is how every
+claim below was checked — 13 refereed captures, 61 reps.
+
+**The defaults, and what chose them.** `savgol` at `strength = 0.20` (the
+fraction of the rep the kernel spans), `turnaround` alignment, `median`
+averaging. Savitzky-Golay costs the real bar less than a boxcar, a Gaussian or
+a spline at **every** level tried; the level is the strongest whose
+90th-percentile distortion of the VIDEO path stays inside half of each axis's
+spec (0.17 cm horizontal, 0.65 cm vertical, against a boxcar's 0.50 / 2.79).
+
+**Three results worth carrying, and the first is the one to remember:**
+
+- **Smoothing does not change accuracy at all** — 2.07 cm median horizontal
+  error against the video, unmoved by any method at any level to 0.30. That is
+  P3 restated from the display side: the error is at rep frequency, so there is
+  no high-frequency component for a smoother to reach. Smoothing is free and it
+  fixes nothing.
+- **Averaging does.** 1.95 -> 1.52 cm, and the whole of it is the ALIGNMENT:
+  resampling each rep about its own turnaround rather than on a uniform time
+  grid takes the vertical from 8.30 cm to 3.00. The averager barely matters.
+- **Excluding the anomalous rep does NOT improve the average** (1.52 -> 1.70),
+  because the odd rep is usually real: 5 IMU flags against 6 video flags, 4 the
+  same rep, and on every set where the IMU fires the video fires on that rep
+  too. Ship the flag as a LABEL, not as a deletion.
+
+**What the video corroborates, which is the design of the whole display.**
+Mean concentric velocity r = +0.97 (median error 0.020 m/s, and it ranks the
+reps of a set the way the video does on **13 of 13**), peak speed +0.97,
+concentric duration +0.98, vertical ROM +0.99, turnaround phase +0.90. Fore-aft
+**magnitude** r = -0.03. So tempo and vertical travel are showable as numbers
+and fore-aft distance is not — the product view draws the path with an
+unlabelled horizontal axis, which `plot.py`'s display rules already required
+for a different reason. A sticking-point cue was built, measured at r = +0.28
+with its argmin on a window edge, and deleted rather than shipped.
+
+One definition earned its own function and is worth knowing about. `concentric`
+is the longest run where the bar is actually rising (v > 0.05 m/s), **not** the
+rep's lowest point to its highest. Under the extremes definition MCV agrees
+with the video at r = +0.53 and ranks a set's reps correctly on 8 of 13; under
+the threshold it is +0.97 and 13 of 13. Same paths, same smoothing, same video
+— a paused rep's bottom is flat, so the lowest SAMPLE is chosen by noise and
+lands anywhere inside a second-long dwell. `v_min` is a round number in the
+middle of a 0.02–0.12 plateau, not a tuned constant.
+*Evidence:* `analysis/64`–`66`, TASKS.md H13, `tests/test_display.py`.
+
 ### Two classes of lift: IMPACT and SMOOTH (owner, 2026-08-07)
 
 The owner's framing, and the measurement behind it is the sharpest lift-level

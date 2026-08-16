@@ -2241,9 +2241,55 @@ regress; the 20° optimum is in-sample and the out-of-sample evidence is bench's
 fore-aft error at lockout**, so this corpus can no longer measure the deadlift
 horizontal. Full record in TASKS.md H9.
 
+## 64, 65, 66 — the product display layer (H13, 2026-08-16)
+
+Three figures for `src/display.py`, which is a layer AFTER step 9 rather than
+a change to any of the nine steps. Nothing upstream moved and no shipped
+reconstruction number changed; these measure how a path should be DRAWN.
+
+**64 `64_smoothing_methods.png` — four smoothers, swept.** Panel A draws one
+real rep at three levels, and 0.50 is visibly the wrong answer: it overshoots
+the lockout by ~5 cm. B and C are the decision — what each level costs the
+REAL BAR, measured by putting the video path through the identical smoother —
+against a rule fixed before the level was chosen: stay inside half of each
+axis's spec. **Savitzky-Golay costs least at every level on both axes**
+(0.17 cm / 0.65 cm at the shipped 0.20, against a boxcar's 0.50 / 2.79).
+
+Panel D is the finding, and it is a flat line: **smoothing does not change
+accuracy at any level or by any method**, 2.07 cm throughout. That is a
+diagnosis rather than a null — the reconstruction's horizontal error is at rep
+frequency (P3), so there is no high-frequency component for a smoother to
+remove. Smoothing buys legibility; it costs nothing and it fixes nothing.
+
+**65 `65_average_paths.png` — the average rep, and which rep to leave out.**
+Panel B is the result: **the ALIGNMENT is everything and the averager is
+nearly nothing.** Resampling each rep about its own turnaround rather than on
+a uniform time grid takes the vertical error against the video's own average
+from 8.30 cm to 3.00; mean, median and trimmed sit at 1.56/1.52/1.52
+horizontal. Panel C: averaging buys what smoothing did not, 1.95 -> 1.52 cm.
+
+Panel D is the part to read carefully. The anomaly flag is scored against the
+video rep by rep: **5 IMU flags, 6 video flags, 4 the same rep**, and on every
+set where the IMU fires the video fires on that rep too. One false positive,
+two misses. So the odd rep is usually REAL — on the deadlifts it is the last
+rep of the set — which is exactly why EXCLUDING it does not improve the
+average (1.52 -> 1.70): the deviation is shared, so dropping it removes signal.
+The feature's value is the label, not the deletion. `deadlift_170x4_3`'s video
+scores are inflated by its own 22.8% clock drift, a defect G3 recorded and
+nobody has fixed.
+
+**66 `66_product_view.png` — what the app would draw.** One column per lift:
+the smoothed average path coloured by speed, the set's reps faint behind it,
+the flagged rep dashed rather than hidden, and a per-rep mean-concentric-
+velocity strip with the video's own value beside each bar. The fore-aft axis
+carries NO scale, which is the one deliberate omission in the figure: of
+everything drawn here, fore-aft MAGNITUDE is the only quantity the video
+refuses to corroborate (r = -0.03 over 61 reps, against +0.97 for velocity and
++0.99 for ROM).
+
 ---
 
-*Numbering: 47 through 63 are taken. The next free number is 64. **52
+*Numbering: 47 through 66 are taken. The next free number is 67. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

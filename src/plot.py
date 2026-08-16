@@ -42,6 +42,8 @@ from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
+from . import display
+
 STRETCH = 4.0
 
 
@@ -2571,4 +2573,299 @@ def plot_short_sets(data: dict):
         "refused them. All three singles now score; the thirteen multi-rep "
         "captures are bit-identical.", fontsize=11.5, y=0.985)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return fig
+
+
+# --------------------------------------------------------------------------
+# The product display layer (H13, 2026-08-16). See src/display.py.
+#
+# One convention split worth stating, because it looks like an inconsistency.
+# The DIAGNOSTIC panels below label the horizontal axis in centimetres, as
+# every other figure in analysis/ does — they are arguments about how large an
+# error is, and an unlabelled axis cannot make one. The PRODUCT MOCK
+# (`plot_product_view`) does not, because that is the display rule at the top
+# of this module: a user must never be shown "2.3 cm forward" on a channel
+# whose magnitude the video does not corroborate (r = -0.03, measured on all
+# 61 refereed reps).
+#
+# Categorical colour is the repo's existing blue/red/green/purple in a FIXED
+# order, checked colourblind-safe as a four-slot palette (worst adjacent pair
+# dE 8.7 deutan, 28.1 normal). Speed uses viridis, which `plot_paths` already
+# established here and which is perceptually uniform.
+# --------------------------------------------------------------------------
+
+METHOD_COLOR = {"boxcar": "#2c7fb8", "gaussian": "#c0392b",
+                "savgol": "#2ca25f", "spline": "#5e3c99"}
+
+
+def plot_smoothing_methods(data: dict):
+    """64 — four smoothers, swept, against what they cost the real bar."""
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.5))
+    ex = data["example"]
+
+    # A --- what the LEVELS look like on one real rep -----------------------
+    #
+    # Levels rather than methods, because at the shipped strength all four
+    # methods are visually indistinguishable on a real rep — which is the
+    # finding panels B and C quantify, and is unreadable as a picture. The
+    # difference between them is what they COST, not what they look like.
+    ax = axes[0, 0]
+    raw = ex["raw"]
+    ax.plot(raw[:, 0] * 100, raw[:, 1] * 100, color="0.72", lw=1.0,
+            label="unsmoothed", zorder=1)
+    shades = ("#9ecae1", "#2ca25f", "#5e3c99")
+    for (st, c), col in zip(ex["levels"], shades):
+        ax.plot(c[:, 0] * 100, c[:, 1] * 100, color=col,
+                lw=2.6 if st == data["shipped"][1] else 1.7,
+                label=f"savgol {st:.2f}" + ("  (ships)" if st == data["shipped"][1] else ""),
+                zorder=4 if st == data["shipped"][1] else 3)
+    vid = ex["video"]
+    ax.plot(vid[:, 0] * 100, vid[:, 1] * 100, color="0.1", lw=2.0, ls="--",
+            label="the bar (video)", zorder=5)
+    ax.set_aspect(1.0 / STRETCH)
+    ax.set_xlabel("fore-aft (cm)   [horizontal stretched 4x]")
+    ax.set_ylabel("vertical (cm)")
+    ax.set_title(f"A  one rep at three LEVELS of smoothing\n{ex['stem']}, "
+                 f"rep {ex['rep']+1}", fontsize=10.5)
+    ax.legend(fontsize=8, frameon=False, loc="lower left")
+    ax.grid(alpha=0.25)
+
+    # B, C --- what each level costs the REAL bar ---------------------------
+    for ax, key, rule, axis in ((axes[0, 1], "cost_v_p90", 1.0, "vertical"),
+                                (axes[1, 0], "cost_h_p90", 0.5, "horizontal")):
+        for m in display.METHODS:
+            rows = sorted((r for r in data["sweep"] if r["method"] == m),
+                          key=lambda r: r["strength"])
+            x = [r["strength"] for r in rows]
+            ax.plot(x, [r[key] for r in rows], "-o", ms=4, lw=1.8,
+                    color=METHOD_COLOR[m], label=m)
+            ax.annotate(m, (x[-1], rows[-1][key]), fontsize=8,
+                        color=METHOD_COLOR[m], xytext=(4, 0),
+                        textcoords="offset points", va="center")
+        ax.axhline(rule, color="#16a085", lw=1.4, ls="--")
+        ax.annotate(f"the selection rule: half the {axis} spec",
+                    (0.02, rule), fontsize=8.5, color="#16a085",
+                    xytext=(0, 4), textcoords="offset points")
+        ax.axvline(data["shipped"][1], color="0.4", lw=1.0, ls=":")
+        ax.set_xlabel("smoothing strength (fraction of the rep the kernel spans)")
+        ax.set_ylabel(f"{axis} distortion of the VIDEO path, cm (90th pct)")
+        ax.set_title(f"{'B' if axis == 'vertical' else 'C'}  what smoothing "
+                     f"costs the real bar — {axis}", fontsize=10.5)
+        ax.grid(alpha=0.3)
+        ax.set_xlim(0, max(r["strength"] for r in data["sweep"]) * 1.12)
+
+    # D --- and what it buys in accuracy, which is nothing -------------------
+    ax = axes[1, 1]
+    for m in display.METHODS:
+        rows = sorted((r for r in data["sweep"] if r["method"] == m),
+                      key=lambda r: r["strength"])
+        ax.plot([r["strength"] for r in rows], [r["fid_h_med"] for r in rows],
+                "-o", ms=4, lw=1.8, color=METHOD_COLOR[m], label=m)
+    ax.axhline(data["null_h"], color="#c0392b", lw=1.4, ls="--")
+    ax.annotate("the flat-line null", (0.02, data["null_h"]), fontsize=8.5,
+                color="#c0392b", xytext=(0, 4), textcoords="offset points")
+    ax.axhline(data["spec_cm"], color="#16a085", lw=1.4, ls="--")
+    ax.annotate(f"{data['spec_cm']:g} cm spec", (0.02, data["spec_cm"]),
+                fontsize=8.5, color="#16a085", xytext=(0, 4),
+                textcoords="offset points")
+    ax.set_ylim(0, max(data["null_h"], 2.6) * 1.25)
+    ax.set_xlabel("smoothing strength")
+    ax.set_ylabel("horizontal error vs the video, cm (median over 61 reps)")
+    ax.set_title("D  and what it buys in ACCURACY: nothing, at any level\n"
+                 "the error is at rep frequency, so there is nothing "
+                 "high-frequency to remove", fontsize=10.5)
+    ax.legend(fontsize=8.5, frameon=False, ncols=2)
+    ax.grid(alpha=0.3)
+
+    fig.suptitle(textwrap.fill(
+        "64 — smoothing for the product view. Savitzky-Golay costs the real "
+        "bar least at every level; the shipped strength is the strongest that "
+        "stays inside half of each axis's spec.", 96), fontsize=11.5, y=0.985)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return fig
+
+
+def plot_average_paths(data: dict):
+    """65 — how to average a set's reps, and which rep to leave out."""
+    fig = plt.figure(figsize=(14, 10.5))
+    gs = fig.add_gridspec(2, 3, height_ratios=[1.15, 1.0])
+
+    # A --- the same set, both instruments, reps and their average ----------
+    ex = data["example"]
+    for j, side in enumerate(("imu", "video")):
+        ax = fig.add_subplot(gs[0, j])
+        for i, r in enumerate(ex[side]["reps"]):
+            flagged = ex[side]["excluded"][i]
+            ax.plot(r[:, 0] * 100, r[:, 1] * 100,
+                    color="#c0392b" if flagged else "0.7",
+                    ls="--" if flagged else "-", lw=1.6 if flagged else 1.0,
+                    zorder=2 if flagged else 1,
+                    label="flagged as anomalous" if flagged and i == np.argmax(
+                        ex[side]["excluded"]) else None)
+        a = ex[side]["average"]
+        ax.plot(a[:, 0] * 100, a[:, 1] * 100, color="#2c7fb8", lw=2.6,
+                zorder=3, label="average rep")
+        ax.set_aspect(1.0 / STRETCH)
+        ax.set_ylabel("vertical (cm)" if j == 0 else "")
+        ax.set_xlabel("fore-aft (cm)   [4x]")
+        ax.set_title(f"{'A' if j == 0 else ' '}  {ex['stem']} — "
+                     f"{'reconstruction' if side == 'imu' else 'the bar (video)'}",
+                     fontsize=10.5)
+        ax.legend(fontsize=8, frameon=False, loc="upper left")
+        ax.grid(alpha=0.25)
+
+    # B --- alignment and averager, scored against the video's average ------
+    ax = fig.add_subplot(gs[0, 2])
+    rows = data["variants"]
+    y = np.arange(len(rows))
+    ax.barh(y - 0.19, [r["h_rms"] for r in rows], 0.36, color="#2c7fb8",
+            label="horizontal")
+    ax.barh(y + 0.19, [r["v_rms"] for r in rows], 0.36, color="#c0392b",
+            label="vertical")
+    for i, r in enumerate(rows):
+        ax.annotate(f"{r['h_rms']:.2f}", (r["h_rms"], i - 0.19), fontsize=7.5,
+                    xytext=(3, -2.5), textcoords="offset points")
+        ax.annotate(f"{r['v_rms']:.2f}", (r["v_rms"], i + 0.19), fontsize=7.5,
+                    xytext=(3, -2.5), textcoords="offset points")
+        if r.get("shipped"):
+            ax.axhspan(i - 0.45, i + 0.45, color="#16a085", alpha=0.13, zorder=0)
+    ax.set_xlim(0, max(r["v_rms"] for r in rows) * 1.28)
+    ax.set_yticks(y)
+    ax.set_yticklabels([r["label"] + ("   [ships]" if r.get("shipped") else "")
+                        for r in rows], fontsize=8)
+    ax.invert_yaxis()
+    ax.set_xlabel("error vs the video's own average rep, cm")
+    ax.set_title("B  alignment is the whole result;\nthe averager barely "
+                 "matters", fontsize=10.5)
+    ax.legend(fontsize=8, frameon=False, loc="lower right")
+    ax.grid(alpha=0.3, axis="x")
+
+    # C --- the average is more accurate than any single rep ----------------
+    ax = fig.add_subplot(gs[1, 0])
+    caps = data["per_capture"]
+    x = np.arange(len(caps))
+    ax.bar(x - 0.19, [c["per_rep_h"] for c in caps], 0.36, color="0.6",
+           label="a single rep (median over the set)")
+    ax.bar(x + 0.19, [c["avg_h"] for c in caps], 0.36, color="#2ca25f",
+           label="the average rep")
+    ax.set_xticks(x)
+    ax.set_xticklabels([c["stem"] for c in caps], rotation=55, ha="right",
+                       fontsize=7.5)
+    ax.set_ylabel("horizontal error vs video, cm")
+    ax.set_title("C  averaging buys accuracy where smoothing did not\n"
+                 f"median {data['per_rep_median']:.2f} -> "
+                 f"{data['avg_median']:.2f} cm", fontsize=10.5)
+    ax.legend(fontsize=8, frameon=False)
+    ax.grid(alpha=0.3, axis="y")
+
+    # D --- does the IMU flag the rep the video flags? -----------------------
+    ax = fig.add_subplot(gs[1, 1:])
+    for i, c in enumerate(data["anomalies"]):
+        n = len(c["imu"])
+        xs = i + np.linspace(-0.28, 0.28, n)
+        ax.scatter(xs, c["imu"], s=30, color="#2c7fb8", zorder=3,
+                   label="IMU" if i == 0 else None)
+        ax.scatter(xs, c["video"], s=30, marker="D", color="#c0392b", zorder=3,
+                   label="video" if i == 0 else None)
+        for k in range(n):
+            ax.plot([xs[k], xs[k]], [c["imu"][k], c["video"][k]], color="0.8",
+                    lw=0.9, zorder=1)
+            if c["imu_flag"][k] or c["vid_flag"][k]:
+                who = ("BOTH" if c["imu_flag"][k] and c["vid_flag"][k]
+                       else "IMU only" if c["imu_flag"][k] else "video only")
+                ax.annotate(f"rep {k+1}\n{who}",
+                            (xs[k], max(c["imu"][k], c["video"][k])),
+                            fontsize=6.5, ha="center", xytext=(0, 5),
+                            textcoords="offset points",
+                            color="#c0392b" if who == "video only" else "0.2")
+    ax.set_xticks(np.arange(len(data["anomalies"])))
+    ax.set_xticklabels([c["stem"] for c in data["anomalies"]], rotation=55,
+                       ha="right", fontsize=7.5)
+    ax.set_ylabel("distance from the set's median rep, cm")
+    ax.set_title(textwrap.fill(
+        "D  the anomaly score, both instruments. IMU flags 5 reps, video 6, "
+        "4 the same — and on every set where the IMU fires the video fires on "
+        "that rep too, so the odd rep is REAL rather than a reconstruction "
+        "artefact. One false positive, two misses. "
+        "(deadlift_170x4_3's video scores are inflated by its own 22.8% clock "
+        "drift, a known open defect.)", 108), fontsize=10)
+    ax.legend(fontsize=8.5, frameon=False)
+    ax.grid(alpha=0.3, axis="y")
+
+    fig.suptitle(
+        "65 — the average rep. Aligning on the TURNAROUND rather than on time "
+        "is the whole result; excluding the odd rep labels it rather than "
+        "improving it.", fontsize=11.5, y=0.985)
+    fig.tight_layout(rect=(0, 0, 1, 0.945))
+    return fig
+
+
+def plot_product_view(data: dict):
+    """66 — what the app would draw, one column per lift.
+
+    The horizontal axis carries NO scale here, which is the display rule at the
+    top of this module and is load-bearing rather than stylistic: the fore-aft
+    MAGNITUDE is the one quantity in this figure the video does not corroborate
+    (r = -0.03 over 61 reps). Shape, speed and vertical travel it does.
+    """
+    cols = data["columns"]
+    fig, axes = plt.subplots(2, len(cols), figsize=(4.6 * len(cols), 10.2),
+                             height_ratios=[2.1, 1.0])
+    vmax = max(float(c["speed"].max()) for c in cols)
+
+    for j, col in enumerate(cols):
+        ax = axes[0, j]
+        # Height measured from the bottom of the rep, so all three lifts read
+        # the same way. A bench window starts at lockout and a deadlift window
+        # starts on the floor, so the raw curves run 0 -> -30 and 0 -> +60; the
+        # shift is common to every rep of the set, so no shape changes.
+        floor = min(float(r[:, 1].min()) for r in
+                    list(col["reps"]) + [col["average"]])
+        for i, r in enumerate(col["reps"]):
+            ax.plot(r[:, 0] * 100, (r[:, 1] - floor) * 100, lw=0.9,
+                    color="#c0392b" if col["excluded"][i] else "0.78",
+                    ls="--" if col["excluded"][i] else "-", zorder=2)
+        avg, sp = col["average"] - [0.0, floor], col["speed"]
+        seg = np.stack([avg[:-1] * 100, avg[1:] * 100], axis=1)
+        lc = LineCollection(seg, cmap="viridis", linewidths=4.5,
+                            norm=plt.Normalize(0, vmax), zorder=4)
+        lc.set_array(sp[:-1])
+        ax.add_collection(lc)
+        ax.set_aspect(1.0 / STRETCH)
+        ax.set_xticks([])                       # deliberate: no fore-aft scale
+        ax.set_ylabel("bar height (cm)" if j == 0 else "")
+        ax.set_title(f"{col['lift']}\n{col['stem']}", fontsize=10.5)
+        ax.autoscale_view()
+        ax.grid(alpha=0.22, axis="y")
+        note = f"{col['n_reps']} reps"
+        if col["excluded"].any():
+            note += f" · rep {int(np.argmax(col['excluded'])) + 1} flagged"
+        ax.annotate(note, (0.03, 0.02), xycoords="axes fraction", fontsize=8.5,
+                    color="0.25")
+
+        ax2 = axes[1, j]
+        x = np.arange(col["n_reps"])
+        ax2.bar(x, col["mcv"], 0.55, color="#2c7fb8", label="IMU")
+        ax2.plot(x, col["mcv_video"], "D", ms=7, color="#c0392b",
+                 label="the bar (video)", zorder=3)
+        ax2.set_xticks(x)
+        ax2.set_xticklabels([f"{i+1}" for i in x], fontsize=8)
+        ax2.set_xlabel("rep")
+        ax2.set_ylabel("mean concentric velocity (m/s)" if j == 0 else "")
+        ax2.set_ylim(0, max(max(col["mcv"]), max(col["mcv_video"])) * 1.35)
+        if j == 0:
+            ax2.legend(fontsize=8, frameon=False, ncols=2, loc="upper left")
+        ax2.grid(alpha=0.3, axis="y")
+
+    fig.suptitle(textwrap.fill(
+        "66 — the product view: one smoothed average path per set, coloured by "
+        "speed, the odd rep drawn dashed rather than hidden. The fore-aft axis "
+        "carries no scale, deliberately — it is the one channel the video does "
+        "not corroborate.", 104), fontsize=11.5, y=0.975)
+    # tight_layout first, then a colourbar in its own axes: adding it as a
+    # sibling of the top row is what put it on top of the third panel.
+    fig.tight_layout(rect=(0, 0, 0.90, 0.92))
+    cax = fig.add_axes((0.925, 0.42, 0.016, 0.45))
+    cb = fig.colorbar(lc, cax=cax)
+    cb.set_label("bar speed (m/s)", fontsize=9)
     return fig

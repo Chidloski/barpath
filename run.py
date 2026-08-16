@@ -19,6 +19,9 @@
     python run.py --scorecard          # how well the pipeline performs, per lift
     python run.py --paths              # step 9: the bar path itself
     python run.py --overview           # stages, bar path and video, in one
+    python run.py --smoothing          # H13: smoothing methods and levels
+    python run.py --averages           # H13: the average rep, and the odd one
+    python run.py --productview        # H13: what the app would draw
 
 --truth is slow: it decodes each clip. It produces numbers on deadlift, and
 since C8 on the bench captures whose sync is identified (3 of 7). Squat and the
@@ -1810,6 +1813,211 @@ def draw_short_sets() -> int:
     return 0
 
 
+# --------------------------------------------------------------------------
+# H13 — the product display layer. See src/display.py.
+# --------------------------------------------------------------------------
+
+def _refereed_sets():
+    """Every scored capture as (stem, lift, [(recon, video, t) per rep]).
+
+    Both curves come from `metrics.vs_truth`'s `per_rep`, so they arrive on a
+    common clock, a common display axis and a common fore-aft sign. Building
+    them any other way is how step 8 came to be on screen before it ran.
+    """
+    import numpy as np
+    from src import capture
+
+    out = []
+    for csv in sorted((ROOT / "data_v2" / "raw").glob("*.csv")):
+        video = pipeline.find_video(csv)
+        if video is None:
+            continue
+        result = pipeline.run(csv, video=video)
+        vs = result.get("vs_truth")
+        if not vs:
+            continue
+        t_all = result["log"]["t"]
+        reps = []
+        for pr in vs["per_rep"]:
+            if not pr.get("covered"):
+                continue
+            a, b = result["bounds"][pr["rep"]]
+            reps.append((np.asarray(pr["curve_pipeline"], float),
+                         np.asarray(pr["curve_video"], float), t_all[a:b]))
+        if reps:
+            out.append((csv.stem.split("_2026")[0], capture.lift_of(csv), reps))
+    return out
+
+
+def draw_smoothing_methods() -> int:
+    """64: four smoothers swept against what they cost the real bar."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import display, plot
+
+    sets = _refereed_sets()
+    reps = [r for _, _, rs in sets for r in rs]
+    print(f"A: {len(sets)} refereed captures, {len(reps)} reps")
+
+    strengths = [0.0, 0.02, 0.05, 0.10, 0.15, 0.20, 0.30, 0.50]
+    sweep = []
+    for m in display.METHODS:
+        for st in strengths:
+            cost_h, cost_v, fid = [], [], []
+            for rec, vid, t in reps:
+                sv = display.smooth(vid, t, m, st)
+                sp = display.smooth(rec, t, m, st)
+                c = display.compare(sv, vid)
+                cost_h.append(c["h_rms"])
+                cost_v.append(c["v_rms"])
+                fid.append(display.compare(sp, vid)["h_rms"])
+            sweep.append({"method": m, "strength": st,
+                          "cost_h_p90": float(np.percentile(cost_h, 90)),
+                          "cost_v_p90": float(np.percentile(cost_v, 90)),
+                          "fid_h_med": float(np.median(fid))})
+            if st in (0.10, 0.20, 0.30):
+                print(f"  {m:9s} {st:.2f}  cost p90 h {sweep[-1]['cost_h_p90']:.3f} "
+                      f"v {sweep[-1]['cost_v_p90']:.3f}   fid_h "
+                      f"{sweep[-1]['fid_h_med']:.3f}")
+
+    null = float(np.median([np.sqrt((vid[:, 0] ** 2).mean()) * 100
+                            for _, vid, _ in reps]))
+    stem, _, rs = next(s for s in sets if s[0].startswith("bench_92.5x6_1"))
+    rec, vid, t = rs[1]
+    data = {
+        "sweep": sweep, "null_h": null, "spec_cm": 1.0,
+        "shipped": (display.SMOOTH_METHOD, display.SMOOTH_STRENGTH),
+        "example": {
+            "stem": stem, "rep": 1, "raw": rec, "video": vid,
+            "levels": [(st, display.smooth(rec, t, display.SMOOTH_METHOD, st))
+                       for st in (0.05, display.SMOOTH_STRENGTH, 0.50)],
+        },
+    }
+    fig = plot.plot_smoothing_methods(data)
+    out = ROOT / "analysis" / "64_smoothing_methods.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_average_paths() -> int:
+    """65: how to average a set's reps, and which one to leave out."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import display, plot
+
+    sets = [s for s in _refereed_sets() if len(s[2]) >= 3]
+    sm = lambda c, t: display.smooth(c, t)                     # noqa: E731
+
+    variants = []
+    for align in ("time", "turnaround"):
+        for meth in ("mean", "median", "trimmed"):
+            for excl in (False, True):
+                h, v = [], []
+                for _, _, rs in sets:
+                    a = display.average_rep([sm(r, t) for r, _, t in rs],
+                                            method=meth, align=align,
+                                            exclude=excl)["average"]
+                    b = display.average_rep([sm(x, t) for _, x, t in rs],
+                                            method="median", align="turnaround",
+                                            exclude=False)["average"]
+                    c = display.compare(a, b)
+                    h.append(c["h_rms"])
+                    v.append(c["v_rms"])
+                variants.append({
+                    "label": f"{align} · {meth}" + (" · excl" if excl else ""),
+                    "shipped": align == "turnaround" and meth == "median" and excl,
+                    "h_rms": float(np.median(h)), "v_rms": float(np.median(v))})
+    for r in variants:
+        print(f"  B: {r['label']:28s} h {r['h_rms']:.2f}  v {r['v_rms']:.2f}")
+
+    per_capture, anomalies = [], []
+    for stem, _, rs in sets:
+        imu = display.average_rep([sm(r, t) for r, _, t in rs], exclude=False)
+        vid = display.average_rep([sm(x, t) for _, x, t in rs], exclude=False)
+        per_capture.append({
+            "stem": stem,
+            "per_rep_h": float(np.median([display.compare(sm(r, t), sm(x, t))["h_rms"]
+                                          for r, x, t in rs])),
+            "avg_h": display.compare(imu["average"], vid["average"])["h_rms"]})
+        anomalies.append({
+            "stem": stem, "imu": imu["scores"], "video": vid["scores"],
+            "imu_flag": display.flag_anomalies(imu["grid"]),
+            "vid_flag": display.flag_anomalies(vid["grid"])})
+
+    fired = sum(a["imu_flag"].any() for a in anomalies)
+    shared = sum((a["imu_flag"] & a["vid_flag"]).any() for a in anomalies)
+    print(f"  D: IMU flags something on {fired} sets; the video flags the same "
+          f"rep on {shared}")
+
+    stem, _, rs = next(s for s in sets if s[0].startswith("deadlift_160x6_1"))
+    example = {"stem": stem}
+    for side, pick in (("imu", 0), ("video", 1)):
+        curves = [sm(r[pick], r[2]) for r in rs]
+        av = display.average_rep(curves)
+        example[side] = {"reps": [display.resample_phase(c) for c in curves],
+                         "average": av["average"], "excluded": av["excluded"]}
+
+    data = {"example": example, "variants": variants,
+            "per_capture": per_capture, "anomalies": anomalies,
+            "per_rep_median": float(np.median([c["per_rep_h"] for c in per_capture])),
+            "avg_median": float(np.median([c["avg_h"] for c in per_capture]))}
+    print(f"  C: per-rep {data['per_rep_median']:.2f} cm -> average "
+          f"{data['avg_median']:.2f} cm")
+
+    fig = plot.plot_average_paths(data)
+    out = ROOT / "analysis" / "65_average_paths.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
+def draw_product_view() -> int:
+    """66: what the app would draw, one column per lift."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import numpy as np
+    from src import display, plot
+
+    want = ("bench_92.5x6_1", "squat_pause_145x4_1", "deadlift_160x6_1")
+    sets = {s[0]: s for s in _refereed_sets()}
+    columns = []
+    for prefix in want:
+        key = next((k for k in sets if k.startswith(prefix)), None)
+        if key is None:
+            continue
+        stem, lift, rs = sets[key]
+        curves = [display.smooth(r, t) for r, _, t in rs]
+        av = display.average_rep(curves)
+        # Speed on the PHASE grid the average lives on. The grid has no clock,
+        # so it borrows the median rep duration — which is what a set summary
+        # means by "the speed of a typical rep" and is why this is not simply
+        # the mean of the per-rep speeds.
+        dur = float(np.median([t[-1] - t[0] for _, _, t in rs]))
+        grid_t = np.linspace(0, dur, len(av["average"]))
+        columns.append({
+            "stem": stem, "lift": lift, "n_reps": len(rs),
+            "reps": [display.resample_phase(c) for c in curves],
+            "average": av["average"], "excluded": av["excluded"],
+            "speed": display.speed(av["average"], grid_t),
+            "mcv": [display.rep_stats(c, t)["mean_concentric_v"]
+                    for c, (_, _, t) in zip(curves, rs)],
+            "mcv_video": [display.rep_stats(display.smooth(x, t), t)["mean_concentric_v"]
+                          for _, x, t in rs],
+        })
+        c = columns[-1]
+        print(f"  {stem}: {c['n_reps']} reps, peak {c['speed'].max():.2f} m/s, "
+              f"MCV imu {np.median(c['mcv']):.3f} vid {np.median(c['mcv_video']):.3f}")
+
+    fig = plot.plot_product_view({"columns": columns})
+    out = ROOT / "analysis" / "66_product_view.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
+
 def textwrap_short(text: str, width: int = 46) -> str:
     """One caption line, cut at a word boundary."""
     return text if len(text) <= width else text[:width].rsplit(" ", 1)[0] + "…"
@@ -1862,6 +2070,12 @@ def main(argv: list[str]) -> int:
         return draw_short_sets()
     if "--squatsync" in argv:
         return draw_squat_sync()
+    if "--smoothing" in argv:
+        return draw_smoothing_methods()
+    if "--averages" in argv:
+        return draw_average_paths()
+    if "--productview" in argv:
+        return draw_product_view()
 
     paths = [Path(a) for a in args] or sorted((ROOT / "data_v2" / "raw").glob("*.csv"))
     if not paths:

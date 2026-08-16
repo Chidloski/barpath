@@ -14,6 +14,145 @@ Related, and deliberately not duplicated here:
 ---
 
 
+
+## H13 — the product display layer: smoothing, speed colour, the average rep (2026-08-16)
+
+Owner's task, and its framing is different from every task before it: the end
+goal is the gym-app VIEW, not the reconstruction. Smooth the path, colour it by
+speed within the rep, show one average path with anomalies excluded, and
+compare against the video's reps put through the identical treatment.
+
+**Built as a new module `src/display.py` that changes nothing upstream.** It
+consumes `pipeline.run`'s `planar` and `metrics.vs_truth`'s per-rep
+`curve_pipeline` / `curve_video`, which already arrive on a common clock, a
+common display axis and a common fore-aft sign. No reconstruction module was
+touched, no default moved, and the four standing suite failures are the same
+four before and after (verified by stashing the diff and re-running). It lands
+on `main` under the branch rule because it measures and describes rather than
+changing the bar path.
+
+### The sweep: 4 methods x 8 levels x 61 reps (`analysis/64`)
+
+The problem with comparing smoothers is that their parameters are not
+commensurable, so `strength` here is **the fraction of the rep the kernel
+spans** and each method converts it to its own units. The measured currency is
+`truth_cost`: run the smoother on the VIDEO path and ask how far it moved the
+real bar. That is the number that says when smoothing has started destroying
+form rather than noise.
+
+    method     strength   cost_h p90   cost_v p90     (cm, 61 reps)
+    savgol       0.20        0.17         0.65        <- ships
+    gaussian     0.20        0.37         2.07
+    spline       0.20        0.48         1.34
+    boxcar       0.20        0.50         2.79
+    savgol       0.30        0.38         1.24        <- fails the rule
+
+**Savitzky-Golay costs least at every level on both axes**, because it fits a
+quadratic and a quadratic can represent a peak where a rectangular window
+cannot — the turnarounds are exactly where a bar-path reader looks. Level
+chosen by a rule fixed before reading it off: the strongest whose 90th-
+percentile cost stays inside half of each axis's spec (0.5 cm of the 1 cm
+horizontal, 1.0 cm of the +/-2-3 cm vertical). The METHOD ordering does not
+depend on that rule.
+
+One edge choice was decided by measurement rather than by argument: savgol uses
+`mode="interp"`, which takes the 90th-percentile vertical cost from 0.835 cm to
+0.651 (`mirror` is worse at 1.443) and makes savgol and `spline` the only two
+methods that reproduce a straight line exactly.
+
+**THE FINDING IS A FLAT LINE. Smoothing does not change accuracy, at all** —
+2.07 cm median horizontal error against the video, unmoved by any method at any
+level up to 0.30. That is not a null result, it is P3 arriving from the display
+side: the reconstruction's horizontal error is at rep frequency, so there is no
+high-frequency component for a smoother to remove. Smoothing buys legibility,
+costs accuracy nothing, and fixes nothing.
+
+### The average rep (`analysis/65`)
+
+**Alignment is the whole result and the averager is nearly nothing.** Scored
+against the video's own average rep, over the 13 refereed captures:
+
+    alignment     averager     h rms    v rms
+    time          mean          1.64     8.09
+    time          median        1.64     8.30
+    turnaround    mean          1.56     3.40
+    turnaround    median        1.52     3.00     <- ships
+    turnaround    trimmed       1.52     3.02
+    turnaround    median+excl   1.70     2.94
+
+Resampling each rep about its own turnaround — the one landmark every rep of
+every lift has, found from the path's geometry and needing no lift name — takes
+the vertical from 8.30 to 3.00 cm. A uniform time grid smears the bottom of the
+rep because a set's tempo drifts, which C31a already measured on the paused
+squats (gaps lengthening 5.4 -> 8.5 s inside one set).
+
+**Averaging buys what smoothing did not: 1.95 -> 1.52 cm.** That is rep-to-rep
+scatter cancelling, and it is the spec's own "rep-to-rep difference is the
+product" argument arriving from the other direction.
+
+### The anomaly flag, and why it should not delete anything
+
+Scored per rep against the video rather than per set, because per set flatters
+it: **the IMU flags 5 reps across 4 sets, the video flags 6 across 5, and 4 are
+the same rep.** On every set where the IMU fires the video fires on that rep
+too. The residue is one false positive (`deadlift_160x6_2` rep 1) and two
+misses. Worst-rep agreement across all 13 captures is 8 of 13 against a 22%
+chance rate.
+
+**So the odd rep is usually REAL — on the deadlifts it is the last rep of the
+set, and the video sees it too — which is exactly why excluding it does not
+improve the average (1.52 -> 1.70).** The deviation is shared, so dropping it
+removes signal and leaves a median over n-1. What exclusion IS good for is a
+MIS-SEGMENTED rep, and since G1 fixed the last three the corpus has none, so it
+was constructed: substituting a half-rep window moves a `mean` average by
+4.74 cm median (9.16 worst) and exclusion takes that to 0.88, while a `median`
+average is already immune at 0.61 with no exclusion at all. The two defences
+are largely redundant and the median is doing the work. **Ship the flag as a
+label, not as a deletion.**
+
+### What the video corroborates, and what it refuses
+
+Every quantity the module offers was scored against the video on all 61 reps
+before it was offered. The right-hand column is the sharper test — a
+correlation over 61 reps can be carried entirely by the three lifts having
+different tempos, and it is rep-to-rep difference INSIDE one set that a product
+claims to show:
+
+    quantity                r        median err    within-set ranking
+    mean concentric vel   +0.970      0.020 m/s     13 of 13
+    concentric duration   +0.977      0.020 s       13 of 13
+    peak speed            +0.974      0.022 m/s     11 of 13
+    turnaround phase      +0.900      0.012 rep     10 of 13
+    vertical ROM          +0.989      3.7 cm         9 of 13
+    ---------------------------------------------------------------
+    fore-aft SWEEP        -0.031      2.2 cm         8 of 13
+    stall phase           +0.28       degenerate    undefined
+
+**The line in that table is the design of the display.** Tempo and vertical
+travel are showable as numbers; fore-aft MAGNITUDE is not, so `analysis/66`
+draws the path with an unlabelled horizontal axis — which `plot.py`'s display
+rules already required for a different reason, and which now has a second and
+independent justification. A sticking-point cue was built, measured, and
+DELETED rather than shipped with a caveat.
+
+### The correction inside this task, which is the part to remember
+
+The first measurement of mean concentric velocity gave r = +0.53 and a
+within-set ranking correct on 8 of 13 — a weak result that would have been
+written up as "the IMU cannot resolve rep-to-rep velocity". It was the
+DEFINITION, not the instrument. Taking the concentric as the rep's lowest point
+to its highest is ill-conditioned on a paused rep: the bottom is flat for a
+second or more, so the lowest SAMPLE is chosen by noise and can land anywhere
+inside the dwell, and half a second on a 1.7 s ascent is a 30% error in the
+denominator. Defining it as the longest run with v > 0.05 m/s gives **r =
++0.971, median error 0.020 m/s, and 13 of 13 within-set**. Same paths, same
+smoothing, same video. `v_min` sits on a 0.02-0.12 plateau, so it is a round
+number in the middle of a 6x range rather than a tuned constant.
+
+*Evidence:* `src/display.py`, `tests/test_display.py` (46 tests, 9 of them on
+real captures), `analysis/64`-`66`, `python run.py --smoothing --averages
+--productview`.
+
 ## H1 — why the deadlift horizontal is large: two mechanisms, four trials, no fix shipped (2026-08-15)
 
 Owner's task: a deep dive on the reasons behind the large horizontal deviations
