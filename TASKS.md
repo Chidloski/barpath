@@ -466,6 +466,92 @@ this corpus cannot referee on deadlift because the reference axis there is the
 broken one.
 
 
+## H7 — three pipeline improvements, measured end to end (2026-08-16)
+
+Owner asked to turn H1-H6 into improvements. All three are scored through
+`metrics.vs_truth` on the thirteen scoreable captures. **`src/` is still not
+written — these are proposals with numbers, not a landed change.**
+
+### 1. A confidence test that can finally see a drift-owned axis (REFUSE-ONLY)
+
+H2's open problem was that nothing in `confidence` can tell a bar-owned axis
+from a drift-owned one. H5/H6 supply the missing statistic: **a capture's
+display axis expressed in WATCH coordinates, against the consensus of the other
+sets of that lift.** Leave-one-out, no video, no tuned physical constant.
+
+    kept  (dev  1-18°)   bench_92.5x6_1/2, all three squats, bench_spoto_95x5_2
+    refused (dev 27-89°) bench_spoto_95x5_1, all six deadlifts
+
+At a 20-25° threshold it is **7/7 on refusals and 6/6 on keeps** — every capture
+it refuses genuinely loses to the flat-line null, and every one it keeps
+genuinely beats it. `confidence` today makes two errors on the same corpus:
+it keeps `deadlift_185x3` (which loses at 10.72 against a 1.55 null) and refuses
+`bench_spoto_95x5_2` (which wins).
+
+**THE CAVEAT, AND IT IS MOST OF THE RESULT.** On this corpus "loses to the null"
+and "is a deadlift" are nearly the same set — all six deadlifts lose, six of
+seven bench/squat win. So a gate that separates deadlift from the rest will
+score perfectly whether or not it is measuring drift. **There is exactly one
+non-trivial discrimination in the table**: `bench_spoto_95x5_1`, a bench that
+loses to its null, sits at 27° with the deadlifts and is correctly refused. One
+data point is not a validation. What would settle it is a deadlift that works or
+a bench that fails — the same missing capture the rest of this file keeps
+asking for.
+
+### 2. The per-lift display axis (`AX`) — project.py's own deferred idea
+
+Take the display axis from the body-frame consensus of the lift's OTHER
+captures. `project.py` defers exactly this: "locking a per-exercise axis by
+averaging over past sets is a later step, not a now step". The measurement now
+argues for it.
+
+    lift       shipping -> AX        notable
+    deadlift    4.97 -> 3.40 cm      160x6_1 7.52 -> 1.76, 185x3 10.72 -> 3.01
+    bench       2.01 -> 2.06 cm      unchanged (1.23 -> 1.23 on the best capture)
+    squat       2.65 -> 2.63 cm      unchanged
+    all 13      2.97 -> 2.74 cm      8 of 13 improved, beats-null 6 -> 7
+
+**It has the shape a fix should have: it moves the lift that is broken and
+leaves alone the two that work.** It costs an operational constraint — it needs
+at least one prior set of the same lift — and its deadlift consensus is pooled
+from axes that scatter 51°, so the mechanism is validated on bench and squat and
+merely *helps* on deadlift.
+
+### 3. They COMPOSE, unlike C29's pair
+
+`V2` (remove the growth of the per-rep curvature, H1) acts on the PATH; `AX`
+acts on STEP 8. Different stages, so composition is expected — and unlike C29's
+impact correction and `d`, which both targeted the same instant and gave
+10.66 -> 3.93 -> 3.89, these do not overlap:
+
+    lift       ship    V2      AX     V2+AX
+    deadlift   4.97   3.20    3.40    2.77
+    bench      2.01   2.04    2.06    2.15
+    squat      2.65   2.14    2.63    2.15
+    all 13     2.97   2.43    2.74    2.22     10 of 13 improved
+
+Deadlift 4.97 -> 2.77 is better than either alone. The cost is bench: 2.01 ->
+2.15, and `bench_92.5x6_1` — the best capture in the corpus — goes 1.23 -> 2.20,
+which is `V2`'s doing and not `AX`'s.
+
+### A NEGATIVE that should stop V2 being oversold
+
+**`V2` improves the score without fixing the axis.** The video-free check: if V2
+removed the drift, it should tighten the body-frame axis consensus. Bench goes
+17° -> 12°, but **deadlift stays at 51° -> 52°** — exactly the lift V2's h_rms
+gain comes from. So on deadlift V2 is removing something that improves the
+comparison without restoring the geometry, and it should not be described as a
+drift correction. `AX` is the better-founded half of the pair.
+
+### And the standing limit on all three
+
+The `vtrack` referee's own fore-aft error at lockout is a median **3.0 cm**
+(H1). Of everything above, only the large deadlift movements clear it —
+`160x6_1` 7.52 -> 2.22, `160x6_2` 4.40 -> 2.22, `185x3` 10.72 -> 3.01 under AX.
+**Every bench and squat number in this entry is inside the referee's resolution
+and must not be used to rank the arms.**
+
+
 ## G5 — sweep tests/ for silent skips; remove everything v1 (2026-08-16)
 
 Owner's instruction after G4, which found two tests skipping rather than failing

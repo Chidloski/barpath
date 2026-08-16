@@ -372,6 +372,37 @@ be ~15–20° wide, and at that width it fires on the captures that already work
 than any single capture's — the same route H2 reached from the other side. Still
 missing is a referee sharp enough to price a fixed pronation offset.
 
+## H7 — what all of this buys the pipeline (2026-08-16)
+
+Three candidates, scored through `vs_truth` on the thirteen scoreable captures.
+Full detail in TASKS.md H7. **`src/` is still unwritten; these are proposals.**
+
+  1. **A confidence test that can see a drift-owned axis** — a capture's display
+     axis in WATCH coordinates against the consensus of its lift's other sets,
+     leave-one-out, no video. At 20–25° it refuses 7 and all 7 lose to the null,
+     keeps 6 and all 6 beat it; `confidence` today makes two errors on the same
+     corpus. **But on this corpus "loses to the null" and "is a deadlift" are
+     nearly the same set**, so most of that score is lift identity. Exactly one
+     non-trivial case exists (`bench_spoto_95x5_1`, a losing bench, correctly
+     refused) and one data point is not a validation.
+  2. **The per-lift display axis (`AX`)** — deadlift 4.97 → 3.40 cm
+     (`160x6_1` 7.52 → 1.76, `185x3` 10.72 → 3.01), bench 2.01 → 2.06 and squat
+     2.65 → 2.63, i.e. **unchanged where the pipeline already works**. This is
+     `project.py`'s own deferred "per-exercise axis by averaging over past sets".
+  3. **`V2` and `AX` COMPOSE** — deadlift 4.97 → 2.77, corpus 2.97 → 2.22, 10 of
+     13. Different stages (path vs step 8), unlike C29's impact correction and
+     `d` which both targeted the same instant. The cost is bench 2.01 → 2.15,
+     and `bench_92.5x6_1` 1.23 → 2.20, which is `V2`'s doing.
+
+**The negative that keeps `V2` honest:** if it removed drift it should tighten
+the body-frame axis consensus. Bench goes 17° → 12°; **deadlift stays 51° → 52°**
+— the very lift its h_rms gain comes from. `V2` improves the comparison without
+restoring the geometry. `AX` is the better-founded half.
+
+**And the limit on all three:** the referee's own fore-aft error at lockout is a
+median 3.0 cm, so only the large deadlift movements clear it. Every bench and
+squat number above is inside the referee's resolution.
+
 ## The four fixes, measured
 
     capture              ship     V2     V3     R4    best   null
