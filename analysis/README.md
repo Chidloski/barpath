@@ -2118,7 +2118,80 @@ real double. Bench and squat doubles are validated, 7 of 7.*
 
 ---
 
-*Numbering: 47 through 56 are taken. The next free number is 57. **52
+## 57, 58, 59 — why the deadlift horizontal is large (H1, 2026-08-15)
+
+`python` scratch, not a `run.py` driver; the full record is
+**`analysis/H1_STATE.md`** and the numbers below are all measured with step 6
+ON, against the `vtrack` referee, through `metrics.vs_truth`.
+
+**57 `57_deadlift_horizontal_origin.png` — the mechanism.** The invented
+fore-aft is a constant-acceleration parabola per rep whose size GROWS through
+the set (5.2 → 34.9 cm on `deadlift_160x6_1` while the video's own stays at
+4.2–5.4). Every stage after acceleration is linear, so candidate error fields
+are pushed through the real pipeline and scored leave-one-rep-out: a growing
+horizontal acceleration explains 84–91% of the error out of sample on the three
+captures where it is largest and the sync is sound. Panel D is the reason to
+believe it — a tilt must leak first-order into horizontal and second-order into
+vertical, and the same fitted parameters score 0.84–0.91 on horizontal and
+−1.63 to −0.02 on vertical. **It is not a gyro bias of the watch**: in watch
+axes the six fitted directions scatter 27–149° apart.
+
+**58 `58_deadlift_display_axis.png` — the bigger lever.** Step 8 picks the
+display axis by maximum variance, and on a deadlift the variance is the
+invented drift, so the pipeline displays the axis along which it is most wrong.
+Swept over every azimuth: on four of six captures the shipping axis is worse
+than 72–97% of all axes and sits 60–89° from the best one, and on the best axis
+two deadlifts beat the null (1.19 and 1.03 cm against 1.54) — which no deadlift
+has ever done. The shipping axis sits on or beside the *peak* of the error
+curve on four panels.
+
+**59 `59_deadlift_horizontal_fixes.png` — four trials, none shipped.**
+Removing only the GROWTH of the per-rep curvature (V2) is the only one that
+helps both groups — deadlift median 4.97 → 3.20, bench+squat 2.41 → 2.04, 10 of
+13 captures — and it fails on the worst capture. Removing the curvature
+entirely (V3, D1's `parabola_detrend`) and taking the axis perpendicular to the
+drift (R4) are the two best deadlift results (2.17 and 2.64) and both regress
+bench and squat, for the same reason: there the per-rep curvature IS the real
+J-curve. No gate separates the two groups — deadlift growth runs 1.2–35.0 %/rep
+against bench+squat's 1.3–22.8. **Panel D is the floor under all of it: the
+shipping `vtrack` referee reports a median 3.0 cm of fore-aft while the bar is
+STILL at lockout**, so every fix above lands inside the referee's own
+resolution and the ranking between them is not established. C12 found this on
+the v1 template tracker; F1 deleted that tracker and this is the first check of
+`src/vtrack/` at lockout, which has the same defect.
+
+## 60 — step 8's axis is the bias's axis, on all three lifts (H2, 2026-08-16)
+
+`60_display_axis_is_the_drift.png`. Follow-on to H1, on the owner's question:
+in taking maximum variance, is step 8 picking the bias rather than fore-aft?
+
+**Yes, and not only on deadlift.** Against the video-identified fore-aft
+direction (the azimuth whose projection best *correlates* with the video, so
+direction is not confounded by amplitude), the axis error is 45–84° on deadlift,
+10–84° on bench and 32–49° on squat — **11 of 13 captures outside the 20°
+`AXIS_TOLERANCE_DEG` the module declares for itself.** Panel B is the mechanism:
+step 8's axis sits **4° from the axis of the invented parabola alone**.
+
+Panels C and D are why no gate can catch it. The drift-owned axis is *better*
+conditioned than a bar-owned one — bootstrap spread over reps is 1–10° on every
+capture, 2° on an axis 84° wrong — and the eigenvalue ratio `confidence` gates
+on is uncorrelated with the error (Spearman rho +0.03). The drift is smooth and
+common-mode, so every rep votes for the same wrong direction. **Precision
+without accuracy**, and the same shape as C31's `_trial_merit` rewarding
+rigidity when furniture is maximally rigid.
+
+Removing the drift does not help: the residual's axis is 50° from the video
+direction against the drift's 47°. The true fore-aft is not the dominant
+horizontal variance on *any* capture here. Two rotation-based estimators are
+measured in `analysis/H1_STATE.md`; only "a barbell stays level" moves deadlift
+(64° → 36°), and it costs bench. **Caveat**: the reference direction moves 38°
+between odd and even reps, so single-capture angles are soft — but adjacent sets
+of the same lift agree to 1–17°, which is the evidence for locking a
+per-session, per-lift axis.
+
+---
+
+*Numbering: 47 through 60 are taken. The next free number is 61. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*
