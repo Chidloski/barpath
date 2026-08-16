@@ -140,9 +140,23 @@ EXCURSION_MAX_M = 0.20
 # number, and it is a constant of the grip rather than something to estimate per
 # capture.
 #
-# **Why near the screen normal.** With a pronated grip the back of the wrist
-# faces away from the lifter, so fore-aft points roughly out through the
-# display. The measurement puts it 20-26 degrees off that, toward +y.
+# **Why near the screen normal.** The bar runs across the wrist, so fore-aft —
+# perpendicular to it — points roughly along the display's normal. The
+# measurement puts it 20-26 degrees off that, toward +y.
+#
+# **WHICH WAY the display faces depends on the GRIP, and the AXIS does not.**
+# The owner deadlifts with a MIXED grip, left hand supinated, and wears the
+# watch on the left wrist — so on a deadlift the screen faces TOWARD them, and
+# on a bench (pronated) it faces away. That is visible in the data and is not
+# inferred: the mean world-horizontal screen normal projected on the display
+# axis is **-0.91 on all six deadlifts and +0.92 on all four benches**.
+#
+# A supination is a ~180 degree rotation about the forearm, and 180 degrees is
+# INVISIBLE to an axis. That is why this constant survives the difference, and
+# it is corroborated rather than assumed: the six MIXED-grip deadlifts put the
+# optimum at 20 degrees and the four PRONATED benches at 26, six degrees apart.
+# Had the flip been materially off 180 the two would have disagreed by that
+# much, so the 6 degrees also bounds how close to 180 it is.
 #
 # HOW THIS WAS OBTAINED, because it is a fitted constant and must be read as one.
 # Swept over the six deadlifts against the video, the best single value is 20
@@ -164,12 +178,22 @@ EXCURSION_MAX_M = 0.20
 # squat** — 23 degrees is a deadlift-and-bench number that squat happens to like,
 # and a squat sweep is the obvious next measurement.
 #
-# WHAT WOULD FALSIFY IT. A different grip. A mixed-grip deadlift supinates one
-# hand, which rotates that wrist relative to the bar and moves this angle by
-# something of order 90 degrees — and the watch is on the LEFT wrist, which is
-# the hand a mixed grip usually turns. A false grip, a thumbless bench, or a
-# squat with a much wider hand position would each want their own value. This is
-# one lifter, one watch, one grip.
+# WHAT WOULD FALSIFY IT, corrected 2026-08-16 after the owner supplied the grip.
+#
+# *This block used to say a mixed grip "moves this angle by something of order
+# 90 degrees". That was wrong twice: a supination is ~180 degrees, which an axis
+# cannot see, and **the deadlift captures this constant was fitted on were
+# ALREADY mixed grip** — so the case named as the threat was the case in the
+# data. The correction makes the constant more robust, not less.*
+#
+# What would actually move it is a grip that turns the wrist by something OTHER
+# than 180 degrees relative to the bar: a false grip, a thumbless bench, a much
+# wider or narrower hand position, or a hook grip held differently. Those change
+# where the bar sits around the wrist rather than which side of it the watch is
+# on, and only the former is an axis.
+#
+# Still one lifter and one watch. And note what this constant does NOT fix: the
+# SIGN. See `anatomical_axis` and B4.
 BAR_ANGLE_DEG = 23.0
 
 
@@ -196,9 +220,25 @@ def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
     good as that constant.
 
     Sign is NOT resolved here and B4 still stands: this returns an axis, not a
-    direction. Knowing the wrist and the grip WOULD resolve it — the screen
-    normal points away from the lifter — and that is the obvious follow-on, but
-    it is a separate change and is not smuggled in here.
+    direction.
+
+    **But B4's stated blocker has largely dissolved, and that is worth knowing
+    before anyone re-reads the refusal above.** This module declined a per-set
+    sign because reps WITHIN a set disagreed about which way is forward — 4 of 6,
+    2 of 6 and 1 of 3 on the three deadlifts it was measured on — so no per-set
+    answer could be right however it was derived. Re-measured after H8/H9 that
+    is **6 of 61 reps**, with five of the six inside the two captures already
+    known bad (`deadlift_170x4_3`, whose clock fits 22.8% drift, and
+    `bench_spoto_95x5_2`). Four of six deadlifts disagree on nothing.
+
+    What is still missing is not self-consistency but a CONVENTION: which end of
+    the axis is "toward the lifter". The watch knows its wrist, and the owner's
+    grip is known (mixed, left supinated, so the screen faces the lifter on a
+    deadlift and away on a bench) — and the sign of the screen normal along this
+    axis predicts the sign `vs_truth` chose on 5 of 6 deadlifts and 3 of 3
+    squats. It is not smuggled in here because it needs a grip input the API
+    does not have and an anatomical convention checked against `camera_side`,
+    both of which are changes of their own.
     """
     quat = np.asarray(quat, dtype=float)
     inside = np.zeros(len(quat), dtype=bool)

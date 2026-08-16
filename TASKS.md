@@ -724,6 +724,65 @@ Squat needs its own constant and will not inherit this one: its watch +x sits at
 came out 68° from bench's.
 
 
+## H11 — the owner's grip is MIXED, and it corrects H9 and unblocks B4 (2026-08-16)
+
+The owner deadlifts with a **mixed grip, left hand supinated**, and wears the
+watch on the **left wrist** — so on a deadlift the screen faces **toward** them.
+H9 assumed a pronated grip and said so in `BAR_ANGLE_DEG`'s comment block.
+
+**It is visible in the data and did not need to be inferred.** The mean
+world-horizontal screen normal projected on the display axis:
+
+    deadlift   -0.910  -0.914  -0.912  -0.912  -0.912  -0.909
+    bench      +0.922  +0.923  +0.920  +0.922
+    squat      -0.362  -0.339  -0.325
+
+Deadlift and bench are cleanly opposite, which is the supination.
+
+### What this corrects, and it makes the constant STRONGER
+
+`BAR_ANGLE_DEG`'s comment named a mixed grip as the thing that would falsify it,
+"of order 90 degrees". **Wrong twice.** A supination is ~180 degrees, and 180
+degrees is invisible to an AXIS — and **the six deadlifts the constant was
+fitted on were already mixed grip**, so the case named as the threat was the
+case in the data.
+
+That also explains a coincidence H9 recorded without explaining: the MIXED-grip
+deadlifts put the optimum at 20 degrees and the PRONATED benches at 26,
+independently. Six degrees apart — which additionally bounds how close to 180
+the flip is, since a materially different rotation would have separated them by
+that much.
+
+What would actually move the constant is a grip that turns the wrist by
+something other than 180 degrees relative to the bar: a false grip, a thumbless
+bench, a much wider or narrower hand position. Corrected in `project.py`.
+
+### And it bears on B4, whose blocker has largely dissolved
+
+`project.py` refused a per-set sign for a measured reason: reps WITHIN one set
+disagreed about which way is forward — **4 of 6, 2 of 6 and 1 of 3** on the
+three deadlifts — so no per-set answer could be right however it was derived.
+
+Re-measured after H8/H9 landed: **6 of 61 reps**, and five of those six are
+inside the two captures already known bad (`deadlift_170x4_3`, clock fitting
+22.8% drift, and `bench_spoto_95x5_2`). **Four of six deadlifts disagree on
+nothing.** The reconstruction now agrees with itself about fore-aft, which is
+exactly the precondition `project.py` named.
+
+**What is still missing is a CONVENTION, not consistency.** The sign of the
+screen normal along the display axis predicts the sign `vs_truth` chose on **5
+of 6 deadlifts** (the miss is `170x4_3`) and **3 of 3 squats**. Bench is 0 of 4
+and that is not a contradiction — bench is filmed from the RIGHT and deadlift
+from the LEFT, so the video's own fore-aft convention is mirrored between them,
+and a supine lifter's "fore-aft" is head-to-toe rather than anterior-posterior.
+
+To close B4 properly needs two things this entry does not do: a **grip input**
+the API does not have (the watch supplies the wrist; the grip has to be asked
+once, exactly as `d` was measured once), and the anatomical convention checked
+against the tracked CSVs' `camera_side` field rather than against the camera's
+raw sign. Both are small. Neither is guessed at here.
+
+
 ## H10 — LANDED: step 5b's drift tilt and step 8's anatomical axis (2026-08-16)
 
 Owner's instruction to land H8 and H9. **This is the first change to `src/` in
