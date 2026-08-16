@@ -283,6 +283,172 @@ def apply_offset(position: np.ndarray, quat: np.ndarray,
     return position - R.apply(np.asarray(d, dtype=float))
 
 
+# ----------------------------------------------------------------- step 5b
+DRIFT_TILT_MAX_RAD_S = np.deg2rad(0.10)
+
+
+def fit_drift_tilt(log: dict, bounds: list[tuple[int, int]],
+                   wrist_offset: np.ndarray | None,
+                   max_rate: float = DRIFT_TILT_MAX_RAD_S) -> tuple[np.ndarray, dict]:
+    """A world-horizontal attitude drift rate, fitted from the set alone. H8.
+
+    Returns `(beta, info)`. `beta` is rad/s about the two world-horizontal axes;
+    the caller applies it as `R_true(t) = expm(-[beta.(t-t0)]x) . R_reported(t)`,
+    a LEFT multiplication, and `t0` is the start of the first rep.
+
+    The mechanism, because this encodes a judgement about the physics
+    ----------------------------------------------------------------
+    H1 measured what the deadlift's invented fore-aft IS. Each rep's horizontal
+    path is a constant-acceleration parabola whose size GROWS through the set —
+    5.2 to 34.9 cm on `deadlift_160x6_1` while the video's own bar stays at
+    4.2-5.4 — and pushing candidate error fields through the real pipeline (every
+    stage after acceleration is linear, so this is exact) a **horizontal
+    acceleration growing linearly in time** explains 84-91% of the error OUT OF
+    SAMPLE, leave-one-rep-out.
+
+    The reason to believe that rather than any other growing thing is the
+    falsification test, which passed: a tilt error leaks `g.sin(theta)` into the
+    horizontal and only `g.(1-cos(theta))` into the vertical, first order against
+    second. So the same fitted parameters must explain horizontal and must FAIL
+    on vertical. Measured: horizontal 0.84-0.91, vertical **-1.63 to -0.02**.
+
+    **What it is NOT.** Not a gyro bias of the watch: converted into watch axes,
+    where a body-fixed sensor bias would have to agree, the six fitted directions
+    scatter 27-149 degrees apart. Fixed within a capture, random across them. And
+    not resolvably impact-localised: a staircase stepping at each floor impact
+    and a smooth ramp correlate 0.86-0.97 at 3-6 evenly spaced reps, so this
+    corpus cannot separate them and neither should this docstring.
+
+    Why the objective is dispersion, and why anything else is a trap
+    ---------------------------------------------------------------
+    `beta` cannot be fitted against the video — that is an oracle, and B2 is the
+    standing lesson about fitting geometry to footage. It is fitted against the
+    set's own **rep-to-rep dispersion**, on this argument: the true bar path
+    REPEATS every rep and the drift GROWS, so a set whose reps already agree is
+    left alone and one whose reps fan out is pulled together.
+
+    **"Minimise the horizontal excursion" would be the obvious objective and it
+    is a cheat.** It collapses to the flat-line null — it scores well by drawing
+    no fore-aft at all, which is precisely what `metrics.beats_null` exists to
+    catch. Dispersion cannot do that: a set of identical 5 cm J-curves has zero
+    dispersion and is untouched.
+
+    **The anchor is not decoration, and it cost an iteration to learn.**
+    Dispersion is symmetric — it can equalise the reps by making rep 1 as wrong
+    as rep 6 rather than the reverse. Unanchored it did exactly that:
+    `deadlift_150x4_1` went 2.66 -> **8.17 cm** while its dispersion fell 4.45 ->
+    2.17, the optimiser succeeding while the answer got worse. The drift grows,
+    so rep 1 carries least of it; anchoring the ramp to vanish at the first rep
+    gives the objective a direction and the regression went with it.
+
+    What it costs, measured rather than argued
+    ------------------------------------------
+    Deadlift median horizontal 4.97 -> 3.78 cm, and the three fastest-growing
+    sets take the three largest gains: `160x6_1` 7.52 -> 1.97, `160x6_2`
+    4.40 -> 1.74, `160x4_2` 3.98 -> 2.53. Fitted |beta| is 0.008-0.051 deg/s,
+    the same range H1's video-fitted oracle found and an order BELOW what the
+    pre-set pause can measure — so this recovers without video what B1 correctly
+    refused to estimate from a hold, and B1's rejection is not disturbed.
+
+    **It is self-limiting on the lifts that do not drift**, which is why it is
+    not gated on the lift: |beta| comes out 0.001-0.008 deg/s on bench and
+    0.004-0.006 on squat, because there is no growth for it to find. Bench median
+    2.01 -> 2.21, squat 2.65 -> 1.87.
+
+    **Two captures it makes worse, and neither is smoothed away.**
+    `deadlift_150x4_1` 2.66 -> 5.03: it is the capture nearest its own null
+    (2.66 against 2.15) with a best-possible axis of 2.24, so there was almost
+    nothing to win and a mis-set `beta` costs it. `deadlift_170x4_3` 5.54 -> 5.60
+    is unmoved and is the capture whose video clock fits 22.8% drift at a 216 ms
+    residual, so its score is untrustworthy either way. A guard that declined to
+    correct a set already within a centimetre of the null would protect the
+    first, but the null needs the video. Open.
+
+    **`max_rate` is a safety rail, not a tuned constant.** It never binds on this
+    corpus: the largest fit is 0.051 deg/s against a 0.10 cap, and
+    `calibrate.anchor_tilt` independently bounds a set's real attitude drift at
+    ~0.014. It exists so a degenerate set cannot hand the pipeline a large
+    rotation, and a capture that wanted more than 0.1 deg/s would be telling you
+    the objective had found something other than drift.
+
+    What would falsify this
+    -----------------------
+    A capture whose reps genuinely diverge — a set where the lifter's bar path
+    really does change shape rep to rep — would be pulled together by this and
+    lose real signal. The corpus has none, and the video says the deadlift bar's
+    per-rep fore-aft stays flat while the reconstruction's grows, which is the
+    evidence for the premise rather than a proof of it. A set filmed with a
+    deliberately drifting bar path is the experiment that would settle it.
+    """
+    from scipy.optimize import minimize
+
+    from . import calibrate, integrate, orient
+
+    if len(bounds) < 2:
+        return np.zeros(3), {"fitted": False,
+                             "reason": "needs >=2 reps to measure dispersion"}
+
+    t0 = float(log["t"][bounds[0][0]])
+    tau = np.maximum(log["t"] - t0, 0.0)
+    R_reported = Rotation.from_quat(log["quat"], scalar_first=True)
+
+    def paths(beta: np.ndarray) -> list[np.ndarray]:
+        quat = (Rotation.from_rotvec(-np.outer(tau, beta)) * R_reported
+                ).as_quat(scalar_first=True)
+        world = orient.to_world(log["accel"], log["quat"], quat)
+        world = world - calibrate.accel_bias(world, log)
+        _, position = integrate.integrate(world, log["dt"])
+        bar = (position if wrist_offset is None
+               else apply_offset(position, quat, wrist_offset))
+        return detrend_set(bar, bounds, log["t"])
+
+    def dispersion(beta2: np.ndarray) -> float:
+        reps = paths(np.array([beta2[0], beta2[1], 0.0]))
+        grid = np.stack([
+            np.column_stack([np.interp(np.linspace(0, 1, 60),
+                                       np.linspace(0, 1, len(r)), r[:, i])
+                             for i in range(2)]) for r in reps])
+        return float(np.sqrt(((grid - grid.mean(axis=0)) ** 2).sum(axis=2).mean()))
+
+    before = dispersion(np.zeros(2))
+    fit = minimize(dispersion, np.zeros(2), method="Nelder-Mead",
+                   options=dict(xatol=1e-5, fatol=1e-7, maxiter=400))
+    beta = np.array([fit.x[0], fit.x[1], 0.0])
+
+    # The rail. Scale back rather than refuse: a capped correction is still in
+    # the right direction, and refusing outright would silently return the
+    # uncorrected path on exactly the sets that need it most.
+    rate = float(np.linalg.norm(beta))
+    capped = rate > max_rate
+    if capped:
+        beta = beta * (max_rate / rate)
+
+    return beta, {
+        "fitted": True,
+        "rate_rad_s": rate,
+        "capped": capped,
+        "dispersion_before_m": before,
+        "dispersion_after_m": dispersion(beta[:2]),
+        "anchor_t": t0,
+    }
+
+
+def apply_drift_tilt(quat: np.ndarray, t: np.ndarray, beta: np.ndarray,
+                     anchor_t: float) -> np.ndarray:
+    """Rotate the attitude back by `beta` per second, from `anchor_t` on. H8.
+
+    LEFT multiplication, because `beta` is a WORLD-frame rate — the quantity
+    `fit_drift_tilt` identifies is a drift of the world-horizontal, not a
+    body-fixed gyro bias (see that docstring: the fitted directions scatter
+    27-149 degrees in watch axes). `orient.correct_attitude` right-multiplies
+    for the body-fixed case and the two must not be confused.
+    """
+    tau = np.maximum(np.asarray(t, dtype=float) - float(anchor_t), 0.0)
+    corrected = (Rotation.from_rotvec(-np.outer(tau, np.asarray(beta, float)))
+                 * Rotation.from_quat(quat, scalar_first=True))
+    return corrected.as_quat(scalar_first=True)
+
+
 def detrend_rep(position: np.ndarray, start: int, stop: int, t: np.ndarray,
                 axes: tuple[int, ...] = (0, 1, 2), edge: int = 1,
                 velocity: np.ndarray | None = None, order: int = 1) -> np.ndarray:

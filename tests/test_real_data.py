@@ -922,3 +922,227 @@ def test_the_gravity_correction_mechanism_is_real():
 #
 # If continuous squats are captured again, restore it from git history rather
 # than rewriting it from the description above.
+
+
+# ------------------- H8/H9, the drift tilt and the anatomical axis (2026-08-16) --
+
+@needs_data
+def test_the_drift_tilt_finds_nothing_where_there_is_no_drift():
+    """5b is not gated on the lift because it is SELF-LIMITING. Pin that.
+
+    `correct.fit_drift_tilt` fits a world-horizontal attitude drift rate against
+    the set's own rep-to-rep dispersion. It runs on every lift, and the reason
+    that is safe is not an argument — it is this measurement: on bench and squat,
+    where nothing grows, the fit returns 0.001-0.007 deg/s, an order below the
+    deadlifts' 0.004-0.040.
+
+    **This is the gate that would catch the correction turning into a knob.** If
+    it ever fires hard on bench, it has stopped being a correction for a measured
+    drift and become a free parameter fitting whatever is in front of it — and
+    the lift gate it does not currently need would become mandatory.
+    """
+    from src import pipeline
+
+    rates: dict[str, list[float]] = {}
+    for path in CAPTURES:
+        lift = re.match(r"^(bench|squat|deadlift)", path.stem)
+        if lift is None:
+            continue
+        result = pipeline.run(path)
+        if not result["drift_tilt_info"]["fitted"]:
+            continue
+        rates.setdefault(lift.group(1), []).append(
+            float(np.degrees(np.linalg.norm(result["drift_tilt"]))))
+
+    for lift in ("bench", "squat"):
+        if not rates.get(lift):
+            continue
+        assert max(rates[lift]) < 0.015, (
+            f"{lift} fitted a drift tilt of {max(rates[lift]):.4f} deg/s. It has "
+            f"no growing drift to find, so this is the fit absorbing something "
+            f"else — see correct.fit_drift_tilt")
+
+    if rates.get("deadlift"):
+        assert max(rates["deadlift"]) > 0.02, (
+            "no deadlift fitted a meaningful drift tilt; the mechanism H1 "
+            "measured has stopped being visible and analysis/57 is falsified")
+
+
+@needs_data
+def test_the_drift_tilt_is_capped_and_the_cap_never_binds():
+    """The rail exists, and no real capture comes near it. Both halves matter.
+
+    `DRIFT_TILT_MAX_RAD_S` is a safety rail rather than a tuned constant: it
+    stops a degenerate set handing the pipeline a large rotation. The evidence
+    that it is not doing quiet work is that the cap never binds: the largest fit
+    on this corpus is **0.051 deg/s** (`deadlift_160x6_1`) against a 0.10 cap,
+    and `calibrate.anchor_tilt` independently bounds a set's real attitude drift
+    at about 0.014.
+
+    *An earlier draft of this test asserted the largest fit was under HALF the
+    cap and failed at 0.0513. The number it was written against, 0.040, was a
+    per-COMPONENT value read as if it were a vector norm; the norms run
+    0.001-0.008 on bench and squat and 0.008-0.051 on deadlift. The test was
+    wrong, not the cap, and the cap was not moved to make it pass.*
+
+    If this ever fails, do NOT raise the cap. A capture wanting more than
+    0.1 deg/s is telling you the objective has found something that is not drift.
+    """
+    from src import correct, pipeline
+
+    for path in CAPTURES:
+        info = pipeline.run(path)["drift_tilt_info"]
+        if not info["fitted"]:
+            continue
+        assert not info["capped"], f"{path.stem}: the drift-tilt cap bound"
+        assert info["rate_rad_s"] < 0.8 * correct.DRIFT_TILT_MAX_RAD_S, (
+            f"{path.stem} fitted {np.degrees(info['rate_rad_s']):.4f} deg/s, "
+            f"within 20% of the cap — the fit has found something that is not "
+            f"drift, and the answer is not a bigger cap")
+
+
+@needs_data
+def test_the_drift_tilt_reduces_the_dispersion_it_is_fitted_against():
+    """The optimiser does what it says. A cheap check that it ran at all.
+
+    Not a claim about accuracy — dispersion is the OBJECTIVE, so improving it is
+    tautological. It is here because a silently failing optimiser would return
+    beta = 0 and every other gate in this file would still pass, which is the
+    shape of failure this suite keeps being bitten by.
+    """
+    from src import pipeline
+
+    moved = 0
+    for path in CAPTURES:
+        info = pipeline.run(path)["drift_tilt_info"]
+        if not info["fitted"]:
+            continue
+        assert info["dispersion_after_m"] <= info["dispersion_before_m"] + 1e-9, (
+            f"{path.stem}: the fit made its own objective worse")
+        if info["dispersion_after_m"] < 0.99 * info["dispersion_before_m"]:
+            moved += 1
+    assert moved >= 6, f"the fit moved dispersion on only {moved} captures"
+
+
+@needs_data
+@pytest.mark.parametrize("stem,ceiling", [
+    ("deadlift_160x6_1", 2.6),
+    ("deadlift_160x6_2", 2.3),
+    ("deadlift_185x3", 2.6),
+])
+def test_the_three_deadlifts_H8_and_H9_were_built_for(stem, ceiling):
+    """The captures the two fixes were built to fix, with ~30% headroom each.
+
+    Measured 2026-08-16 with both on: 1.98, 1.72 and 1.92 cm horizontal, from
+    7.52, 4.40 and 10.72 as the pipeline shipped the day before.
+
+    **`deadlift_185x3` is the one that carries the argument**, because it
+    separates the two fixes. Its drift does not grow, so 5b finds beta near zero
+    and moves it 10.72 -> 10.69; the whole of its gain is
+    `project.anatomical_axis`. `160x6_1` is the reverse — the fastest-growing set
+    in the corpus. One fix cannot explain both numbers, which is the evidence
+    that they repair different things rather than the same thing twice.
+
+    A failure here means one of the two stages regressed; read `drift_tilt` and
+    `axis` out of the result before touching these numbers.
+    """
+    from src import metrics, pipeline
+
+    path = next((p for p in CAPTURES if p.stem.startswith(stem)), None)
+    if path is None:
+        pytest.skip(f"{stem} not present")
+    video = VIDEO / f"{path.stem.rsplit('_', 1)[0]}.mov"
+    if not video.exists():
+        pytest.skip(f"{video.name} not present")
+
+    m = metrics.vs_truth(pipeline.run(path), video)
+    assert m["pipeline_h_rms"] < ceiling, (
+        f"{stem}: horizontal {m['pipeline_h_rms']:.2f} cm against a {ceiling} "
+        f"ceiling — H8/H9 have regressed")
+
+
+@needs_data
+def test_vs_truth_scores_the_axis_the_pipeline_actually_DRAWS():
+    """`vs_truth` must read `result["axis"]`, not re-estimate one. 2026-08-16.
+
+    It used to call `project.principal_axis` itself. That was invisible while
+    step 8 had one estimator and became a real defect the moment it had two:
+    every number `vs_truth` produced was measured along an axis the pipeline does
+    not necessarily draw, and it hid the entire effect of
+    `project.anatomical_axis` — the landed numbers did not move until this was
+    fixed.
+
+    Same shape as the defect `plot`'s module docstring records — step 8 on screen
+    in two figures before the stage had ever run — so it gets a gate rather than
+    a comment. Substituting a deliberately wrong axis must move the number.
+    """
+    from src import metrics, pipeline
+
+    path = next((p for p in CAPTURES if p.stem.startswith("deadlift_160x6_1")), None)
+    if path is None:
+        pytest.skip("deadlift_160x6_1 not present")
+    video = VIDEO / f"{path.stem.rsplit('_', 1)[0]}.mov"
+    if not video.exists():
+        pytest.skip(f"{video.name} not present")
+
+    result = pipeline.run(path)
+    shipped = metrics.vs_truth(result, video)["pipeline_h_rms"]
+
+    turned = dict(result)
+    a = np.asarray(result["axis"], dtype=float)
+    turned["axis"] = np.array([-a[1], a[0]])          # 90 degrees away
+    rotated = metrics.vs_truth(turned, video)["pipeline_h_rms"]
+
+    assert abs(rotated - shipped) > 0.2, (
+        f"turning the axis 90 degrees moved the score by "
+        f"{abs(rotated - shipped):.3f} cm — vs_truth is not reading result['axis']")
+
+
+@needs_data
+def test_the_fore_aft_SIGN_agrees_with_the_video_B4_closed():
+    """B4's verdict, and the only INDEPENDENT check on it. 2026-08-16.
+
+    `project.FORE_AFT_SENSE` derives the fore-aft DIRECTION from the wrist, the
+    grip and the attitude. The video supplies a reference the reconstruction
+    never touches: `vtrack` measures fore-aft as IMAGE-RIGHT, and for an upright
+    lifter image-right is the posterior when the camera stands on the lifter's
+    left and the anterior when it stands on their right.
+
+    So this is a check rather than a fit — nothing in the derivation looked at
+    `camera_side`, and nothing in the sign was chosen to make this pass.
+
+    **Measured 2026-08-16: 8 of 9 checkable captures.** The one miss is
+    `deadlift_170x4_3`, whose along-axis correlation with the video is 0.16 —
+    there is no direction for the video to prefer — and whose clock fits 22.8%
+    drift at a 216 ms residual. Bench returns None and is excluded by design: a
+    supine lifter's horizontal axis is head-to-toe and the upright derivation
+    does not reach it, so `FORE_AFT_SENSE["bench"]` is a convention and checking
+    it here would be circular.
+
+    If this drops, the pipeline is drawing somebody's bar path MIRRORED. Check
+    the grip before the code — a double-overhand deadlift supinates neither hand
+    and flips the deadlift entry.
+    """
+    from src import metrics, pipeline
+
+    agree, checked, misses = 0, 0, []
+    for path in CAPTURES:
+        video = VIDEO / f"{path.stem.rsplit('_', 1)[0]}.mov"
+        if not video.exists():
+            continue
+        try:
+            m = metrics.vs_truth(pipeline.run(path), video)
+        except (ValueError, FileNotFoundError):
+            continue
+        verdict = m.get("sign_agrees_with_geometry")
+        if verdict is None:
+            continue
+        checked += 1
+        agree += bool(verdict)
+        if not verdict:
+            misses.append(path.stem.split("_2026")[0])
+
+    assert checked >= 8, f"only {checked} captures could be checked"
+    assert agree >= checked - 1, (
+        f"the geometric fore-aft sign disagrees with the video on {misses} "
+        f"({agree}/{checked}); those captures would render MIRRORED")

@@ -14,6 +14,979 @@ Related, and deliberately not duplicated here:
 ---
 
 
+## H1 — why the deadlift horizontal is large: two mechanisms, four trials, no fix shipped (2026-08-15)
+
+Owner's task: a deep dive on the reasons behind the large horizontal deviations
+in the reconstructed deadlift path. **Measurement only — nothing under `src/`
+was written.** Full record in `analysis/H1_STATE.md`; figures 57, 58, 59.
+
+**Mechanism 1 — a horizontal acceleration error that GROWS through the set.**
+The invented fore-aft is a constant-acceleration parabola per rep, 5.2 → 34.9 cm
+on `deadlift_160x6_1` while the video's own stays at 4.2–5.4. Every stage after
+acceleration is linear, so candidate error fields were pushed through the real
+pipeline and scored **leave-one-rep-out**: a growing horizontal acceleration
+explains **84–91% out of sample** on the three captures where the error is
+largest and the sync is sound.
+
+*The reason to believe it is the falsification test, not the fit.* A tilt leaks
+`g·sinθ` into horizontal and only `g·(1−cosθ)` into vertical. The same fitted
+parameters score 0.84–0.91 on horizontal and **−1.63 to −0.02 on vertical** —
+the asymmetry the physics demands is the asymmetry that is there.
+
+**It is NOT a gyro bias of the watch, and that is measured rather than
+assumed.** The fitted rate is 0.006–0.034 deg/s (median ~0.016), a close match
+to `calibrate.anchor_tilt`'s independent ~0.014 and 10–60× below the pause
+estimate's own SEM — so B1 stands and this is invisible to it. But in **watch
+axes**, where a body-fixed bias would have to agree, the six directions scatter
+**27–149° apart**. Fixed within a capture, random across them.
+
+**It is not localised at the impact either — and cannot be shown to be.** A
+staircase stepping at each impact and a smooth ramp correlate **0.86–0.97** at
+3–6 evenly spaced reps. The drift-vs-impact-damage distinction this project has
+wanted is *not identifiable on sets this short*.
+
+**The ZUPT-shaped fix is dead before it is built.** The world-frame horizontal
+residual at `segment.rest_instants` is **0.10–3.59 m/s²**, one to two orders
+above the 0.03–0.16 being estimated. A wrist under a loaded bar is not still
+enough to level against. Same shape as B1's pause and B7's anchor.
+
+**Mechanism 2, and it is the bigger lever — step 8 displays the axis along
+which the pipeline is most wrong.** `principal_axis` takes maximum variance;
+on a deadlift the variance IS the invented drift. Swept over every azimuth and
+scored with `vs_truth`'s own statistic, on **four of six captures the shipping
+axis is worse than 72–97% of every axis available** and sits 60–89° — near
+perpendicular — from the best one. **On the best axis two deadlifts beat the
+null** (1.19 and 1.03 against 1.54), which no deadlift has ever done. The rule
+is not buggy; it is only sound while the reconstruction's variance is the bar's.
+
+**Four trials, none shipped.**
+
+    capture              ship     V2     V3     R4    best   null
+    deadlift_150x4_1     2.66   2.43   2.60   3.18   2.29   2.15
+    deadlift_160x4_2     3.98   2.96   2.34   2.29   2.28   1.50
+    deadlift_160x6_1     7.52   3.44   1.63   1.50   1.19   1.54
+    deadlift_160x6_2     4.40   2.82   1.52   1.11   1.03   1.54
+    deadlift_170x4_3     5.54   4.95   4.88   3.92   3.92   1.39
+    deadlift_185x3      10.72  11.09   2.01   2.98   2.38   1.55
+    bench+squat medians  2.41   2.04   3.52   3.57   1.61   3.67
+
+  * **V2, remove only the GROWTH of the per-rep curvature** — the only trial
+    that helps both groups (deadlift 4.97 → 3.20, bench+squat 2.41 → 2.04,
+    10 of 13 captures, beats-null 6/13 → 7/13), because it is a near no-op
+    where curvature does not grow. It privileges rep 0 arbitrarily and **fails
+    on the worst capture**, `185x3`, whose drift does not grow.
+  * **V3, remove the curvature entirely** (D1's `parabola_detrend`) and **R4,
+    take the axis perpendicular to the fitted drift** are the two best deadlift
+    results (2.17 and 2.64 median) and both regress bench and squat, for one
+    reason: there the per-rep curvature IS the real J-curve. R4 uses no video
+    and lands within 0.36 cm of the oracle axis.
+  * **A fitted 2-dof world tilt ramp** improves 4 of 6 (7.52 → 2.20,
+    4.40 → 1.78, 10.72 → 5.00) and leaves vertical untouched to 0.06 cm. It is
+    an oracle and the direction is not a watch property, so it bounds the family
+    rather than shipping. **The 3-dof version is a trap** — gravity cannot
+    observe yaw, the fit puts up to 1.13 deg/s there, and the error goes to
+    318 cm.
+
+**No gate separates the two groups**, so R4 and V3 cannot ship blind: deadlift
+growth runs 1.2–35.0 %/rep against bench+squat's 1.3–22.8, overlapping
+completely, and the *worst* deadlift sits at the bottom of the deadlift range.
+Gating on the lift is available and legitimate — the pipeline is already
+lift-conditioned in `WRIST_OFFSET_M`, `VERTICAL_ROM_M` and the sync route — but
+that is the owner's decision, not a measurement.
+
+**THE FLOOR UNDER ALL OF IT. The shipping `vtrack` referee reports 2.0–7.9 cm
+of fore-aft while the bar is STILL at lockout** (median 3.02 cm over ten
+dwells). The bar is held against the thighs there and is not moving, so that is
+the tracker's motion. C12 found exactly this on the v1 template tracker; F1
+deleted that tracker, and **this is the first time `src/vtrack/` has been
+checked at lockout — it has the same defect.** Consequence: every fix above
+lands at 1.1–3.2 cm, at or inside the referee's own resolution, so **the ranking
+between them is not established by this corpus**, and `deadlift_150x4_1`'s
+2.66 cm is not measurably wrong at all. C12's lesson holds a second time — a
+referee needs checking where it is used, not on average.
+
+`deadlift_170x4_3` is separately unscoreable: its clock fits 22.8% drift at a
+216 ms residual and no acceleration family reaches LOO 0.41 on it.
+
+
+## H2 — step 8's axis is the BIAS's axis, on all three lifts (2026-08-16)
+
+Owner's question after H1: in picking maximum variance, are we picking the bias
+rather than fore-aft — and does it reach squat and bench too? **Both yes.**
+Measurement only; nothing under `src/` written.
+`analysis/60_display_axis_is_the_drift.png`.
+
+Angle between step 8's axis and the video-identified fore-aft direction (the
+world azimuth whose projection best *correlates* with the video's fore-aft, so
+direction is not confounded by an amplitude error):
+
+    deadlift    45  46  52  77  78  84    median 64°
+    bench       10  20  66  84            median 43°
+    squat       32  46  49                median 46°
+
+**11 of 13 are outside the 20° `AXIS_TOLERANCE_DEG` the module declares for
+itself**, six beyond 60°. The two exceptions are the two `bench_92.5x6`
+captures, which are also the two best-scoring in the corpus.
+
+**The bias owns the axis, and it is measured rather than inferred.** Splitting
+each rep into the per-rep parabola and the residual, step 8's axis sits **4°
+from the drift-only axis** (median over 13).
+
+**And removing the drift does NOT recover it.** The residual's axis is 50° from
+the video direction against the drift axis's 47° — no better. The true fore-aft
+is not the dominant horizontal variance on *any* of the thirteen, so no
+re-weighting of that covariance can find it. **Step 8's premise fails whenever
+horizontal error exceeds horizontal signal**, which is the whole corpus.
+
+**Why no confidence gate can catch it, and this is the useful half.** The
+drift-owned axis is BETTER conditioned than a bar-owned one. Bootstrapping over
+reps — the test `min_ratio` already assumes, taking N = n_reps — gives a 68%
+spread of **1–10° on every capture**, including `deadlift_160x6_1` at **2° of
+spread on an axis 84° wrong**. The eigenvalue ratio carries no information about
+the error: Spearman rho **+0.03**, the best-conditioned axis in the corpus
+(26.9) also the most wrong. The drift is smooth, common-mode and monotone, so
+every rep votes for the same wrong direction. Two candidate gates were built and
+both fail: a bootstrap threshold refuses 0 of the 6 captures now called
+confident, and a growth test refuses one squat while keeping `deadlift_185x3`
+at 77°.
+
+**This generalises C31 rather than repeating it.** There `_trial_merit` rewarded
+RIGIDITY and gym furniture was maximally rigid. Here every conditioning test
+rewards CONSISTENCY and the drift is maximally consistent. *A conditioning
+statistic cannot referee a choice that the nuisance term satisfies better than
+the signal does.*
+
+**Two claims in `project.py` are falsified and are NOT yet fixed in that file**
+(no `src/` claim was taken):
+
+  * "The failure mode is self-limiting … the case where the estimator fails is
+    the case where the answer does not matter." It fails *hardest* where the
+    excursion is largest and the ratio highest.
+  * `confidence`'s "makes the ratio look BETTER" is stated as a limit on what
+    confidence proves. The measurement says something stronger — the ratio is
+    **no evidence at all** about the axis, rho +0.03.
+
+**Rotation-based axes are the only structurally immune family**, and neither
+needs the per-lift constant the module docstring objects to, because each
+identifies its own reference from the signal. E1 (dominant body-frame gyro
+direction = the mediolateral axis) is no better, 49° → 51°. **E2 (the body
+direction whose world image stays most horizontal — a barbell stays level)**
+takes deadlift 64° → 36° and 4.97 → 4.25 cm, and costs bench 2.01 → 2.88.
+Promising, not shippable.
+
+**The caveat that bounds all of it.** The reference direction is itself
+uncertain — odd reps against even reps move it by a median **38°** — so no
+single capture's angle should be quoted alone. Robust are the aggregate, the 4°
+drift alignment and the bootstrap/ratio results, none of which need a sharp
+reference. Against that, **adjacent sets of the same lift agree to 1–17°**
+(`bench_92.5x6_1` vs `_2` to 1°, the paused squats 9–25°), so the full-capture
+estimate is worth ~10–20° and the direction is reproducible between neighbouring
+sets. That is the evidence for the one route this supports: **a per-session,
+per-lift axis locked once and reused**, which `project.py` currently defers as
+"a later step, not a now step".
+
+
+## H3 — the rotation-derived display axis: built, measured, deadlift-only (2026-08-16)
+
+Owner asked how the axis would be obtained from rotation. Built and scored;
+`src/` not written. Full detail in `analysis/H1_STATE.md`.
+
+**Premise:** the wrist swings about a MEDIOLATERAL axis — the elbow/shoulder
+hinge, parallel to the bar — so fore-aft is perpendicular to it in the
+horizontal plane. True of all three lifts, and identified from the signal per
+capture, so it needs none of the per-lift lookup `project.py` objects to.
+**Attitude is never double-integrated** (0.05–0.14° at the anchors, 0.35–1.49°
+of drift across a set), so this axis cannot be captured by the position drift
+that owns the variance-based one.
+
+**Estimator (E3).** Per rep, `v(t) = rotvec(R(t) · R(t_start)⁻¹)` in world axes,
+pooled over samples and reps and weighted by |v|; principal eigenvector is the
+bar axis, projected horizontal and rotated 90°.
+
+The net-rotation-so-far rather than the instantaneous rate is the whole trick,
+and it is why **E1 (raw gyro PCA) failed**: the deadlift wrist sweeps 193–311°
+per rep against ~22° of net swing, so ~90% of the gyro is strap ringing. Ringing
+cancels in a cumulative rotation; the anatomical swing accumulates.
+
+    lift        axis error ship -> E3      h rms ship -> E3
+    deadlift        64° -> 35°              4.97 -> 3.85 cm
+    bench           43° -> 41°              2.01 -> 2.81 cm   WORSE
+    squat           46° -> 59°              2.65 -> 2.58 cm
+    all 13          49° -> 41°              2.97 -> 2.81      beats-null 6 -> 7
+
+**`deadlift_160x6_2` settles that the idea is sound**: axis 78° → 9° wrong,
+horizontal 4.40 → **1.30 cm**, under its own null of 1.54 and within 0.3 cm of
+the best axis that exists. `deadlift_160x6_1` 84° → 29°, 7.52 → 4.02.
+
+**Not shippable.** On bench the position axis already works (those captures beat
+the null 3.05× and 2.55×), so E3 replaces a good estimate with a mediocre one
+and takes the two best captures in the corpus from 20°/10° to 50°/52°.
+
+**Premise checks:** reps agree on the swing axis to **7°** — independent
+evidence, unlike the drift's false consistency — but the axis is **15° off
+horizontal** (26–32° on deadlift), so the hinge premise is approximate.
+
+**The refinement was built and does not pay.** Stripping PRONATION (identified
+with no lookup as the body direction whose world image is most consistently
+vertical; on a deadlift the vertical forearm makes pronation a world-vertical
+rotation that lands wholly in the horizontal projection) gives deadlift h
+3.85 → 3.61 but axis error 35° → 39°, corpus unchanged. Recorded so it is not
+re-proposed on the strength of the reasoning.
+
+**Agreement as the confidence signal step 8 lacks.** Rotation and position do
+not share a failure mode, so their disagreement should predict when the shipping
+axis is wrong — and it does, weakly: Spearman rho **+0.26** against the
+eigenvalue ratio's +0.03; agree-within-30° captures average 46° of axis error
+against 71° for the rest. **But it misfires where it must not**: the two benches
+whose shipping axis is CORRECT (10°, 20°) are the two where the estimators
+disagree most (63°, 70°). As a gate it would refuse the captures that work.
+
+**What would make this shippable** is a discriminator for "is the position axis
+trustworthy here", which H2 established cannot come from the position path and
+this entry establishes does not yet come from estimator agreement either.
+
+
+## H4 — the anatomical cone, and THE REFEREE WAS THE NOISY ONE (2026-08-16)
+
+Owner's proposal: pronation is bounded by the wrist, so the attitude-derived
+axis bounds an arc within which fore-aft must lie — combine that with the
+variance axis. Built and measured. `src/` not written.
+
+**THE CORRECTION FIRST, because it changes how H2 and H3 should be read.**
+Both scored every axis against a *video-identified* fore-aft direction. Asked
+whether each estimator reproduces across sets of the SAME LIFT in the SAME
+SESSION — where the lifter faces one way, so the answer must be the same:
+
+    session          rotation axis agrees to    video-identified agrees to
+    0804 deadlift              2°                        50°
+    0808 deadlift             10°                        33°
+    0808 bench                 1°                         1°
+    0806 bench                13°                        57°
+    0806 squat                 2°                        17°
+
+**The rotation axis is 3-25x more reproducible than the reference H2 and H3
+measured it against.** So its "41° median error" is substantially the
+REFEREE's noise, not the estimator's, and every axis-error number in H2 and H3
+is pessimistic about rotation by an unknown amount. Rep-to-rep it is also tight:
+4-19° on eleven of thirteen captures (the exceptions are `deadlift_170x4_3` at
+48°, already unscoreable, and `deadlift_160x4_2` at 23°).
+
+*This does not make the rotation axis right* — a consistent pronation offset
+would be exactly this reproducible, which is the owner's point. It makes it
+PRECISE, and it means the corpus has no referee sharp enough to measure its
+accuracy. The evidence that it is also roughly right is H3's h_rms: deadlift
+4.97 → 3.85 cm and `deadlift_160x6_2` to 1.30 cm, under its own null.
+
+**The cone as a CLAMP.** For a 2x2 covariance the variance is sinusoidal in
+azimuth with one maximum, so "max variance inside the cone" is exactly "clamp
+the PCA axis to the nearest cone edge" — and a no-op when the PCA axis is
+already admissible, which is the property that would let it ship.
+
+    delta      0    10    20    30    40    50    60    90(ships)
+    all       2.81  2.70  2.66  2.66  2.97  2.97  2.97  2.97
+    deadlift  3.85  4.46  4.46  4.35  4.13  4.00  4.27  4.97
+    bench     2.81  2.56  2.35  2.23  2.23  2.03  2.01  2.01
+
+There is an interior optimum in the corpus median (2.97 → 2.66 at 20-30°) and
+**it should not be read**, for the reason C19 fixed in advance: it is a trade,
+not a win. Deadlift is best at delta = 0 (pure rotation, 3.85) and bench is best
+unclamped (2.01); the middle satisfies neither, and per capture it is mixed —
+`bench_spoto_95x5_2` goes 2.41 → 4.34 while `deadlift_160x6_2` goes 4.40 → 2.06.
+
+**The cone as a REFUSAL** — decline to magnify when the variance axis lies
+outside the arc, on the precedent of `confidence`'s 20 cm ceiling, which only
+ever refuses. Precision 0.62-0.67 across delta 20-60°. **Step 8's existing gate
+does better**: it calls 6 of 13 confident of which 1 loses to the null, and
+refuses 7 of which 6 do. So this adds nothing.
+
+**And that is a QUALIFICATION H2 needs.** H2's "no confidence gate can catch it"
+is true of the eigenvalue RATIO and of *axis error* (rho +0.03, and the two
+gates built there both failed). It is NOT true of `confidence` as a whole: the
+20 cm excursion ceiling catches drift-dominated captures well, separating
+beats_null at 0.86 precision on refusals and 0.83 on the ones it keeps. The
+ratio is the part that carries no information; the excursion ceiling is doing
+real work and H2 should not be read as condemning it.
+
+**Why the cone underperforms, and it is not the bound's fault.** The deviation
+between the two axes does not track correctness on the captures that matter:
+the two benches whose variance axis is RIGHT sit at 62° and 70° of deviation,
+while `deadlift_150x4_1`, which loses to the null, sits at 3°. For the bound to
+bite it must be tight (~15-20°), and at that width it fires on the captures that
+already work.
+
+**What would make the owner's proposal work**, and the measurement now points at
+it squarely: a **session-level** rotation axis. It reproduces to 1-13° across
+sets of one lift, so pooling a session's sets gives a heading far tighter than
+any single capture's, and it is the same route H2 arrived at from the other
+side. What is still missing is a referee sharp enough to price a fixed pronation
+offset — the corpus cannot currently tell a precise-and-biased axis from a
+precise-and-correct one.
+
+
+## H5 — the rotation axis is wrong on BENCH, and the error is pronation (2026-08-16)
+
+**The owner challenged H3/H4 on geometry and was right.** The objection: on a
+bench the wrist's posture pins where fore-aft can lie, so a rotation-derived
+axis 65° from the variance axis cannot be innocent. It is not.
+
+**The watch frame settles it, and it validates the attitude solution first.**
+Elevation of the watch's +x (crown, which `WRIST_OFFSET_M` puts toward the
+HAND): **−80° on deadlift** (arm hanging, hand below the wrist), **+75° on
+bench** (hand above), +21° on squat. Physically exactly right.
+
+So on bench x is near-vertical and any world-HORIZONTAL direction must lie in
+the watch's y–z plane. Both estimates do (|x| ≤ 0.19). **Their disagreement is
+therefore a pure rotation about the forearm axis — the pronation angle**, which
+is what the owner said it had to be.
+
+**Which one anatomy supports.** The bar runs across the wrist (±y), so fore-aft
+must be near the SCREEN NORMAL (±z). Measured, per bench capture:
+
+    capture              variance axis    rotation axis (E3)
+    bench_92.5x6_1        26° off z            44° off z
+    bench_92.5x6_2        21°                  42°
+    bench_spoto_95x5_1    47°                  31°
+    bench_spoto_95x5_2    13°                  39°
+
+The variance axis lands on the screen normal on three of four; E3 sits 31–44°
+off it on the other side. **E3 is the wrong one on bench**, and H3's framing —
+which treated it as the better estimator and blamed bench's regression on the
+variance axis "already working" — had the cause backwards. E3 has least to work
+with there: swept attitude is 14–17°/rep on bench against 21–26° elsewhere, and
+a bench forearm stays vertical while the arm extends, so the wrist's residual
+rotation is not a sagittal hinge at all.
+
+**This also corrects H4.** H4 found the rotation axis reproduces to 1–13° across
+same-session sets and treated that as evidence it should be trusted. It is
+reproducible and, on bench, reproducibly wrong — a fixed pronation offset is
+exactly that reproducible, which H4 flagged as a possibility and the owner has
+now converted into a measurement. **Reproducibility was never accuracy here.**
+
+### The finding worth more than the correction
+
+**Fore-aft in WATCH coordinates is a per-lift anatomical constant** — the hand
+is clamped to the bar, so the watch's orientation relative to the bar is fixed
+by the grip. That is the assumption `WRIST_OFFSET_M` already makes for `d`.
+Expressing each capture's variance-derived fore-aft in watch axes:
+
+    lift       pairwise spread      consensus direction
+    bench       17° median, 34° worst   [+0.10 +0.43 +0.90]
+    squat       13°,        15°         [+0.88 -0.25 -0.40]
+    deadlift    51°,        89°         (scatters)
+
+**This is the video-free drift detector H2 said was missing.** A bar-owned axis
+is a body-frame constant across captures of one lift; a drift-owned one is not.
+Bench and squat hold to 13–17°; deadlift scatters by 51°, and deadlift is
+exactly where the axis is known broken. No video, no referee, no tuned constant
+— it needs only two or three sets of the same lift, which the corpus has.
+
+**Leave-one-out**, predicting each capture's axis from the OTHER captures of its
+lift, so nothing about the held-out capture informs its own axis:
+
+    median h 2.97 -> 2.74 cm, improved 8 of 13
+    bench   unchanged (1.23/1.61/3.64/2.41 -> 1.23/1.65/3.01/2.47)
+    squat   all three better
+    deadlift_160x6_1  7.52 -> 1.76      deadlift_185x3  10.72 -> 3.01
+
+Two deadlifts move by 4–8 cm, and `160x6_1` lands within 0.6 cm of the best axis
+that exists. Two get worse (`150x4_1` 2.66 → 3.27, `170x4_3` 5.54 → 6.29).
+**Do not over-read the deadlift half**: its consensus is pooled from axes that
+scatter 51°, so it is a poorly determined constant that happens to help most of
+them. Bench and squat are the sound part.
+
+**The cross-lift prediction is only half borne out.** `WRIST_OFFSET_M` is
+identical for bench and deadlift, so they should share a body-frame fore-aft.
+Applying the bench consensus to the six deadlifts with no deadlift data used
+gives 4.97 → 3.07 median, improved 4 of 6 (`185x3` 10.72 → 2.85, `160x4_2`
+3.98 → 2.38) but `160x6_1` barely moves (7.52 → 7.27). Squat's consensus is 68°
+from bench's, which is expected — bar on the back, wrists extended.
+
+**The cheapest way to settle this is a tape measure, not an estimator.** `d` was
+unfittable from video (B2) and became a measured constant in thirty seconds. The
+bar's direction in watch axes is the same kind of quantity and would convert
+step 8 from an estimation problem into a lookup, per lift and grip. It is the
+one thing that would make any of the above shippable.
+
+
+## H6 — what "constant" means, measured by scale; and WHY E3 fails on bench (2026-08-16)
+
+Owner asked how fore-aft in watch coordinates can be a constant. **It is not
+exactly, and H5's wording overstated it.** Decomposed by scale, with the
+absolute attitude change alongside for reference:
+
+    lift      attitude/rep   f_body p-p    rep to rep   SET to SET
+    bench       14-17°        3.9-7.4°     0.9-2.1°     17° (worst 34)
+    squat       24-26°       12.8-13.7°    1.9-2.6°     13° (worst 15)
+    deadlift    15-24°        8.3-18.9°    0.8-5.0°     51° (worst 89)
+
+So: good to a few degrees rep to rep, ~4-19° within a rep, and **13-17° between
+sets** on the lifts whose axis is sound. Useful against `AXIS_TOLERANCE_DEG`'s
+20°, but a tolerance rather than a constant. Deadlift's 51° is the drift-owned
+axis, not the geometry — its reference direction is wrong, so that row measures
+nothing about the wrist.
+
+**The mechanism, and it is a chain rather than a clamp.** watch → strap → wrist
+→ hand → bar is nearly rigid because a loaded grip locks the wrist. The watch's
+absolute attitude swings 14-26° per rep, but the *residual* — the wrist's own
+articulation relative to the bar — is only a few degrees, and that residual is
+what a body-frame direction sees.
+
+**A prediction of ours that FAILED, recorded because it was wrong for an
+informative reason.** The forearm swings in the sagittal plane, which is a
+rotation about the BAR; a rotation about b leaves b fixed and carries fore-aft
+around it. So bar-axis-in-watch-coords should be invariant and fore-aft should
+absorb the whole swing. Measured, both sit at **2.5° and 2.7°** — a ratio of
+1.1x, not the predicted separation. The swing is NOT cleanly about the bar.
+
+**Which is exactly why E3 fails on bench**, and this closes the owner's original
+challenge. The angle between the dominant wrist rotation axis and the world
+fore-aft direction:
+
+    lift       vs FORE-AFT   vs BAR     what the wrist is doing
+    squat          79°         16°      rotating about the BAR  -> E3's premise holds
+    bench          27°         67°      rotating about FORE-AFT -> E3 is ~90° wrong
+    deadlift       41°         64°      (reference axis is broken; says nothing)
+
+**On a bench press the dominant wrist rotation is elbow flare/tuck — rotation in
+the FRONTAL plane, about a roughly fore-aft axis.** E3 takes the perpendicular
+of the dominant rotation axis, so on bench it hands back the BAR axis instead of
+fore-aft. That is the 68° the owner objected to, and it is ~90° by construction
+rather than by noise. E3's premise ("the wrist swings about the mediolateral
+axis") is true on squat, false on bench, and untestable on deadlift with this
+corpus.
+
+It also explains the small `f_body` excursions: a rotation barely moves vectors
+lying near its own axis, and on bench the rotation axis is 27° from fore-aft.
+
+**Consequence for H3.** E3 should not be described as a general estimator. It is
+correct where the wrist hinges about the bar — squat, and probably deadlift —
+and structurally 90° wrong where the dominant rotation is frontal-plane. A
+lift-aware version would choose between `u` and `perp(u)`, which is a decision
+this corpus cannot referee on deadlift because the reference axis there is the
+broken one.
+
+
+## H7 — three pipeline improvements, measured end to end (2026-08-16)
+
+Owner asked to turn H1-H6 into improvements. All three are scored through
+`metrics.vs_truth` on the thirteen scoreable captures. **`src/` is still not
+written — these are proposals with numbers, not a landed change.**
+
+### 1. A confidence test that can finally see a drift-owned axis (REFUSE-ONLY)
+
+H2's open problem was that nothing in `confidence` can tell a bar-owned axis
+from a drift-owned one. H5/H6 supply the missing statistic: **a capture's
+display axis expressed in WATCH coordinates, against the consensus of the other
+sets of that lift.** Leave-one-out, no video, no tuned physical constant.
+
+    kept  (dev  1-18°)   bench_92.5x6_1/2, all three squats, bench_spoto_95x5_2
+    refused (dev 27-89°) bench_spoto_95x5_1, all six deadlifts
+
+At a 20-25° threshold it is **7/7 on refusals and 6/6 on keeps** — every capture
+it refuses genuinely loses to the flat-line null, and every one it keeps
+genuinely beats it. `confidence` today makes two errors on the same corpus:
+it keeps `deadlift_185x3` (which loses at 10.72 against a 1.55 null) and refuses
+`bench_spoto_95x5_2` (which wins).
+
+**THE CAVEAT, AND IT IS MOST OF THE RESULT.** On this corpus "loses to the null"
+and "is a deadlift" are nearly the same set — all six deadlifts lose, six of
+seven bench/squat win. So a gate that separates deadlift from the rest will
+score perfectly whether or not it is measuring drift. **There is exactly one
+non-trivial discrimination in the table**: `bench_spoto_95x5_1`, a bench that
+loses to its null, sits at 27° with the deadlifts and is correctly refused. One
+data point is not a validation. What would settle it is a deadlift that works or
+a bench that fails — the same missing capture the rest of this file keeps
+asking for.
+
+### 2. The per-lift display axis (`AX`) — project.py's own deferred idea
+
+Take the display axis from the body-frame consensus of the lift's OTHER
+captures. `project.py` defers exactly this: "locking a per-exercise axis by
+averaging over past sets is a later step, not a now step". The measurement now
+argues for it.
+
+    lift       shipping -> AX        notable
+    deadlift    4.97 -> 3.40 cm      160x6_1 7.52 -> 1.76, 185x3 10.72 -> 3.01
+    bench       2.01 -> 2.06 cm      unchanged (1.23 -> 1.23 on the best capture)
+    squat       2.65 -> 2.63 cm      unchanged
+    all 13      2.97 -> 2.74 cm      8 of 13 improved, beats-null 6 -> 7
+
+**It has the shape a fix should have: it moves the lift that is broken and
+leaves alone the two that work.** It costs an operational constraint — it needs
+at least one prior set of the same lift — and its deadlift consensus is pooled
+from axes that scatter 51°, so the mechanism is validated on bench and squat and
+merely *helps* on deadlift.
+
+### 3. They COMPOSE, unlike C29's pair
+
+`V2` (remove the growth of the per-rep curvature, H1) acts on the PATH; `AX`
+acts on STEP 8. Different stages, so composition is expected — and unlike C29's
+impact correction and `d`, which both targeted the same instant and gave
+10.66 -> 3.93 -> 3.89, these do not overlap:
+
+    lift       ship    V2      AX     V2+AX
+    deadlift   4.97   3.20    3.40    2.77
+    bench      2.01   2.04    2.06    2.15
+    squat      2.65   2.14    2.63    2.15
+    all 13     2.97   2.43    2.74    2.22     10 of 13 improved
+
+Deadlift 4.97 -> 2.77 is better than either alone. The cost is bench: 2.01 ->
+2.15, and `bench_92.5x6_1` — the best capture in the corpus — goes 1.23 -> 2.20,
+which is `V2`'s doing and not `AX`'s.
+
+### A NEGATIVE that should stop V2 being oversold
+
+**`V2` improves the score without fixing the axis.** The video-free check: if V2
+removed the drift, it should tighten the body-frame axis consensus. Bench goes
+17° -> 12°, but **deadlift stays at 51° -> 52°** — exactly the lift V2's h_rms
+gain comes from. So on deadlift V2 is removing something that improves the
+comparison without restoring the geometry, and it should not be described as a
+drift correction. `AX` is the better-founded half of the pair.
+
+### And the standing limit on all three
+
+The `vtrack` referee's own fore-aft error at lockout is a median **3.0 cm**
+(H1). Of everything above, only the large deadlift movements clear it —
+`160x6_1` 7.52 -> 2.22, `160x6_2` 4.40 -> 2.22, `185x3` 10.72 -> 3.01 under AX.
+**Every bench and squat number in this entry is inside the referee's resolution
+and must not be used to rank the arms.**
+
+
+## H8 — a SINGLE-SET deadlift fix: half the problem solved, and the half that is not (2026-08-16)
+
+**The owner ruled out H7's per-lift axis on product grounds, and the constraint
+is the useful part**: the program must show a side-on view after ONE completed
+set — no history, no prior sets of that lift, no video at runtime. That deletes
+`AX` outright and every video-derived quantity. What survives is the set's own
+reps and its attitude. Figures `analysis/61` and `analysis/62`.
+
+### The state of play, drawn (analysis/61)
+
+Deadlift per-rep fore-aft, reconstruction against the bar:
+
+    capture            reconstruction sweeps    the bar sweeps
+    deadlift_150x4_1      5.7 - 15.9 cm           5.1 -  9.4 cm
+    deadlift_160x4_2      4.6 - 15.0              3.6 - 11.2
+    deadlift_160x6_1      7.6 - 34.8              4.2 -  5.4
+    deadlift_160x6_2      2.8 - 20.2              3.1 -  5.9
+    deadlift_170x4_3      4.7 - 25.9              3.6 - 10.5
+    deadlift_185x3       12.0 - 17.6              4.6 -  6.2
+
+Drawn at TRUE aspect with no 4x stretch, the bottom row of `analysis/61` shows
+what the shape actually is: every rep bows the SAME WAY, to −10 to −20 cm at
+mid-phase, while the bar stays inside ±5 cm.
+
+### The fix, and the objective is the whole design
+
+H1 modelled the error as a world-horizontal tilt ramp. Fitting it against the
+video was an oracle; fit it instead against something one set supplies alone.
+
+**The objective must not be "minimise horizontal excursion"** — that collapses
+to the flat-line null and scores well by drawing nothing, the exact cheat
+`beats_null` exists to catch. The true bar path REPEATS every rep while the
+drift GROWS, so the objective is **rep-to-rep dispersion**, which leaves a set
+whose reps already agree untouched.
+
+**And it must be anchored, which cost one iteration to learn.** Dispersion is
+symmetric: it can equalise the reps by making rep 1 as wrong as rep 6 rather
+than the reverse. Unanchored it did exactly that — `deadlift_150x4_1` went
+2.66 → **8.17** while its dispersion fell 4.45 → 2.17, the objective succeeding
+while the answer got worse. Anchoring the ramp to vanish at the first rep,
+`dtheta(t) = beta·max(t − t_rep0, 0)`, gives the objective a direction. That is
+V2's logic moved from the PATH to the ATTITUDE, so it is a physical correction
+rather than a kinematic subtraction.
+
+    capture            ships    fixed    best axis on the fixed path   null
+    deadlift_150x4_1    2.66     5.03            2.24                  2.15
+    deadlift_160x4_2    3.98     2.53            2.23                  1.50
+    deadlift_160x6_1    7.52     1.97            1.02                  1.54
+    deadlift_160x6_2    4.40     1.74            1.41                  1.54
+    deadlift_170x4_3    5.54     5.60            4.57                  1.39
+    deadlift_185x3     10.72    10.69            1.89                  1.55
+    median              4.97     3.78            2.06
+
+Fitted beta is 0.007–0.044 deg/s, the same range H1's video-fitted oracle found
+and still an order below what the pre-set pause can measure — so this recovers
+without the video what B1 correctly refused to estimate from a hold.
+
+### What it fixes and what it does not, which splits cleanly
+
+**It fixes the GROWING component.** The three fastest-growing sets take the
+three largest gains — `160x6_1` 7.52 → 1.97 (4x), `160x6_2` 4.40 → 1.74 (2.5x),
+`160x4_2` 3.98 → 2.53 — and the two that do not grow are untouched.
+
+**It cannot touch a set whose drift does not grow.** `deadlift_185x3` moves
+10.72 → 10.69, and its beta comes out near zero because there is no growth to
+find. Its best axis on the same path is **1.89 cm**, so its entire error is the
+AXIS, not the path.
+
+**And growth alone does not predict the outcome.** `150x4_1` grows 2.1x and
+REGRESSES, 2.66 → 5.03. It is also the capture nearest its own null (2.66
+against 2.15), so there was almost nothing to win and a mis-set beta costs it.
+A gate that declined to correct where the reconstruction is already within a
+centimetre or two of the null would protect it, but that gate needs the null,
+which needs the video. Unsolved.
+
+**Nothing crosses `beats_null` yet — 0 of 6**, though `160x6_2` at 1.74 against
+1.54 is now close where it was 4.40.
+
+### What is left is the AXIS, and no single-set rule finds it
+
+On the corrected paths the best available axis is 1.02–2.24 cm on four of six.
+Three single-set rules were measured against it — pooled PCA (what ships), PCA
+of the MEAN REP on a phase grid, and the rotation axis — and **all three give
+essentially the same answer**, 4.49 / 4.50 / 5.59 median against a best of 2.03.
+On `185x3` all three land at 7.8–8.9 against a best of 1.89.
+
+So the problem is now sharply stated and it is smaller than it was: **the path
+is largely repairable from one set; the display axis is not.** H2 showed no
+statistic built from the path can find it, H3/H6 showed the rotation axis is
+right only where the wrist hinges about the bar, and H8 shows the mean-rep
+axis does not help either. The remaining candidates are a measured per-lift bar
+direction in watch axes (a tape measure, as `d` was) or a runtime input the
+product already has — which end of the bar the watch is on, or which way the
+lifter faces.
+
+
+## H9 — the deadlift arm hangs vertical, so ATTITUDE ALONE fixes the plane (2026-08-16)
+
+**The owner's two observations, and both hold.** The watch knows which wrist it
+is on (left). And on a deadlift the forearm hangs vertical — measured here, the
+watch's +x (crown, toward the hand) sits at **−80° elevation**, so the forearm is
+within 10° of vertical and **the watch's y–z plane IS the horizontal plane**.
+
+That collapses the whole axis problem to **one angle**: where the bar sits around
+the wrist within that plane, which the grip fixes. It is not something to
+estimate per capture — it is a constant, like `d`. `analysis/63`.
+
+### The prediction, and it is corroborated from the other lift
+
+With a pronated grip the back of the wrist faces forward, so fore-aft should sit
+near the **screen normal**. Sweeping the angle over the six deadlifts, the best
+single value is **20°** off the screen normal (median 2.20 cm).
+
+**The bench captures put it at 26°, derived independently** — four bench sets,
+never used to fit anything here. Six degrees apart, and `WRIST_OFFSET_M` already
+records that bench and deadlift share the same tape-measured `d`. Two lifts, two
+independent routes, one geometry.
+
+**And the basin is 20° wide** (11–31° within 0.5 cm of the optimum), so this
+wants a shipped constant rather than a tape measure — unlike `d`, which had no
+interior optimum at all (B2).
+
+### Combined with H8's path fix
+
+    capture            ships   H8+screen   H8+anatomical   best axis   null
+    deadlift_150x4_1    2.66      2.25          3.26          2.24      2.15
+    deadlift_160x4_2    3.98      3.40          2.50          2.23      1.50
+    deadlift_160x6_1    7.52      1.72          2.00          1.02      1.54
+    deadlift_160x6_2    4.40      1.69          1.72          1.41      1.54
+    deadlift_170x4_3    5.54      7.21          7.79          4.57      1.39
+    deadlift_185x3     10.72      4.57          2.02          1.89      1.55
+    median              4.97      2.82          2.26          2.06
+
+**Median 4.97 → 2.26 cm, within 0.20 cm of the best axis that exists.** The two
+halves fix different things and compose: H8's tilt ramp repairs the GROWING path
+error, the anatomical axis repairs step 8. `deadlift_185x3` is the proof — no
+path fix could move it (10.72 → 10.69, its drift does not grow) and the
+anatomical axis alone takes it to **2.02 against a best-possible 1.89**.
+
+### What this does NOT yet do, stated plainly
+
+  * **Nothing crosses `beats_null`, still 0 of 6.** `160x6_2` at 1.72 against
+    1.54 and `160x6_1` at 2.00 against 1.54 are close, where they were 4.40 and
+    7.52. But the reconstruction is not yet demonstrably better than drawing a
+    straight vertical line on any deadlift.
+  * **Everything is now inside the referee's own resolution.** The `vtrack`
+    referee wanders a median 3.0 cm of fore-aft while the bar is still at lockout
+    (H1), and every corrected number above is at or under that. **The deadlift
+    horizontal can no longer be measured by this corpus** — which is a result
+    about the referee, and the next binding constraint.
+  * **`170x4_3` regresses** (5.54 → 7.79). It is the capture whose clock fits
+    22.8% drift at a 216 ms residual, so its score is not trustworthy either way.
+  * **`150x4_1` regresses** (2.66 → 3.26) and is the capture nearest its own
+    null, with almost nothing to win.
+  * **The 20° optimum is in-sample** on these six. The out-of-sample evidence is
+    the bench-derived 26° landing inside the basin, not a held-out deadlift.
+  * **One lifter, one watch, one grip.** A mixed grip rotates one wrist relative
+    to the bar and would need its own constant — and the watch is on the LEFT
+    wrist, which is the hand a mixed-grip deadlift usually supinates.
+
+### What follows
+
+The wrist being known also bears on **B4, the unresolved axis SIGN**. Fore-aft's
+direction (not just its line) is fixed once the wrist and grip are known, because
+the screen normal points away from the lifter's body. B4 has stood since
+2026-07-30 for want of exactly this. Not attempted here.
+
+Squat needs its own constant and will not inherit this one: its watch +x sits at
++21° elevation rather than −80°, the bar is on the back, and its body-frame axis
+came out 68° from bench's.
+
+
+## B4 — CLOSED: the fore-aft sign, from the wrist, the grip and the attitude (2026-08-16)
+
+Open since 2026-07-30. The eigenvector carries an arbitrary sign, so the
+rendered path could silently MIRROR — which `plot.py` rightly calls worse than
+no path at all. Closed on the owner's instruction after they confirmed the grip
+is stable.
+
+### Why it could not be closed before, and what changed
+
+`project.py` refused a per-set sign for a measured reason, not a shrug: reps
+WITHIN one set disagreed about which way is forward — **4 of 6, 2 of 6 and 1 of
+3** on the three deadlifts — so no per-set answer could be right however it was
+derived. Two things had to become true.
+
+**The reconstruction had to agree with itself.** After H8/H9 the disagreement is
+**6 of 61 reps**, five of them inside the two captures already known bad. Four of
+six deadlifts disagree on nothing.
+
+**An anatomical reference had to exist that the reconstruction does not touch.**
+`vtrack.track` sets `fore_aft_m = (cx - median(cx)) * scale`, so **+video_x is
+IMAGE-RIGHT**. For an UPRIGHT lifter, image-right is `D x U`: a camera on the
+lifter's LEFT looks along `F x U` and sees image-right `= -F`, the POSTERIOR; a
+camera on the RIGHT sees `+F`, the ANTERIOR. `tracked.CAMERA_SIDE` records
+deadlift left, bench and squat right — the owner's note, not inferred from
+footage. **So the video can referee a direction, and nothing in the derivation
+below looked at it.**
+
+### The derivation
+
+The screen normal's world direction, dotted with the direction that correlates
+positively with +video_x — consistent within every lift, on all 13 captures:
+
+    deadlift  +0.06 .. +0.92   camera LEFT  -> the screen points POSTERIOR
+    squat     +0.45 .. +0.97   camera RIGHT -> the screen points ANTERIOR
+    bench     -1.00 .. -0.38   consistent; see the caveat
+
+**Deadlift corroborates the owner independently.** They grip MIXED with the left
+hand supinated and wear the watch on the left, so the screen faces toward them —
+posterior. The camera-side chain says the same without using that fact.
+
+`project.FORE_AFT_SENSE = {"deadlift": -1, "squat": +1, "bench": -1}`, and
+`anatomical_axis(..., lift=)` returns a DIRECTED vector. `lift=None` keeps the
+old undirected contract, because a caller who cannot name the lift must not be
+handed a guessed direction.
+
+**The sign comes from the MEAN of the world-projected body vector, not from the
+eigenvector.** `numpy.linalg.eigh` fixes eigenvector signs by its own
+convention, and an orientation resting on a LAPACK detail is a silent mirror
+waiting to happen — which is what B4 was. Gated:
+`test_the_sign_comes_from_the_geometry_not_from_eigh` rolls the watch 180
+degrees and requires the direction to reverse.
+
+### Verdict: 8 of 9 checkable captures
+
+`metrics.vs_truth` now reports `sign_agrees_with_geometry`. It is a REPORT, not
+a correction — `axis_flipped` still chooses by correlation, so every
+`pipeline_h_rms` stays comparable with numbers measured before this landed.
+
+The one miss is `deadlift_170x4_3`, whose along-axis correlation with the video
+is **0.16** — there is no direction for the video to prefer — and whose clock
+fits 22.8% drift at a 216 ms residual. Corroborating detail: `axis_flipped` is
+True on every deadlift and False on every squat, which is exactly what
+camera-left versus camera-right predicts.
+
+### What is a CONVENTION and not a derivation, recorded because it gets forgotten
+
+**Bench.** The image-right argument assumes an UPRIGHT lifter. A bench presser is
+SUPINE — their anterior points at the ceiling and the horizontal axis is
+head-to-toe, which the camera-side chain says nothing about. The bench entry is
+the empirical relation (4 of 4, consistent) with an arbitrary anatomical label:
+it gives a stable orientation, which is what a display needs, not a derived one.
+`sign_agrees_with_geometry` returns None for bench rather than checking a
+convention against itself.
+
+### What would falsify it
+
+Moving the watch to the other wrist, or a grip that rotates the wrist relative
+to the bar — for deadlift that means **dropping the mixed grip**, since a
+double-overhand pull supinates neither hand and would flip that entry. The owner
+confirmed the mixed grip is stable (2026-08-16); if it changes, the table
+changes with it.
+
+**The cheap experiment that would test the whole chain is filming one lift from
+the OTHER side.** Every sign here should invert and
+`sign_agrees_with_geometry` should stay true. Nothing in this corpus does that,
+so the camera-side step is derived and self-consistent but not yet varied.
+
+Suite: **4 failed, 379 passed, 4 skipped, 1 xfailed**; the four are the standing
+set, byte-identical.
+
+
+## H11 — the owner's grip is MIXED, and it corrects H9 and unblocks B4 (2026-08-16)
+
+The owner deadlifts with a **mixed grip, left hand supinated**, and wears the
+watch on the **left wrist** — so on a deadlift the screen faces **toward** them.
+H9 assumed a pronated grip and said so in `BAR_ANGLE_DEG`'s comment block.
+
+**It is visible in the data and did not need to be inferred.** The mean
+world-horizontal screen normal projected on the display axis:
+
+    deadlift   -0.910  -0.914  -0.912  -0.912  -0.912  -0.909
+    bench      +0.922  +0.923  +0.920  +0.922
+    squat      -0.362  -0.339  -0.325
+
+Deadlift and bench are cleanly opposite, which is the supination.
+
+### What this corrects, and it makes the constant STRONGER
+
+`BAR_ANGLE_DEG`'s comment named a mixed grip as the thing that would falsify it,
+"of order 90 degrees". **Wrong twice.** A supination is ~180 degrees, and 180
+degrees is invisible to an AXIS — and **the six deadlifts the constant was
+fitted on were already mixed grip**, so the case named as the threat was the
+case in the data.
+
+That also explains a coincidence H9 recorded without explaining: the MIXED-grip
+deadlifts put the optimum at 20 degrees and the PRONATED benches at 26,
+independently. Six degrees apart — which additionally bounds how close to 180
+the flip is, since a materially different rotation would have separated them by
+that much.
+
+What would actually move the constant is a grip that turns the wrist by
+something other than 180 degrees relative to the bar: a false grip, a thumbless
+bench, a much wider or narrower hand position. Corrected in `project.py`.
+
+### And it bears on B4, whose blocker has largely dissolved
+
+`project.py` refused a per-set sign for a measured reason: reps WITHIN one set
+disagreed about which way is forward — **4 of 6, 2 of 6 and 1 of 3** on the
+three deadlifts — so no per-set answer could be right however it was derived.
+
+Re-measured after H8/H9 landed: **6 of 61 reps**, and five of those six are
+inside the two captures already known bad (`deadlift_170x4_3`, clock fitting
+22.8% drift, and `bench_spoto_95x5_2`). **Four of six deadlifts disagree on
+nothing.** The reconstruction now agrees with itself about fore-aft, which is
+exactly the precondition `project.py` named.
+
+**What is still missing is a CONVENTION, not consistency.** The sign of the
+screen normal along the display axis predicts the sign `vs_truth` chose on **5
+of 6 deadlifts** (the miss is `170x4_3`) and **3 of 3 squats**. Bench is 0 of 4
+and that is not a contradiction — bench is filmed from the RIGHT and deadlift
+from the LEFT, so the video's own fore-aft convention is mirrored between them,
+and a supine lifter's "fore-aft" is head-to-toe rather than anterior-posterior.
+
+To close B4 properly needs two things this entry does not do: a **grip input**
+the API does not have (the watch supplies the wrist; the grip has to be asked
+once, exactly as `d` was measured once), and the anatomical convention checked
+against the tracked CSVs' `camera_side` field rather than against the camera's
+raw sign. Both are small. Neither is guessed at here.
+
+
+## H10 — LANDED: step 5b's drift tilt and step 8's anatomical axis (2026-08-16)
+
+Owner's instruction to land H8 and H9. **This is the first change to `src/` in
+the H series** — everything before it was measurement. Branch
+`h1-deadlift-horizontal`; not merged to main and not pushed.
+
+### What shipped
+
+  * **`correct.fit_drift_tilt` / `apply_drift_tilt`** — a world-horizontal
+    attitude drift rate fitted against the set's own rep-to-rep dispersion,
+    anchored to vanish at the first rep. `pipeline.run(drift_tilt=False)` for
+    the old behaviour.
+  * **`project.anatomical_axis` and `BAR_ANGLE_DEG = 23`** — the display axis
+    read off the attitude. `pipeline.run(anatomical_axis=False)` for the old one.
+  * **`pipeline.run`** runs the fit as step 5b: after segmentation, because the
+    fit needs rep windows, then re-runs steps 3-4 on the corrected attitude. Rep
+    windows are NOT recomputed — `segment.rep_bounds` is validated at 16/16 and
+    64/64 on the uncorrected velocity and re-running it would put a validated
+    stage downstream of an unvalidated one.
+  * **`metrics.vs_truth` now reads `result["axis"]`** instead of re-estimating.
+
+### The bug that landing found, and it is the most valuable part
+
+**`vs_truth` was scoring an axis the pipeline does not draw.** It called
+`project.principal_axis` itself. Harmless while step 8 had one estimator;
+the moment it had two, every number `vs_truth` produced was measured along a
+different axis from the one shipped — and it hid the ENTIRE effect of
+`anatomical_axis`. The landed numbers did not move at all until this was found.
+
+Same shape as the defect `plot`'s module docstring already records — step 8 on
+screen in two figures before the stage had ever executed. It now has a gate,
+`test_vs_truth_scores_the_axis_the_pipeline_actually_DRAWS`.
+
+### Measured, all thirteen scoreable captures
+
+    lift       median h before -> after     beats_null
+    deadlift        4.97 -> 2.22 cm          0/6 -> 0/6
+    bench           2.01 -> 2.04             3/4 -> 3/4
+    squat           2.65 -> 1.83             3/3 -> 3/3
+    all 13          2.97 -> 1.98             6/13 -> 6/13
+
+    deadlift_150x4_1   2.66 ->  3.14   WORSE
+    deadlift_160x4_2   3.98 ->  2.47
+    deadlift_160x6_1   7.52 ->  1.98
+    deadlift_160x6_2   4.40 ->  1.72
+    deadlift_170x4_3   5.54 ->  7.76   WORSE
+    deadlift_185x3    10.72 ->  1.92
+
+**Vertical is untouched to 0.01 cm on every capture**, which is the falsification
+test from H1 holding end to end: a tilt must leak first-order into horizontal and
+second-order into vertical.
+
+### What did NOT improve, recorded rather than smoothed
+
+  * **`beats_null` did not move — 6 of 13, and 0 of 6 on deadlift.** The
+    reconstruction is still not demonstrably better than a flat vertical line on
+    any deadlift. `160x6_2` at 1.72 against 1.54 is close where it was 4.40.
+  * **Two deadlifts regress.** `150x4_1` 2.66 -> 3.14 is the capture nearest its
+    own null with a best-possible axis of 2.24, so there was nothing to win.
+    `170x4_3` 5.54 -> 7.76 is the capture whose video clock fits 22.8% drift at
+    a 216 ms residual and whose score is untrustworthy either way.
+  * **Every corrected deadlift number is inside the referee's own resolution.**
+    `src/vtrack/` wanders a median 3.0 cm of fore-aft while the bar is STILL at
+    lockout (H1). This corpus can no longer measure the deadlift horizontal, and
+    that is now the binding constraint. It is a capture problem, not a code one.
+
+### Suite
+
+**4 failed, 374 passed, 4 skipped, 1 xfailed** on everything but `test_vtrack`.
+The four failures are **byte-identical before and after this change** — verified
+by stashing it and re-running: three `test_oracle` parabola parametrisations
+(0.27 / 0.47 / 0.43) and `deadlift_170x4_3` rep 4's ROM at 67.5 cm. Those are
+the standing four G4 recorded. **This change adds no regressions.**
+
+***`test_vtrack` HAS now been run and is clean — 19 passed in 22:57*** (2026-08-16,
+after H10 was committed). The H10 commit message says the slow 16-clip gate was
+not re-run, on the argument that it uses only `metrics.infer_tracker` and
+`TRACKERS` rather than `vs_truth`; the argument was right and it has now been
+checked rather than argued. It ran against the behavioural state of this commit
+— everything committed afterwards (the 3b→5b renumbering, the `project.py` and
+`metrics.py` docstring corrections, H11) touches comments and docstrings only.
+**The full suite is therefore 4 failed, 393 passed.**
+
+Two D1 gates were REPOINTED rather than re-tuned. `test_the_deadlift_fore_aft_
+path_IS_one_parabola` and `test_the_invented_parabola_GROWS_through_the_set` now
+run with `drift_tilt=False`, because D1's claim is about the pipeline D1 was
+measured on and step 5b exists to remove exactly that parabola. Measuring it with
+the correction on would test the correction, not the finding. A new gate,
+`test_step_5b_REMOVES_the_parabola_D1_found`, pins the fall itself — it is the
+only thing in the suite connecting 5b's video-free objective to the mechanism it
+claims, and a correction that improved the score by some other route would fail
+it.
+
+### Two claims in `project.py` were falsified and are now fixed there
+
+Both were flagged in H2 and left standing because no `src/` claim was held:
+
+  * "the variance approach beats deriving heading from wrist attitude" — the
+    premise was that the variance axis IS the fore-aft axis, and it is not.
+  * "the failure mode is self-limiting … the case where the estimator fails is
+    the case where the answer does not matter" — the observed failure is the
+    opposite, a large and superbly conditioned eigenvalue belonging to the drift.
+
+### Open, and unchanged by this
+
+`BAR_ANGLE_DEG` is one lifter, one watch, one grip, and its 23 degrees is the
+midpoint of a deadlift sweep (20) and an independent bench one (26). A mixed-grip
+deadlift supinates one hand and would move it by order 90 degrees — and the watch
+is on the LEFT wrist, which is the hand a mixed grip usually turns. B4 (the axis
+SIGN) is still open and is now cheap: the screen normal points away from the
+lifter, so knowing the wrist resolves it. Not attempted here.
+
+
 ## G5 — sweep tests/ for silent skips; remove everything v1 (2026-08-16)
 
 Owner's instruction after G4, which found two tests skipping rather than failing
@@ -3716,6 +4689,8 @@ principled λ above still wants a source for per-rep non-closure other than the
 video.
 
 ### B4 — step 8 implemented; the SIGN is still open  (2026-07-30)
+***CLOSED 2026-08-16 — see the B4 entry near the top of this file.***
+
 `project_to_plane` and `confidence` no longer raise, and `principal_axis` uses
 `eigh` — the `eig` call on a symmetric matrix was why every caller wrapped the
 result in `np.real`. All nine steps now run on all 17 captures.
@@ -3817,6 +4792,45 @@ confirm nothing behavioural survives.
 ## Capture protocol
 
 Not code, and the highest value per effort available:
+
+- **TWO DEADLIFT SETS FOR THE NEXT GYM SESSION (added 2026-08-16, H10/B4).**
+  These are the cheapest things that would de-risk what just landed on `main`,
+  and each tests something **no capture in this corpus can**. One set each.
+
+  1. **A deadlift filmed from the lifter's RIGHT.** Every deadlift ever shot
+     here is filmed from the LEFT, so `tracked.CAMERA_SIDE` is perfectly
+     confounded with the lift — B4's derivation reads the video through camera
+     side and nothing varies it. **Prediction, written down before the capture:
+     every sign in `project.FORE_AFT_SENSE` should invert while
+     `metrics.vs_truth`'s `sign_agrees_with_geometry` stays TRUE.** If the flag
+     goes false, the camera-side step in B4 is wrong and the axis is being
+     signed by something else. Same session, same grip, same everything else —
+     the point is to vary ONE thing.
+  2. **A DOUBLE-OVERHAND deadlift.** The owner grips mixed with the left hand
+     supinated, and the watch is on the left wrist, so the screen faces toward
+     them and `FORE_AFT_SENSE["deadlift"]` is -1. A double-overhand pull
+     supinates neither hand. **Prediction: the screen normal flips to point
+     ANTERIOR and that entry becomes +1.** If it does not flip, the sign is not
+     coming from the grip and `BAR_ANGLE_DEG`'s falsification note is wrong
+     again. Lighter is fine — this is a geometry capture, not a strength one.
+
+  *Both are worth more than another set at the same angle, because what limits
+  the deadlift horizontal now is not the pipeline. It is that every corrected
+  number sits inside the `vtrack` referee's own 3.0 cm of fore-aft wander at
+  lockout, and that the two constants which carry the result — `BAR_ANGLE_DEG`
+  and `FORE_AFT_SENSE` — are fitted or derived on a corpus that varies neither
+  camera side nor grip.*
+
+- **A deadlift DOUBLE, still (carried from the G3 session).** A deadlift set has
+  no gap between reps, so no truncation of a longer set can imitate one, and
+  deadlift doubles remain the one short-set case unvalidated end to end.
+
+- **A set whose reps genuinely DIFFER in shape.** `correct.fit_drift_tilt`
+  assumes a set's reps should agree and pulls them together when they do not.
+  Nothing in this corpus can tell that premise from a correct one. A set with a
+  deliberately changing bar path — first reps clean, last reps drifting forward
+  — is the capture that would falsify it, and it is the only named way to catch
+  the new step 5b removing real signal.
 
 - ~~**Measure a plate.**~~ **DONE 2026-07-30.** Black notched 425 mm, black
   bumper 445 mm, blue calibrated 450 mm. `truth.PLATE_DIAMETER_M` is now a

@@ -174,11 +174,27 @@ Nine steps, one module each, numbered to match.
 3. `orient.py` — rotate acceleration into the world frame.
 4. `integrate.py` — cumulative trapezoidal, twice.
 5. `segment.py` — stationary detection, then rep boundaries by vertical position.
+5b. `correct.fit_drift_tilt` — a world-horizontal attitude drift rate, fitted
+   against the set's own rep-to-rep dispersion, then applied back at step 2-3
+   and steps 3-4 re-run. **ON as of 2026-08-16 (H8).** Numbered 5b because it
+   corrects the ATTITUDE but needs rep windows to fit, so it cannot precede
+   step 5. Not gated on the lift: it is self-limiting, finding |beta| of
+   0.001-0.008 deg/s on bench and squat against 0.008-0.051 on deadlift.
 6. `correct.py` — subtract the wrist-to-bar offset R(t)·d. **ON as of
    2026-08-06 — read the banner immediately below before quoting any number
    from this file.**
 7. `correct.py` — per-rep linear detrend so each rep closes.
-8. `project.py` — PCA on horizontal displacement picks the display axis.
+8. `project.py` — **the display axis comes from the ATTITUDE as of 2026-08-16
+   (H9)**, via `anatomical_axis`: the hand is clamped to the bar, so fore-aft is
+   a fixed direction in watch coordinates and one angle (`BAR_ANGLE_DEG`) fixes
+   it. PCA on horizontal displacement is still computed and still supplies
+   `ratio` and `excursion` for `confidence`, but **it is no longer the axis** —
+   H2 measured it sitting 4 degrees from the axis of the INVENTED parabola, with
+   11 of 13 captures outside this module's own 20-degree tolerance. **And the
+   SIGN is resolved too (B4, closed 2026-08-16)**: `FORE_AFT_SENSE` turns the
+   line into a direction from the wrist, the grip and the attitude, checked
+   against the video through `tracked.CAMERA_SIDE` on 8 of 9 checkable captures.
+   A path can no longer silently mirror unless the lift cannot be named.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
 
 ### Two classes of lift: IMPACT and SMOOTH (owner, 2026-08-07)
@@ -201,8 +217,12 @@ deadlift starts with a small rep-0 excursion — so whatever accumulates is
 re-anchored at the opening hold.
 
 **Steps shared by both classes:** 0 `io`, 1 `calibrate`, 2 attitude, 3
-`to_world`, 4 `integrate`, 8 `project`, 9 `plot`. These are algebra or
-bookkeeping and carry no lift assumption. Note step 4 is not where impact damage
+`to_world`, 4 `integrate`, 5b `fit_drift_tilt`, 8 `project`, 9 `plot`. These are
+algebra or bookkeeping and carry no lift assumption. *5b and 8 are shared by
+CONSTRUCTION rather than by accident — 5b is self-limiting where nothing drifts
+and 8 is geometric — but both were built from deadlift evidence, and 5b's
+premise (that a set's reps should agree) is the one to re-examine first if a
+smooth lift ever regresses.* Note step 4 is not where impact damage
 happens — its INPUT is corrupted, which is a different thing and decides where
 you intervene.
 
