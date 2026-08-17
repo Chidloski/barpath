@@ -195,6 +195,17 @@ Nine steps, one module each, numbered to match.
    line into a direction from the wrist, the grip and the attitude, checked
    against the video through `tracked.CAMERA_SIDE` on 8 of 9 checkable captures.
    A path can no longer silently mirror unless the lift cannot be named.
+   **THE CAMERA-SIDE STEP OF THAT DERIVATION NOW HAS EVIDENCE AGAINST IT (H15,
+   2026-08-17).** The first capture ever filmed from the other side —
+   `squat_145x4_2_20260817`, mirrored in the footage against its own
+   session-mates — was predicted to invert every sign while
+   `sign_agrees_with_geometry` stayed TRUE. It did not invert, and the flag now
+   reads FALSE. The flip also clusters by SESSION rather than by camera side:
+   all three 2026-08-13 squats flip while being filmed from the usual side.
+   **Read the caveat before quoting it** — that capture is the only squat in the
+   corpus that loses to the flat-line null (`beats_null` 0.83), so its fore-aft
+   may be mostly invented, which would make the test compromised rather than
+   decisive. It is the first evidence either way, not a closed case.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
 
 ### Step 10, which is not a step: `display.py`, the product view (H13, 2026-08-16)
@@ -901,7 +912,19 @@ video and log, four gitignored files, unrecoverable — because that plate's
 stickers are placed too unevenly to referee (C23). They had supplied a rep
 count of 9 of 10 and squat's first replication of the attitude bound; both are
 gone with them, and C22's fatigue finding is measured on data that no longer
-exists. **THE CORPUS IS 16 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-14).** The v1
+exists. **THE CORPUS IS 29 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-17).** Thirteen
+arrived on 2026-08-17 — five from 2026-08-13, five from 2026-08-15 and three
+squats from 2026-08-17 — taking it from 16. Eleven of the thirteen are clean;
+three miscount on the IMU (see P1), two 2026-08-13 bench clips do not track, and
+three cannot be paired with their video because the IMU log and the clip
+disagree about the filename, two of them about the REP COUNT. One of them,
+`squat_145x4_2_20260817`, is the first capture in the project filmed from the
+lifter's LEFT on a lift other than deadlift. **Everything about them is measured
+under H14's corrected scale and is not comparable to a number taken before
+2026-08-17.** See TASKS.md H15.
+
+*The statement it replaces:*
+**THE CORPUS IS 16 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-14).** The v1
 half was deleted; every count below that includes `data/raw/` is history. The
 paragraph as written said: **the corpus is 30 labelled captures and 124 reps** — 17 in `data/raw/`
 (72 reps) and 13 in `data_v2/raw/` (52), plus four unlabelled diagnostic logs in
@@ -917,6 +940,19 @@ taken: 13 captures before `7004c32`, then 10 and 44 reps, then 17 and 72, then
 Work the problems instead. Each is stated with the evidence that it is real,
 so it can be closed by evidence rather than by opinion.
 
+**P1 IS REOPENED AGAIN (H15, 2026-08-17), BY DATA RATHER THAN BY CODE.**
+Thirteen captures arrived, the corpus is **29**, and **three of the new ones
+miscount**: `deadlift_210x1_20260815` gives 2 windows for a labelled single
+(27.1 cm and 66.3 cm, both outside the 40-61 band), `squat_140x4_1_20260813`
+gives 3 of 4, and `squat_140x4_2_20260813` gives 2 of 4 with a 9.5 s hole
+mid-set. **The video counts all three correctly**, so the labels are right and
+the segmenter is wrong. The deadlift single is the `squat_160x1` /
+`bench_117.5x1` shape once more; the two squats are dropped reps across long
+cadence gaps, which is C31a's mechanism in the opposite direction from the
+paused-squat fix. Left RED in the suite rather than xfailed, per F1's
+precedent. See TASKS.md H15.
+
+*The G1 statement it replaces, true of the 16-capture corpus:*
 **P1's REOPENING IS CLOSED (G1, 2026-08-15). Counting is 16/16 captures and
 64/64 reps on the live corpus, and both defects below are fixed.** F1's
 diagnosis was right that the captures had never been under test; what it got

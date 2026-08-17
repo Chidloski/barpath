@@ -239,6 +239,33 @@ def test_camera_side_is_recorded_for_every_lift():
     assert tracked.CAMERA_SIDE["deadlift"] != tracked.CAMERA_SIDE["bench"]
 
 
+def test_camera_side_is_a_property_of_the_CAPTURE_not_the_lift():
+    """H15 — the confound B4 was measured through, and the capture that breaks it.
+
+    Until 2026-08-17 this was a per-LIFT table, so camera side was perfectly
+    confounded with the lift and `project.FORE_AFT_SENSE`'s camera-side step
+    could not be tested by anything in the corpus. `squat_145x4_2_20260817` is
+    filmed from the lifter's LEFT where every other squat is filmed from the
+    right — confirmed in the footage, which is mirrored against its own
+    session-mates — so a per-lift answer would score it through the wrong
+    anatomical reference and silently invert its fore-aft.
+
+    The exception must not leak to its session-mates: the other two squats shot
+    the same morning are from the usual side.
+    """
+    from src import tracked
+
+    assert tracked.camera_side("squat_145x4_2_20260817.mov") == "left"
+    assert tracked.camera_side("squat_155x4_3_20260817.mov") == "right"
+    assert tracked.camera_side("squat_135x4_1_20260817.mov") == "right"
+    assert tracked.camera_side("deadlift_210x1_20260815.mov") == "left"
+    # The cached track must CARRY it, because that is what `metrics._sign_agrees`
+    # reads — a correct table and a stale CSV is the same bug as a wrong table.
+    csv = ROOT / "data_v2" / "tracked" / "squat_145x4_2_20260817.csv"
+    if csv.is_file():
+        assert "# camera_side = left" in csv.read_text()
+
+
 def test_the_video_finds_the_rep_count_the_FILENAME_says():
     """The check that makes this figure a gate rather than a picture.
 

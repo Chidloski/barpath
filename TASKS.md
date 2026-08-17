@@ -15,6 +15,139 @@ Related, and deliberately not duplicated here:
 
 
 
+## H15 — the thirteen captures of 2026-08-17, and B4's prediction FAILS (2026-08-17)
+
+Owner's task: *"you've got some more workout data, the 145x4_2 squat is filmed
+from the left side, finish your task then evaluate all the new data."* The
+corpus goes **16 -> 29 captures**. Everything below is measured under H14's
+corrected scale, because measuring new captures with a ruler known to be 5-11%
+small would be pointless.
+
+### The headline: the camera-side experiment ran, and its prediction failed
+
+TASKS.md has asked since 2026-08-16 for a capture that varies CAMERA SIDE,
+because `tracked.CAMERA_SIDE` was a per-LIFT table and was therefore perfectly
+confounded with the lift — B4's derivation reads the video's image-right through
+it and nothing varied it. `squat_145x4_2_20260817` is that capture.
+
+**The owner's statement is confirmed by the footage.** A frame from it is
+mirrored against a frame from its own session-mates: plate on the left and the
+lifter facing left, where all nine other squats have the plate on the right. It
+is also a different rack. This is not an inference from the reconstruction.
+
+**The prediction, written down before the capture, was: every sign should invert
+while `sign_agrees_with_geometry` stays TRUE.** Measured:
+
+    squat_145x4_2_20260817   axis_flipped FALSE   sign_agrees FALSE
+                             reps_disagreeing_on_sign 0 of 4
+
+**The correlation did not invert.** With `camera_side` correctly recorded as
+"left" the geometric check now reports FALSE — the pipeline would draw this
+capture MIRRORED. And it is not a marginal call inside the capture: all four
+reps agree with each other on the sign.
+
+**Worse for the hypothesis, the flip clusters by SESSION and not by camera
+side.** All three squats of 2026-08-13 flip; all six of 2026-08-06 and
+2026-08-17 do not — including the one that is genuinely mirrored. The 08-13
+clips are NOT mirrored in the footage, so camera side cannot explain the group
+that does flip, and does not explain the one that should.
+
+    session        captures                            axis_flipped
+    2026-08-06     squat_170x1, 3 paused               False x4
+    2026-08-13     squat_170x1, 140x4_1, 140x4_2       TRUE x3   (camera RIGHT)
+    2026-08-17     135x4_1, 155x4_3                    False x2
+    2026-08-17     145x4_2                             False     (camera LEFT)
+
+**The honest caveat, and it is a real one.** `squat_145x4_2` is the weakest
+squat in the corpus on the horizontal — `beats_null` **0.83**, the only squat
+that loses to drawing no fore-aft motion at all, against 1.13-2.22 for the other
+nine. If its fore-aft is mostly invented, then "all four reps agree" says the
+invention is consistent, not that the sign is right, and the experiment is
+compromised rather than decisive. **It is not a clean falsification of B4's
+camera-side step and must not be quoted as one.** What it definitely is: the
+first evidence AGAINST that step, where before there was none either way, plus a
+session-level effect that the step cannot explain at all. The obvious follow-up
+is a second left-filmed squat on a day when the reconstruction is behaving.
+
+*What was built:* `tracked.CAMERA_SIDE_EXCEPTIONS` and `tracked.camera_side()`,
+an exception table keyed by capture stem, with the cached CSV carrying the
+answer because `metrics._sign_agrees` reads it from there. Gated in
+`tests/test_tracked.py`.
+
+### What the thirteen are
+
+Eleven of thirteen are clean and usable. All rep LABELS are corroborated by the
+video, which counts 28 of 29 correctly.
+
+**Three IMU miscounts, all new, and the video disagrees with the segmenter on
+every one:**
+
+    capture                     label  IMU  video   what the windows are
+    deadlift_210x1_20260815       1     2     1     27.1 cm + 66.3 cm, both
+                                                    outside the 40-61 band
+    squat_140x4_1_20260813        4     3     4     one rep dropped
+    squat_140x4_2_20260813        4     2     4     a 9.5 s hole mid-set
+
+`deadlift_210x1` is a heavy single split into two windows, the shape
+`squat_160x1` and `bench_117.5x1` had. The two squats are dropped reps across
+long cadence gaps, which is C31a's territory and the opposite direction from the
+paused-squat fix.
+
+**Two broken video tracks, both 2026-08-13 spoto benches:**
+
+    bench_spoto_95x6_1_20260813   travel 94.1 cm, fore-aft 96.4 cm, cov 89.8%
+    bench_spoto_95x6_2_20260813   travel 72.2 cm, fore-aft 47.2 cm, cov 100%
+
+For a bench press, against 27-29 cm of travel and 20-23 cm of fore-aft on every
+other bench in the corpus.
+
+**And the second one passes every health check** — 100% coverage, 1.72 px
+residual, rep count matching its label, `implausible` False. That is D2's
+failure shape again and it is worth naming precisely: **`IMPLAUSIBLE_FRAC` is
+ONE-SIDED.** It fires when travel falls below `0.6 * rom_lo` and has no ceiling,
+because it was written for squat clips reading 14 and 24 cm on a 65 cm lift. A
+bench track reading three times its band sails through. Recorded, not fixed: a
+ceiling is one line but it changes a gate on every capture and belongs with a
+measurement of what the legitimate whole-clip maximum is, since whole-clip travel
+includes the un-rack and exceeds per-rep ROM by construction.
+
+**Three captures cannot be scored at all, because their IMU log and their video
+disagree about the filename**, and `pipeline.find_video` correctly refuses to
+pair them:
+
+    IMU log                          video clip
+    bench_95x6_20260815              bench_95x6_1_20260815.mov
+    bench_spoto_95x5_1_20260813      bench_spoto_95x6_1_20260813.mov
+    bench_spoto_95x5_2_20260813      bench_spoto_95x6_2_20260813.mov
+
+The first is a missing `_1`. **The other two disagree about the REP COUNT — 5
+against 6 — and that label is the independent ground truth every counting gate
+in this repo is judged against, so it is not something to infer from the data it
+referees.** One question to the owner. Note both are also the broken tracks
+above, so they are unusable twice over.
+
+### Scores, for the eleven new captures that score
+
+Nothing here changes a conclusion; it extends the corpus P2 is measured on.
+`beats_null` on the new deadlifts is 0.03-0.50, consistent with deadlift's
+standing 0.19-0.93 and still under a flat line. The new squats are 0.83-2.22,
+consistent with squat's 1.24-1.98. `squat_170x1_20260813` is the best new
+capture at h 2.28 cm and `beats_null` 2.22, the highest of any squat.
+
+### Why nothing is xfailed
+
+The suite is **30 failed, 617 passed** and 23 of those failures are these new
+captures. They are deliberately left RED and `WRONG_REP_COUNT` is deliberately
+left EMPTY, following F1's precedent in this file: *"deliberately left RED rather
+than xfailed: they are the finding, and burying them under an expected-failure
+mark is how the previous ones stayed invisible."* The segmenter defects are
+recorded here and in `CLAUDE.md`'s P1, not masked.
+
+*Evidence:* `analysis/tracking/v2/` (the thirteen new review figures),
+`tracked.camera_side`, TASKS.md H14 for the scale these are measured under.
+
+---
+
 ## H14 — the sticker circle, measured with a tape at last (2026-08-17)
 
 Owner-supplied measurement, not a task: *"stickers have a diameter of 1.5cm for

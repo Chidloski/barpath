@@ -60,7 +60,39 @@ from . import metrics, capture
 # Which side of the lifter the camera stands on (owner, 2026-08-06). The watch
 # is on the LEFT wrist throughout. Not derivable from the footage; recorded
 # because it decides which end of the bar the referee is watching.
+#
+# **This is the per-LIFT default and it stopped being the whole answer on
+# 2026-08-17 (H15).** `project.FORE_AFT_SENSE`'s derivation reads the video's
+# image-right through this table to get an anatomical direction, so until a
+# capture varied it, camera side was perfectly confounded with the lift and B4's
+# whole chain was untestable. TASKS.md asked for a capture that varies it and
+# `squat_145x4_2_20260817` is one — same lifter, same session, same plate, one
+# thing changed. A per-lift table would have scored it through "right" and
+# silently inverted its anatomical reference.
 CAMERA_SIDE = {"deadlift": "left", "bench": "right", "squat": "right"}
+
+# Captures filmed from the other side, keyed by a substring of the clip stem.
+# Same shape as `capture.CALIBRATED_SESSIONS` and `STICKER_PLATE_DIAMETER_M`:
+# an exception table, because the default is right far more often than not and
+# an entry per capture would rot. **An entry here is the owner's statement about
+# where they stood, never an inference from the footage** — the whole value of
+# this field is that it is external to the reconstruction.
+CAMERA_SIDE_EXCEPTIONS = {"squat_145x4_2_20260817": "left"}
+
+
+def camera_side(name: str | Path) -> str:
+    """Which side the camera stood on for one capture, exceptions first.
+
+    Takes a clip or capture name rather than a lift, because the answer is a
+    property of the capture. Raises on an unknown lift exactly as
+    `capture.lift_of` does, rather than defaulting to a side — a silent default
+    here mirrors the path and the mirror is invisible.
+    """
+    stem = Path(name).stem
+    for tag, side in CAMERA_SIDE_EXCEPTIONS.items():
+        if tag in stem:
+            return side
+    return CAMERA_SIDE[capture.lift_of(name)]
 
 # Per-frame columns written to the CSV. Anything else in the path dict is a
 # scalar or a diagnostic and goes in the header, except the (N, 2) arrays which
@@ -142,7 +174,7 @@ def write(path: dict, video: str | Path, dest: Path | None = None) -> Path:
              f"# n_frames = {n}"]
     try:
         lines.append(f"# lift = {capture.lift_of(video)}")
-        lines.append(f"# camera_side = {CAMERA_SIDE[capture.lift_of(video)]}")
+        lines.append(f"# camera_side = {camera_side(video)}")
     except (ValueError, KeyError):
         pass
     for k in SCALAR_KEYS:
