@@ -261,22 +261,85 @@ middle of a 0.02–0.12 plateau, not a tuned constant.
 
 ### Two classes of lift: IMPACT and SMOOTH (owner, 2026-08-07)
 
-The owner's framing, and the measurement behind it is the sharpest lift-level
-split in the project. **Deadlift is an IMPACT lift — the bar is dropped to the
+The owner's framing. **Deadlift is an IMPACT lift — the bar is dropped to the
 floor between reps. Bench and squat are SMOOTH.** Both classes run the same
-nine steps; impact lifts need supplementary ones. Per-rep fore-aft excursion,
-growth per rep as a percentage of the set mean, IMU only, no video:
+nine steps; impact lifts need supplementary ones. The class split is sound and
+is evidenced throughout this section; **what changed is the STATISTIC that used
+to be quoted for it, and the correction is below rather than a deletion.**
 
-    class                 n    median growth   range
+**THE GROWTH STATISTIC NO LONGER SEPARATES THE CLASSES IN THE SHIPPING
+PIPELINE, BECAUSE STEP 5b FIXES WHAT IT MEASURED (H18, 2026-08-17).** This
+section used to open "the measurement behind it is the sharpest lift-level
+split in the project" and give per-rep fore-aft excursion growth, as a
+percentage of the set mean, IMU only, no video:
+
+    class                 n    median growth   range              (2026-08-07)
     deadlift (impact)     6      +29.2 %/rep   +4.4 to +65.2, 6 of 6 POSITIVE
     bench (smooth)       11       +0.3 %/rep   -25.9 to +12.0
     squat (smooth)        9       +1.9 %/rep   -10.5 to +22.8
 
-**The invented fore-aft compounds monotonically on impact lifts and scatters
-around zero on smooth ones.** `deadlift_160x6_1` runs 8, 10, 13, 14, 19, 35 cm
-across its six reps while the video's stays flat. It resets between sets — every
-deadlift starts with a small rep-0 excursion — so whatever accumulates is
-re-anchored at the opening hold.
+**That measurement was RIGHT, and the deadlift half of it reproduces exactly.**
+Re-run on the 29-capture corpus with `drift_tilt=False`, i.e. the pipeline as it
+stood when the table was taken, the deadlift compounding is still there and is
+still universal — and turning step 5b back on is what removes it:
+
+    lift        5b OFF                          5b ON (ships)
+    deadlift    +21.5 %/rep,  8 of 8 POSITIVE   +6.6 %/rep, 6 of 8
+    bench        +4.6 %/rep,  6 of 8            +5.7 %/rep, 7 of 8
+    squat       +12.2 %/rep,  5 of 7            -2.1 %/rep, 3 of 7
+
+Both columns are today's 29-capture corpus. The OFF column is not the 2026-08-07
+measurement re-read — it is the same statistic on different captures with the
+intervening change reverted, which is why the deadlift row agreeing in SHAPE
+(universally positive, same order of magnitude) is the result and the 21.5
+against 29.2 is not a discrepancy to explain.
+
+So the split's collapse is **step 5b `fit_drift_tilt` (H8) doing its job**, not
+the original finding being noise. `deadlift_160x6_1` is the flagship example and
+it makes the point on its own: this file recorded it running **8, 10, 13, 14,
+19, 35 cm** across its six reps while the video stayed flat, and it now runs
+**7.2, 7.0, 7.1, 5.2, 7.5, 6.7 cm**. The compounding is gone, not damped.
+
+The rest of the original observation went with it and is kept for the trail: the
+accumulation *reset between sets*, every deadlift starting with a small rep-0
+excursion, so whatever built up was re-anchored at the opening hold. That was
+true of the OFF state and there is now nothing accumulating for it to describe.
+
+**Read that with the circularity stated, because it is close to tautological.**
+5b fits a world-horizontal attitude drift rate **against the set's own
+rep-to-rep dispersion**, and this statistic IS a rep-to-rep dispersion measure.
+5b reducing it is very nearly what 5b is defined to do, so **the table above is
+not independent evidence that 5b removed a real error.** What is: 5b is
+self-limiting, finding on this corpus a median |beta| of **0.029 °/s on
+deadlift against 0.006 on both bench and squat** (`correct.fit_drift_tilt`
+returns rad/s; H8 recorded 0.008-0.051 against 0.001-0.008), and H8 scored it
+against the video, where 5b ALONE took the deadlift median horizontal
+4.97 -> 3.78 cm. *(The 4.97 -> 2.26 quoted in `pipeline.run`'s docstring is 5b
+AND H9's axis together — do not attribute it to 5b.)*
+
+**One half does NOT reproduce, and it is the smooth half.** "Scatters around
+zero on smooth ones" is a property of the corpus that measured it, not of the
+lift class: with 5b OFF, squat sits at **+12.2 %/rep, 5 of 7 positive** on this
+corpus, nothing like the +1.9 recorded above. Part of that is corpus turnover —
+the original spanned v1, which F1 deleted — so the bench and squat rows cannot
+be re-derived and cannot referee anything.
+
+**Two agents found the collapse independently before its cause was known, and
+neither could see it from where they stood.** H1 measured deadlift 1.2-35.0
+%/rep against bench+squat 1.3-22.8, "overlapping completely", while looking for
+a gate to separate R4 and V3 (`analysis/H1_STATE.md`, TASKS.md). H17 measured
++6.6 / +5.7 / -2.1 while scoring the whole corpus. Both were right that the
+statistic no longer separates; **neither tried it with 5b off**, which is the
+one experiment that distinguishes "the finding was wrong" from "the pipeline
+fixed it". Prefer that experiment whenever a statistic quietly stops working.
+
+**And the split it was quoted for is now carried by a better number.** H17's
+`beats_null` across all 29 captures is a sharper lift-level split than this ever
+was, it is scored against the video rather than against the set's own
+self-consistency, and no correction in the pipeline is fitted to it: **bench
+beats the flat-line null on 6 of 7, squat on 9 of 10, deadlift on 1 of 10** —
+and that one is a single, so every multi-rep deadlift loses. Quote that.
+*Evidence:* `analysis/68`, TASKS.md H17 and H18.
 
 **Steps shared by both classes:** 0 `io`, 1 `calibrate`, 2 attitude, 3
 `to_world`, 4 `integrate`, 5b `fit_drift_tilt`, 8 `project`, 9 `plot`. These are
@@ -326,6 +389,15 @@ the best-instrumented moment in the project.
 +11.5 to +22.8 %/rep, the highest of any smooth capture. n=3, so possibly noise —
 but a pause is not an impact, and if it survives more data the discriminator is
 not impact per se.
+
+*Re-measured 2026-08-17 (H18), and it reproduces before 5b and is removed by
+it.* The same three paused squats give **+9.7, +12.2 and +19.8 %/rep with
+`drift_tilt=False`** — inside the range recorded above, on the same captures —
+and **-2.1, -3.8 and +3.8 with 5b on**. So the wrinkle was real rather than
+noise, and step 5b treats a paused squat's accumulation the same way it treats a
+deadlift's. That is mild evidence AGAINST "impact per se" being the
+discriminator and for it being anything that lets a set drift between reps, a
+pause included. Still n=3, and still not a reason to change any gate.
 
 ### The tracking protocol (C31, 2026-08-07)
 

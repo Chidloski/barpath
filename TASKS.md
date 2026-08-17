@@ -15,6 +15,68 @@ Related, and deliberately not duplicated here:
 
 
 
+## H18 — the IMPACT/SMOOTH statistic did not fail, step 5b fixed it (2026-08-17)
+
+Owner: *"fix the CLAUDE.md impact/smooth section"*, after H17 recorded that its
+growth table no longer separates the classes. Docs only — no `src/`, no
+`tests/`, no behaviour.
+
+**The section was right and the pipeline moved under it.** H17 and H1 both
+measured the collapse and both stopped at "it no longer separates". Running the
+statistic with `drift_tilt=False` — the pipeline as it stood when the table was
+taken, since H8 turned 5b on nine days later — reproduces the deadlift half
+exactly:
+
+    lift        5b OFF                          5b ON (ships today)
+    deadlift    +21.5 %/rep,  8 of 8 POSITIVE   +6.6 %/rep, 6 of 8
+    bench        +4.6 %/rep,  6 of 8            +5.7 %/rep, 7 of 8
+    squat       +12.2 %/rep,  5 of 7            -2.1 %/rep, 3 of 7
+
+Against the recorded +29.2 %/rep and 6 of 6 positive, on a corpus sharing not
+one deadlift with the original. `deadlift_160x6_1` is the flagship example and
+settles it alone: recorded at **8, 10, 13, 14, 19, 35 cm** across six reps, it
+now runs **7.2, 7.0, 7.1, 5.2, 7.5, 6.7**. Gone, not damped.
+
+**The paused-squat wrinkle reproduces too**, which is the check that this is a
+mechanism and not a deadlift coincidence. The three paused squats were recorded
+at +11.5 to +22.8 %/rep; with 5b off they give **+9.7, +12.2, +19.8** and with
+it on **-2.1, -3.8, +3.8**. So the wrinkle was real, and 5b treats a paused
+squat's accumulation exactly as it treats a deadlift's — mild evidence against
+"impact per se" as the discriminator, in the direction the wrinkle itself
+guessed.
+
+**State the circularity or the result is worthless.** 5b fits an attitude drift
+rate *against the set's own rep-to-rep dispersion*, and this statistic IS a
+rep-to-rep dispersion measure, so 5b reducing it is nearly definitional. The
+table above cannot referee 5b. What can: 5b is self-limiting, with a median
+|beta| on this corpus of **0.029 °/s on deadlift against 0.006 on bench and
+0.006 on squat** (H8 recorded 0.008-0.051 against 0.001-0.008, so the enlarged
+corpus widens the range and keeps the ~5x separation), and H8 scored it against
+the video, where 5b ALONE took the deadlift median horizontal 4.97 -> 3.78 cm.
+*(`pipeline.run`'s 4.97 -> 2.26 is 5b AND H9's axis together; it was misread as
+5b's alone while drafting this entry and is worth not repeating.)*
+
+**One half does not reproduce and it is the SMOOTH half.** "Scatters around
+zero on smooth ones" was a property of the corpus that measured it: with 5b off,
+squat is +12.2 %/rep and 5 of 7 positive here, nothing like +1.9. Those rows
+spanned v1 and cannot be re-derived, so they referee nothing now.
+
+**What replaces it.** The class split stands — it is separately evidenced by
+step 5's segmentation polarity, step 6's premise break at the impact, step 7's
+opposite verdict by lift, and C29/D1 — but the number to quote for it is H17's
+`beats_null`, which is scored against the video rather than against a set's own
+self-consistency and which no shipped correction is fitted to: bench 6 of 7,
+squat 9 of 10, deadlift 1 of 10.
+
+**The lesson worth generalising, and it is a cheap one.** When a statistic
+quietly stops working, run it with the intervening changes turned OFF before
+concluding it was wrong. Two agents reached "it no longer separates" and neither
+tried it; the experiment that distinguishes "the finding was wrong" from "the
+pipeline fixed it" is one keyword argument.
+
+*Evidence:* CLAUDE.md's IMPACT/SMOOTH section, `correct.fit_drift_tilt`,
+TASKS.md H17.
+
 ## H17 — all 29 sets on one page, and a video-free check on the velocity (2026-08-17)
 
 Owner: *"give me an analysis tracking all the sets"*. `analysis/68`, no `src/`
@@ -75,6 +137,13 @@ the gap is corpus turnover, since the original spanned v1 and F1 deleted it, so
 this does not falsify the owner's two-class MODEL — only the statistic quoted
 in support of it. Someone should reconcile the three documents; H17 did not,
 because the owner asked for an analysis and not a doc edit.
+
+> **H18 did the reconciliation the next instruction along and found the CAUSE,
+> which neither H1 nor H17 had.** The collapse is **step 5b removing the thing
+> the statistic measured**: with `drift_tilt=False` the deadlift compounding
+> reproduces at +21.5 %/rep, 8 of 8 POSITIVE. "Corpus turnover" above is
+> therefore the wrong explanation for the deadlift row — it is the right one
+> only for the smooth rows, which do not reproduce either way. See H18.
 
 *Evidence:* `analysis/68`, `analysis/68_corpus_scorecard.json`, analysis/README
 68.
@@ -2437,6 +2506,14 @@ smooth ones, and it resets between sets. The step-by-step allocation — which
 steps are shared, which have a premise that breaks at the impact, and which
 supplementary steps are measured to help — is in CLAUDE.md under the pipeline
 list. Full suite 600 passed / 1 skipped / 8 xfailed / 7 xpassed.
+
+> **The deadlift row REPRODUCES and step 5b has since removed it (H18,
+> 2026-08-17).** With `drift_tilt=False` a 29-capture corpus sharing no deadlift
+> with this one gives +21.5 %/rep, 8 of 8 positive; with 5b on it is +6.6 and
+> 6 of 8. So this measurement was sound and the pipeline moved under it. The
+> **smooth rows do not reproduce** either way — squat is +12.2 %/rep with 5b off
+> here — and they spanned v1, which F1 deleted, so they cannot be re-derived.
+> Do not quote this table as current. See H18.
 
 ## Done
 

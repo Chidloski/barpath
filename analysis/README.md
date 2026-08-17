@@ -2399,10 +2399,18 @@ deadlift, +5.7 bench, −2.1 squat** — overlapping, and deadlift 6 of 8 positi
 rather than 6 of 6. **H1 found the same collapse independently** with a
 different definition (TASKS.md:630, `H1_STATE.md`: deadlift 1.2–35.0 %/rep
 against bench+squat 1.3–22.8, "overlapping completely"). Two measurements, two
-definitions, one conclusion, and CLAUDE.md carries none of it. Part of the
-difference is corpus turnover — the original was measured across v1, which F1
-deleted — so this is not proof the owner's two-class model is wrong, only that
-the statistic quoted for it no longer separates the classes.
+definitions, one conclusion, and CLAUDE.md carries none of it.
+
+**H18 then found the cause, and H17's guess above at "corpus turnover" is
+WRONG for the deadlift row** (2026-08-17). Re-run with `drift_tilt=False` — the
+pipeline as it stood when the table was taken — the deadlift compounding
+reproduces at **+21.5 %/rep, 8 of 8 positive**, and `deadlift_160x6_1` returns
+to the recorded shape. **Step 5b removes it**, which is what 5b is for. So the
+original measurement was sound and the pipeline moved under it; the statistic
+stopped separating because the defect was fixed, not because it was noise. The
+smooth rows do not reproduce either way, so corpus turnover is the right
+explanation only for those. Full argument and the circularity caveat in
+TASKS.md H18 and CLAUDE.md's IMPACT/SMOOTH section.
 
 ---
 
