@@ -79,17 +79,35 @@ CALIBRATED_DIAMETER_M = 0.450
 # which is the plate carrying the load, and is unaffected by which plate the
 # stickers went on.
 #
-# **The 2026-08-06 session has no entry and nobody has decided whether it needs
-# one (C32, 2026-08-06).** It carries the same eight-sticker layout as
-# 2026-08-04, so the question this table exists to answer — is the stickered
-# plate the widest plate — is live again and is currently being answered by
-# fall-through rather than by evidence. Bench falls through to 0.425 and squat
-# to 0.450; if the owner moved one stickered 425 mm notched plate between the
-# two bars and loaded it outboard, as on 2026-08-04, the squat entry is 5.9%
-# out on every marker distance. Not resolved here, and not resolvable from the
-# footage: it is one question to the owner, or one tape across the sticker
-# circle into `markers.bar_path(sticker_diameter_m=)`, which makes the whole
-# table irrelevant for that capture.
+# **ASKED AND ANSWERED (owner, 2026-08-17).** C32's question below was "which
+# physical plate carries the stickers on each bar", and the answer is that each
+# lift uses one plate set and always has: **bench loads ONLY black notched
+# (425), squat ONLY blue calibrated (450), and a deadlift is black notched
+# loaded around black bumpers**, so the stickered plate is the notched 425 on
+# both bench and deadlift and the blue 450 on squat. Nothing was moved between
+# bars, so the 5.9% squat risk this comment raised did NOT happen and the
+# fall-through values were right — by luck rather than by evidence, which is
+# exactly the distinction the comment was drawing. They are now a decision.
+#
+# Two things that answer does NOT settle, recorded so they are not assumed:
+#
+#   * **It contradicts `CALIBRATED_SESSIONS` above**, which records the
+#     2026-08-03 bench session as filmed on blue calibrated discs. Those
+#     captures were deleted with v1, so this is a conflict between the owner's
+#     general statement and one session's history rather than a live defect.
+#     Left as history; do not reconcile by deleting either.
+#   * **A cross-check that PASSED, recorded because it is the only independent
+#     check these diameters have ever had.** The owner first said the notched
+#     plate clears the floor by 2 cm, which would put the bumper at 465 mm and
+#     contradict the 445 above — and then corrected the arithmetic to 1 cm,
+#     unprompted. 1 cm is exactly (445 - 425) / 2, so the two tape measurements
+#     agree with a third observation taken a fortnight later. The bar's start
+#     height of 22.25 cm is unaffected and remains the bumper's radius.
+#
+# The scale question this table fed is now moot for `vtrack`, which no longer
+# derives the sticker circle from a plate diameter at all: the circle is
+# measured (`vtrack.STICKER_CIRCLE_M`, plate less 2 cm). This table still keys
+# `markers.py` and stays as the record.
 STICKER_PLATE_DIAMETER_M = {"20260804": 0.425}
 
 

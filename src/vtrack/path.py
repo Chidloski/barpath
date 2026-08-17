@@ -44,10 +44,16 @@ anything scored with `tracker="markers"`, and its `calibration_report`,
 `top_of_travel_residual` and conic machinery carry findings this module does not
 reproduce. Nothing here deletes that record.
 
-**The absolute scale is still `STICKER_RATIO = 0.858`, transferred and not
-measured**, exactly as in `markers.py`, and every metre figure scales linearly
-with it. A tape across the sticker circle settles all sixteen clips at once and
-is the highest-value measurement available to this module.
+**THE ABSOLUTE SCALE IS MEASURED AS OF 2026-08-17 (H14), AND EVERY METRE FIGURE
+IN THIS MODULE'S HISTORY PREDATES IT.** This used to say the scale was
+`STICKER_RATIO = 0.858`, transferred from `markers.py` and not measured, and
+that "a tape across the sticker circle settles all sixteen clips at once and is
+the highest-value measurement available to this module". The owner supplied that
+tape: the stickers are 2.0 cm across and are placed with their outer edge
+against the plate rim, so the sticker circle is the plate diameter less 2.0 cm.
+See `STICKER_CIRCLE_M`. It moved the scale +4.9% on bench, +6.1% on deadlift and
++11.4% on squat, so **no video-refereed number recorded before that date is
+comparable to one recorded after it.**
 """
 from __future__ import annotations
 
@@ -74,14 +80,69 @@ ROM = {"bench": (0.24, 0.31), "squat": (0.61, 0.68), "deadlift": (0.53, 0.61)}
 # Diameter in metres of the plate the stickers are ON. The owner's measurements
 # (2026-08-12): black notched 42.5, black bumper 44.5, blue calibrated 45.
 #
-# Kept here rather than taken from `capture.sticker_plate_diameter` because that
-# function has no 2026-08-06 entry and falls through to `plate_diameter`, so
-# routing through it would silently change the scale on the newest captures
-# (C32 flagged this and nobody has asked the owner). Reconciling the two is
-# open work; doing it quietly would move every metre figure below.
-PLATE_M = {"bench": 0.45, "squat": 0.45, "deadlift": 0.445}
+# **WHICH PLATE EACH LIFT USES IS NOW ANSWERED (owner, 2026-08-17), AND TWO OF
+# THESE THREE ENTRIES WERE WRONG AGAINST THIS TABLE'S OWN DEFINITION.** The
+# owner: bench loads ONLY black notched, squat ONLY blue calibrated, and a
+# deadlift is black notched loaded around black bumpers — so the stickered
+# plate is the 425 notched on bench and deadlift, and the 450 blue disc on
+# squat. This table said 0.45 for bench (a 425 plate, 5.9% out) and 0.445 for
+# deadlift (the BUMPER, which is not the plate the stickers are on — the exact
+# error `capture.STICKER_PLATE_DIAMETER_M` was created to fix for the
+# 2026-08-04 session, reintroduced here when F1 gave this module its own
+# table). Squat's 0.45 was right.
+#
+# It is kept here rather than routed through `capture.sticker_plate_diameter`
+# for the reason F1 gave — that function falls through to `plate_diameter`,
+# which answers a different question — but the VALUES are now the owner's
+# rather than a fall-through. Reconciling the two tables is still open.
+PLATE_M = {"bench": 0.425, "squat": 0.45, "deadlift": 0.425}
 
-STICKER_RATIO = 0.858       # markers.STICKER_RATIO — transferred, NOT measured
+# The diameter in metres of the circle the sticker CENTRES sit on. This is what
+# the tracker actually measures — `c["r"]` is the fitted radius of the detected
+# constellation — and it is now DERIVED FROM A TAPE rather than fitted.
+#
+# THE GEOMETRY (owner, 2026-08-17). A sticker is 2.0 cm across overall, with a
+# 1.3 cm reflective disc inside it, and **it is always placed with its outer
+# edge against the outer edge of the plate**. So the centre sits one sticker
+# RADIUS — 1.0 cm — inboard of the rim, and the circle is the plate diameter
+# less 2.0 cm, on every plate, by construction. The 1.3 cm reflective diameter
+# does not enter: it sizes the blob the detector finds, not where its centre is,
+# because the reflective disc is concentric with the sticker.
+#
+# **This replaces `PLATE_M[lift] * STICKER_RATIO` and it is the measurement
+# three modules asked for.** `STICKER_RATIO = 0.858` was calibrated on the old
+# THREE-sticker plate, whose stickers sat 31.6 mm in from the rim (see
+# `markers.STICKER_RATIO`); the eight-sticker plates that make up the ENTIRE
+# live corpus are stickered to a different rule and sit 10 mm in. Expressing
+# the scale as a fraction of the plate was always the wrong shape for it — the
+# inset is an absolute distance, so the fraction differs per plate (0.953 on a
+# 425 plate, 0.956 on a 450) and no single ratio can be right for both.
+#
+#     lift       was: plate x 0.858    now: plate - 2 cm     scale change
+#     bench      0.45  x 0.858 = 0.3861    0.425 - 0.020 = 0.405    +4.90%
+#     squat      0.45  x 0.858 = 0.3861    0.450 - 0.020 = 0.430   +11.37%
+#     deadlift   0.445 x 0.858 = 0.3818    0.425 - 0.020 = 0.405    +6.07%
+#
+# **What corroborates it, and the check is independent of the tape.** Before
+# this change the video read BELOW the IMU's per-rep vertical ROM on 16 of 16
+# captures — median ratio 0.926 bench, 0.924 squat, 0.936 deadlift, i.e. a
+# systematic ~7% that no per-lift explanation covers. C27 measured the deadlift
+# half of it from the other side (video 4.6-9.3% below the reconstruction) and
+# said "~0.92 would close it exactly". The tape predicts +6.07% on deadlift,
+# inside that range and nowhere near a free parameter. Applied, the three
+# medians become 0.971 / 1.029 / 0.993.
+#
+# **Read the residual honestly.** The correction removes a common bias and
+# leaves a WIDER spread between lifts than it found (0.012 -> 0.058). If the
+# truth were instead "the IMU reads ~7% high on ROM for all three lifts", this
+# change would be double-counting — but that hypothesis has to explain away a
+# direct measurement of the referee's own geometry, which this is and which the
+# 0.858 never was. The video/IMU ratio is the CHECK here, not the source.
+STICKER_CIRCLE_M = {lift: d - 0.020 for lift, d in PLATE_M.items()}
+
+# The old fitted constant, kept only so `calibration_report`-style diagnostics
+# and the historical record still resolve. NOT used to scale anything here.
+STICKER_RATIO = 0.858       # markers.STICKER_RATIO — the THREE-sticker plate
 
 # Below this fraction of the lift's own lower ROM bound the track is not the
 # bar. Gross failures only: the video referee legitimately reads a squat 15%
@@ -113,7 +174,7 @@ def track_clip(video, cache_dir=None, verbose=False, reacquire=True,
     video = Path(video)
     dets, fps, shape = detect_clip(video, cache_dir=cache_dir)
     lift = _lift_of(video)
-    plate_m, (rom_lo, rom_hi) = PLATE_M[lift], ROM[lift]
+    circle_m, (rom_lo, rom_hi) = STICKER_CIRCLE_M[lift], ROM[lift]
 
     layout, scored = "8-sticker", None
     cands = candidates(dets, shape, lattice=True, min_slots=4)
@@ -123,7 +184,7 @@ def track_clip(video, cache_dir=None, verbose=False, reacquire=True,
             lambda d, sh, c: _follow(
                 d, sh, c, lattice=True, n_starts=2, reacquire=reacquire,
                 robust=robust),
-            verbose=verbose, plate_m=plate_m, sticker_ratio=STICKER_RATIO,
+            verbose=verbose, circle_m=circle_m,
             rom_lo=rom_lo, rom_hi=rom_hi)
 
     # Re-track the top THREE properly before testing the gate. Screening uses
@@ -138,7 +199,7 @@ def track_clip(video, cache_dir=None, verbose=False, reacquire=True,
                                      reacquire=reacquire, robust=robust)
             sc_ = score_track(
                 trk_, c_["r"],
-                m_per_px=(plate_m * STICKER_RATIO / 2.0) / c_["r"],
+                m_per_px=(circle_m / 2.0) / c_["r"],
                 rom_lo=rom_lo, rom_hi=rom_hi)
             sc_["blob"] = s_.get("blob", 0.0)
             redone.append((sc_, c_, trk_))
@@ -156,8 +217,8 @@ def track_clip(video, cache_dir=None, verbose=False, reacquire=True,
                 dets, shape, cands2,
                 lambda d, sh, c: _follow(d, sh, c, lattice=False,
                                                    n_starts=2),
-                verbose=verbose, plate_m=plate_m,
-                sticker_ratio=STICKER_RATIO, rom_lo=rom_lo, rom_hi=rom_hi)
+                verbose=verbose, circle_m=circle_m,
+                rom_lo=rom_lo, rom_hi=rom_hi)
             if sc2:
                 scored, layout = sc2, "3-sticker"
     if not scored:
@@ -167,10 +228,10 @@ def track_clip(video, cache_dir=None, verbose=False, reacquire=True,
     if layout != "8-sticker":
         trk = _follow(dets, shape, c, lattice=False, n_starts=6)
         s = score_track(
-            trk, c["r"], m_per_px=(plate_m * STICKER_RATIO / 2.0) / c["r"],
+            trk, c["r"], m_per_px=(circle_m / 2.0) / c["r"],
             rom_lo=rom_lo, rom_hi=rom_hi)
 
-    summ = summarise(trk, fps, c["r"], plate_m, STICKER_RATIO)
+    summ = summarise(trk, fps, c["r"], circle_m)
     return {"name": video.stem, "lift": lift, "trk": trk, "summary": summ,
             "r_px": c["r"], "score": s, "layout": layout, "fps": fps,
             "implausible": summ["travel_m"] < IMPLAUSIBLE_FRAC * rom_lo,
@@ -222,7 +283,7 @@ def bar_path(video, cache_dir=None, check: bool = True) -> dict:
         "travel_m": sm["travel_m"],
         "coverage": sm["coverage"],
         "plate_radius_px": res["r_px"],
-        "sticker_radius_m": 0.5 * PLATE_M[res["lift"]] * STICKER_RATIO,
+        "sticker_radius_m": 0.5 * STICKER_CIRCLE_M[res["lift"]],
         "layout": res["layout"],
         "implausible": bool(res["implausible"]),
     }

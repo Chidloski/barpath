@@ -216,7 +216,14 @@ def ensure(video: str | Path, force: bool = False, figure: bool = True) -> dict:
     if cached is not None:
         return cached
 
-    path = metrics.resolve_path(video)
+    # `use_cache=not force`, and the missing half of that is a defect this
+    # function shipped with (found 2026-08-17, H14). Skipping the `read` above
+    # is not enough: `resolve_path` defaults `use_cache=True` and reads the SAME
+    # CSV, so `force=True` rewrote each cache from itself with a fresh commit
+    # stamp and re-tracked nothing. `CLAUDE.md` tells agents to run
+    # `run.py --track --force` after any change to a tracker, and H14's scale
+    # change came back bit-identical because of this.
+    path = metrics.resolve_path(video, use_cache=not force)
     write(path, video)
     if figure:
         try:

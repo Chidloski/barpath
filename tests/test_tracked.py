@@ -282,3 +282,43 @@ def test_the_video_finds_the_rep_count_the_FILENAME_says():
     assert len(CACHED) - len(disagree) >= 14, (
         f"only {len(CACHED) - len(disagree)} clips match their filename; the "
         f"rep finder has probably regressed")
+
+
+def test_ensure_force_actually_RE_TRACKS(monkeypatch, tmp_path):
+    """H14 — `force=True` must not be served from the cache it is bypassing.
+
+    The defect this pins shipped with `ensure` and survived from C31 to
+    2026-08-17: skipping the local `read` is not enough, because
+    `metrics.resolve_path` defaults `use_cache=True` and reads the SAME CSV. So
+    `run.py --track --force` rewrote every cache from itself with a fresh commit
+    stamp and re-tracked nothing — while `CLAUDE.md` instructed agents to run
+    exactly that after any change to a tracker.
+
+    It was invisible for months because a cache rewritten from itself is
+    byte-identical apart from the header. What exposed it was a 6% change to the
+    absolute scale coming back bit-identical on all sixteen clips; a subtler
+    change would not have.
+
+    Asserted at the seam rather than end to end, because tracking a clip costs
+    a minute of ffmpeg: `force` must reach `resolve_path` as `use_cache=False`.
+    """
+    from src import tracked as _tracked
+
+    seen = {}
+
+    def _fake_resolve(video, tracker=None, use_cache=True):
+        seen["use_cache"] = use_cache
+        return {"tracker": "vtrack", "t": np.zeros(2), "x": np.zeros(2),
+                "height": np.zeros(2), "m_per_px": 0.002, "travel_m": 0.5}
+
+    monkeypatch.setattr(_tracked.metrics, "resolve_path", _fake_resolve)
+    monkeypatch.setattr(_tracked, "write", lambda path, video: None)
+
+    clip = tmp_path / "deadlift_160x6_1_20260804.mov"
+    _tracked.ensure(clip, force=True, figure=False)
+    assert seen["use_cache"] is False, (
+        "ensure(force=True) asked resolve_path for a CACHED path — the force "
+        "flag does not reach the tracker and nothing is re-tracked")
+
+    _tracked.ensure(clip, force=False, figure=False)
+    assert seen["use_cache"] is True, "a normal call must still use the cache"

@@ -191,12 +191,16 @@ This is the most interesting open thread in the session.
 
 ## Open questions for the owner
 
-- `truth.STICKER_PLATE_DIAMETER_M` has no 2026-08-06 entry, so bench falls
-  through to 0.425 m and squat to 0.450 m **by accident rather than decision**.
-  If one stickered 425 mm plate moved between the bars, squat is 5.9% out.
-- The sticker-circle diameter still wants a tape measure, into
-  `bar_path(sticker_diameter_m=)`. C32 tried to derive it and correctly refused
-  to ship the result.
+- ~~`truth.STICKER_PLATE_DIAMETER_M` has no 2026-08-06 entry~~ **ANSWERED
+  2026-08-17.** Bench loads only black notched (425), squat only blue
+  calibrated (450), deadlift is notched 425 around the bumpers. Nothing moved
+  between bars, so the fall-through values were right — now a decision.
+- ~~The sticker-circle diameter still wants a tape measure~~ **ANSWERED
+  2026-08-17 (H14).** Every sticker is placed with its 2.0 cm outer edge on the
+  plate rim, so the circle is the plate diameter less 2.0 cm. C32 was right to
+  refuse to derive it from the footage: the true value is 0.953 of the plate on
+  a 425 and 0.956 on a 450, and no single ratio was ever going to be correct.
+  Worth +4.9 / +6.1 / +11.4% and a third of the vertical error against video.
 
 ## Practicalities
 

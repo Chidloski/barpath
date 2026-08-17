@@ -325,6 +325,27 @@ def _frames_u8(path: str | Path, scale: float) -> tuple[np.ndarray, float]:
 # scale error on top of the +/-2.6% deadlift spread, and read `sticker_ratio`
 # in the calibration report, which reports what the rim detector made of the
 # capture without letting it set anything.
+#
+# **THE TAPE ARRIVED ON 2026-08-17 AND THIS CONSTANT IS NOT IT (H14).** The
+# owner: a sticker is 2.0 cm across overall (1.3 cm of reflective inside it) and
+# is placed with its OUTER EDGE against the plate rim, so its centre sits 1.0 cm
+# in and the sticker circle is the plate diameter less 2.0 cm — 0.405 m on a 425
+# notched plate, 0.430 m on a 450 blue disc. As a ratio that is 0.953 and 0.956.
+#
+# `vtrack` now uses the measured circle directly (`vtrack.STICKER_CIRCLE_M`).
+# **This constant is DELIBERATELY UNCHANGED**, for the reason the paragraphs
+# above give: 0.858 is a calibration of the old THREE-sticker plate, whose
+# stickers sat 31.6 mm in from the rim rather than 10, and it cancels against
+# `capture.sticker_plate_diameter` on the captures it was measured on. Re-tuning
+# it would silently rescale that history to a rule those plates were not
+# stickered by. It is the right constant for the plate it was measured on and
+# the wrong one for the plate the whole live corpus uses.
+#
+# Note what the tape retires: the ratio FORM. The inset is an absolute 1.0 cm,
+# so no single fraction of the plate can be right for two plate sizes at once,
+# and the 0.8% agreement between the ratio and constant-inset models reported
+# above was luck of the two diameters being close. Use
+# `bar_path(sticker_diameter_m=)` on anything eight-sticker.
 STICKER_RATIO = 0.858
 
 # Top-hat response below this is not a sticker. Set from the separation actually

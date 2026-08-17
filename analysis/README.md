@@ -1584,7 +1584,17 @@ the referee rather than by code. But the reconstruction reads 54.0-56.7, so the
 two instruments differ by 4.6-9.3% and **row 2 cannot say which is right**: the
 absolute scale still rests on `STICKER_RATIO = 0.858`, borrowed from a different
 plate. A ratio of ~0.92 would close the gap exactly, which is physically
-ordinary and must not be adopted by fitting it. `beats_null` barely moves under
+ordinary and must not be adopted by fitting it.
+
+> **ANSWERED 2026-08-17 (H14), AND THE PREDICTION ABOVE WAS RIGHT.** The owner
+> tape-measured the sticker geometry: a 2.0 cm sticker with its outer edge on
+> the plate rim, so the sticker circle is the plate diameter less 2.0 cm.
+> On deadlift that is a **+6.07%** correction — inside the 4.6-9.3% gap this
+> paragraph measured from the other side, and arrived at without fitting
+> anything. The equivalent ratio is 0.953 on a 425 plate rather than ~0.92,
+> and the difference is that this ratio is not the same number on the 450 blue
+> disc (0.956), because the inset is an absolute 1.0 cm. **Every metre figure
+> on this page predates the correction.** See `analysis/67`. `beats_null` barely moves under
 that change (0.24/0.35/0.15 at 445 mm, 0.23/0.34/0.14 at 425), so row 3 does not
 depend on the open question and row 2 does.
 
@@ -1631,8 +1641,11 @@ it** — a five-second change to the capture protocol, no code.
 
 **What it does not show.** Nothing about time-varying error, which is what is
 left once this family is excluded, and nothing about whether the marker referee
-itself is right in absolute scale — C27's open sticker-circle measurement is
-upstream of every number here, though `beats_null` is nearly invariant to it.
+itself is right in absolute scale — C27's sticker-circle measurement is upstream
+of every number here, though `beats_null` is nearly invariant to it. *(That
+measurement CLOSED on 2026-08-17, H14: the referee was reading 4.9-11.4% small.
+`beats_null`'s invariance held — median 1.25 -> 1.26 across the corpus — so this
+page's conclusions stand and its absolute metre figures do not.)*
 
 ---
 
@@ -2287,9 +2300,45 @@ everything drawn here, fore-aft MAGNITUDE is the only quantity the video
 refuses to corroborate (r = -0.03 over 61 reps, against +0.97 for velocity and
 +0.99 for ROM).
 
+**67 `67_sticker_circle_scale.png` — the sticker circle, measured with a tape
+(H14, 2026-08-17).** The referee's absolute scale stopped being a fitted
+constant. Panel A is the whole argument and it is geometry, not statistics: a
+sticker is 2.0 cm across and is stuck with its outer edge on the plate rim, so
+its centre sits 1.0 cm inboard and the circle the tracker fits is the plate
+diameter **less 2.0 cm**. That retires `STICKER_RATIO = 0.858` and, more
+usefully, retires the ratio FORM — the inset is an absolute distance, so no
+single fraction of the plate can be right for a 425 notched plate and a 450
+blue disc at once (0.953 against 0.956). Two entries of `vtrack.PLATE_M` were
+also wrong against that table's own definition: bench held 0.45 for a 425 plate
+and deadlift 0.445, the BUMPER rather than the notched plate the stickers are
+on. Net: **+4.9% bench, +6.1% deadlift, +11.4% squat.**
+
+Panel B is the corroboration, and it is independent of the tape. The video's
+per-rep vertical ROM over the IMU's sat **below 1.0 on 16 of 16 captures**,
+median 0.926/0.924/0.936 by lift — a systematic ~7% with no per-lift story.
+C27 had measured the deadlift third of it from the other side (video 4.6-9.3%
+below the reconstruction, "~0.92 would close it exactly") and the tape predicts
++6.07% there without being fitted to it. After: 0.971/1.029/0.993, and the
+median |ratio - 1| falls 0.068 -> 0.029.
+
+Panels C-E are what it costs and buys. **The vertical is the axis this repairs:
+median 3.92 -> 2.71 cm, better on 14 of 16** — a third of the vertical error
+against the video was the ruler. The horizontal is untouched, 2.17 -> 2.26 cm
+median and `beats_null` 1.25 -> 1.26, which is what P3 predicts: the horizontal
+error is not a scale error, so rescaling the referee cannot reach it. **Read the
+residual honestly** — the correction removes a COMMON bias and leaves a wider
+spread BETWEEN lifts (0.012 -> 0.058), bench now 2.9% low and squat 2.9% high.
+If the truth were instead "the IMU reads ~7% high on ROM", this would be
+double-counting; the answer to that is that the tape measures the referee's own
+geometry directly and the 0.858 never did. Verified as a pure rescale: all 16
+seeds are unchanged, every clip moving by exactly its lift's factor, so the
+before/after is like-for-like. *Two defects found in passing and recorded in
+TASKS.md H14: `tracked.ensure(force=True)` never re-tracked, and `run.py`'s
+clip list globs `data_v2/video` twice.*
+
 ---
 
-*Numbering: 47 through 66 are taken. The next free number is 67. **52
+*Numbering: 47 through 67 are taken. The next free number is 68. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

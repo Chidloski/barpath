@@ -12,7 +12,8 @@ pipeline's own habit of one concern per module:
 
 `markers.py` is untouched and still reachable as `tracker="markers"`.
 """
-from .path import bar_path, track_clip, validate, ROM, PLATE_M, STICKER_RATIO
+from .path import (bar_path, track_clip, validate, ROM, PLATE_M,
+                   STICKER_CIRCLE_M, STICKER_RATIO)
 
 __all__ = ["bar_path", "track_clip", "validate", "ROM", "PLATE_M",
-           "STICKER_RATIO"]
+           "STICKER_CIRCLE_M", "STICKER_RATIO"]

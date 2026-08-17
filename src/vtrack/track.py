@@ -549,13 +549,13 @@ def _track_from(dets, h, best_f, r_lock, out, tol, max_dets, damp, lattice,
 # `bench_spoto_95x5_1`, whose path it did not change at all.
 
 
-def summarise(trk, fps, r_px, plate_d_m, sticker_ratio):
+def summarise(trk, fps, r_px, circle_m):
     """Per-frame path in metres, plus the diagnostics that decide usability."""
     ok = [t for t in trk if t is not None]
     n = len(trk)
     if not ok:
         return None
-    m_per_px = (plate_d_m * sticker_ratio / 2.0) / r_px
+    m_per_px = (circle_m / 2.0) / r_px
     cy = np.array([t["cy"] if t else np.nan for t in trk])
     cx = np.array([t["cx"] if t else np.nan for t in trk])
     good = ~np.isnan(cy)

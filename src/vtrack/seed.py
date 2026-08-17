@@ -155,13 +155,13 @@ def score_track(trk, r, m_per_px=None, rom_lo=None, rom_hi=None):
                 travel=travel, rms=rms, travel_m=travel_m, plaus=plaus)
 
 
-def choose(dets, shape, cands, tracker, verbose=False, plate_m=None,
-           sticker_ratio=0.858, rom_lo=None, rom_hi=None):
+def choose(dets, shape, cands, tracker, verbose=False, circle_m=None,
+           rom_lo=None, rom_hi=None):
     """Trial-track every shortlisted candidate and keep the one that follows a bar."""
     scored = []
     for c in cands:
         trk = tracker(dets, shape, c)
-        mpp = ((plate_m * sticker_ratio / 2.0) / c["r"]) if plate_m else None
+        mpp = ((circle_m / 2.0) / c["r"]) if circle_m else None
         s = score_track(trk, c["r"], m_per_px=mpp, rom_lo=rom_lo,
                         rom_hi=rom_hi)
         s["r"] = c["r"]

@@ -102,3 +102,62 @@ def test_every_clip_tracks_plausibly(clip):
     assert path["travel_m"] >= 0.8 * lo, (
         f"{clip.stem}: travel {path['travel_m'] * 100:.1f} cm against a "
         f"{lo * 100:.0f}-{hi * 100:.0f} cm band")
+
+
+def test_the_sticker_circle_is_the_plate_less_one_STICKER(): 
+    """H14 — the scale is geometry now, and the geometry is a placement rule.
+
+    The owner places every sticker with its 2.0 cm OUTER edge against the plate
+    rim, so its centre sits one sticker radius — 1.0 cm — inboard and the circle
+    through the centres is the plate diameter less 2.0 cm. That is the whole
+    derivation, and it is pinned here because the alternative is that somebody
+    re-tunes it back into a ratio.
+
+    The 1.3 cm reflective diameter is deliberately absent: it sizes the blob the
+    detector finds, not where its centre is, because the disc is concentric with
+    the sticker. The owner corrected 1.5 to 1.3 mid-measurement and nothing
+    downstream moved, which is the check that this is true.
+    """
+    for lift, plate in vtrack.PLATE_M.items():
+        assert vtrack.STICKER_CIRCLE_M[lift] == pytest.approx(plate - 0.020), (
+            f"{lift}: the circle must be the plate less one sticker diameter")
+
+
+def test_no_single_RATIO_can_express_the_sticker_circle():
+    """H14 — why `STICKER_RATIO` was the wrong SHAPE, not merely the wrong value.
+
+    The inset is an absolute 1.0 cm, so as a fraction of the plate it is a
+    different number on every plate size. `markers.py` compared a ratio model
+    against a constant-inset model, measured them agreeing to 0.8% and concluded
+    "the choice between the two models does not matter" — true only because the
+    two plates it compared are 25 mm apart. This asserts they are NOT the same
+    model, so that conclusion cannot be re-derived from the agreement.
+
+    Both are inside 0.01 of each other and neither is the shipped 0.858, which
+    is the three-sticker plate's 31.6 mm inset and is correct for that plate.
+    """
+    ratios = {lift: vtrack.STICKER_CIRCLE_M[lift] / plate
+              for lift, plate in vtrack.PLATE_M.items()}
+    assert ratios["squat"] != ratios["deadlift"], (
+        "a 450 plate and a 425 plate cannot share a sticker-circle RATIO")
+    assert ratios["deadlift"] == pytest.approx(0.9529, abs=1e-4)
+    assert ratios["squat"] == pytest.approx(0.9556, abs=1e-4)
+    assert all(r > vtrack.STICKER_RATIO + 0.09 for r in ratios.values()), (
+        "the eight-sticker plates sit far closer to the rim than the three-"
+        "sticker plate 0.858 was calibrated on")
+
+
+def test_the_stickered_plate_is_not_the_widest_plate_on_a_deadlift():
+    """H14/C27 — the defect this table reintroduced, pinned so it cannot return.
+
+    `capture.plate_diameter` answers "what is the widest outline in shot" and is
+    0.445 on a deadlift, the bumper. `vtrack.PLATE_M` answers "what plate are the
+    stickers ON", which is the 425 notched plate loaded around it. F1 gave this
+    module its own table with a comment saying exactly that and the bumper's
+    value in it, worth 4.7% of every deadlift distance.
+    """
+    assert vtrack.PLATE_M["deadlift"] == 0.425
+    assert capture.PLATE_DIAMETER_M["deadlift"] == 0.445
+    # Bench loads only black notched; squat only blue calibrated (owner).
+    assert vtrack.PLATE_M["bench"] == 0.425
+    assert vtrack.PLATE_M["squat"] == 0.450

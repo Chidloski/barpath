@@ -417,7 +417,10 @@ and the plate the stickers are ON is not always the widest plate in shot — see
 For the newer layout the physical requirement is a common **radius**, not even
 spacing — the opposite of C23's advice for the three-sticker plate, and easier
 with a tape. `bar_path(sticker_diameter_m=...)` also retires `STICKER_RATIO`
-when the sticker circle has been measured directly.
+when the sticker circle has been measured directly. **It has been, on
+2026-08-17**: the owner places every sticker with its outer edge against the
+rim, so the common radius is guaranteed by the placement rule and the circle is
+the plate diameter less one sticker diameter.
 
 It does not replace `truth.py` and cannot — no marker exists in `data/video/`,
 so every capture the pipeline is currently scored against is still refereed by
@@ -461,7 +464,11 @@ is parallax — it correlates with the bar's height at r = 0.949 and swings over
 geometry, and deliberately kept out of the path.
 
 **Absolute scale rests on one constant, `STICKER_RATIO = 0.858`**, measured on
-the three deadlifts where the plate rim is detectable and verified by eye. Per-
+the three deadlifts where the plate rim is detectable and verified by eye.
+*(For `markers.py` it still does, deliberately — see H14 below. `vtrack` no
+longer uses it: the sticker circle was tape-measured on 2026-08-17 and is the
+plate diameter less 2.0 cm. This constant remains correct for the THREE-sticker
+plate it was calibrated on, whose stickers sat 31.6 mm in rather than 10.)* Per-
 *frame* scale is measured properly, from the constellation's own apparent size,
 which is the part that attacks the ±20% vertical scale error. **On bench the
 constant is transferred, not measured** — a different plate, its own stickers —
@@ -664,15 +671,21 @@ video fore-aft is **4.4-6.0 cm on all six deadlifts** against C27's independent
 
 ## The three things to know before quoting a number
 
-  * **`STICKER_RATIO = 0.858` is transferred, not measured** — the same
-    limitation `markers.py` has, and every metre figure scales linearly with it.
-    A tape across the sticker circle settles all sixteen clips at once.
+  * **The absolute scale is MEASURED as of 2026-08-17 (H14), and every metre
+    figure recorded before that date is 4.9-11.4% small.** This used to say
+    `STICKER_RATIO = 0.858` was transferred and that a tape would settle all
+    sixteen clips at once. The tape arrived: a 2.0 cm sticker placed with its
+    edge on the rim puts its centre 1.0 cm in, so the sticker circle is the
+    plate diameter less 2.0 cm — `STICKER_CIRCLE_M`. Note it also retires the
+    ratio FORM, since an absolute inset is a different fraction of every plate.
   * **`PLATE_M` and `ROM` are the module's own**, deliberately not routed
-    through `truth.sticker_plate_diameter` and `truth.VERTICAL_ROM_M`. The
-    reasons are in `path.py` beside each constant: the first has no 2026-08-06
-    entry and would silently rescale the newest captures, and the second is a
-    wide per-capture gate where this needs a discriminating scoring prior.
-    Reconciling them is open work and cannot be done quietly.
+    through `capture.sticker_plate_diameter` and `capture.VERTICAL_ROM_M`. The
+    reasons are in `path.py` beside each constant. **`PLATE_M`'s VALUES were
+    wrong on two of three lifts until H14** — bench held 0.45 for a plate the
+    owner loads at 425, and deadlift held the 445 bumper rather than the 425
+    notched plate the stickers are on, which is the error
+    `capture.STICKER_PLATE_DIAMETER_M` exists to prevent, reintroduced by giving
+    this module its own table. Reconciling them is still open work.
   * **No per-frame perspective scale.** `markers.bar_path` applies one and
     measured it at 0.6-1.4 cm on deadlift, 0.1-0.4 on bench. This module holds
     one scale for the clip, because its centre comes from a lattice fit at a

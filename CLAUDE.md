@@ -341,6 +341,42 @@ run `markers.validate`, so its per-capture warnings do not fire.** Use
 tracker to speak up, and after ANY change to `markers.py` or `truth.py`, because
 a cached path is only valid for the tracker code that produced it.
 
+**AND `run.py --track --force` DID NOT DO THAT UNTIL 2026-08-17 (H14).**
+`tracked.ensure(force=True)` skipped its own `read` and then called
+`metrics.resolve_path(video)` with `use_cache` defaulted TRUE, so it rewrote
+each cache from itself with a fresh commit stamp and re-tracked nothing. The
+instruction in the paragraph above has therefore been a no-op for the whole life
+of the cache, and any change to a tracker made since C31 was scored on paths
+produced by the code that preceded it. Fixed by passing `use_cache=not force`;
+found because H14's scale change came back bit-identical on all sixteen clips.
+**If you are re-reading an old result that depended on a re-track, check the
+date.**
+
+**THE VIDEO REFEREE'S ABSOLUTE SCALE CHANGED ON 2026-08-17 (H14), AND EVERY
+METRE FIGURE MEASURED AGAINST VIDEO IN THIS FILE, IN `TASKS.md` AND IN
+`analysis/README.md` PREDATES IT.** The owner tape-measured the sticker
+geometry: a sticker is 2.0 cm across overall and is placed with its outer edge
+against the plate rim, so its centre sits 1.0 cm inboard and **the sticker
+circle is the plate diameter less 2.0 cm**. That replaces
+`STICKER_RATIO = 0.858`, which was calibrated on the old three-sticker plate
+(31.6 mm inset) and which no capture in the live corpus was stickered by. Two
+entries of `vtrack.PLATE_M` were wrong with it — bench at 0.45 for a 425 notched
+plate, deadlift at 0.445, the bumper rather than the stickered plate. Net:
+**+4.9% bench, +6.1% deadlift, +11.4% squat.**
+
+What it moved, on all sixteen captures, verified as a pure rescale with **0 of
+16 seeds changed**: the **VERTICAL error against the video falls from a median
+3.92 to 2.71 cm, better on 14 of 16** — a third of it was the ruler. The
+horizontal does not move (2.17 -> 2.26 cm, `beats_null` 1.25 -> 1.26), which is
+P3 restated: a scale error is not what the horizontal is made of. The
+corroboration is independent of the tape — the video read BELOW the IMU's per-rep
+ROM on **16 of 16** captures beforehand, median 0.93 on every lift, and C27 had
+measured the deadlift third of that gap at 4.6-9.3% from the other side, which
+brackets the tape's +6.07%. Afterwards the three medians are 0.971 / 1.029 /
+0.993. **Read the residual honestly:** a common bias is removed and a wider
+between-lift spread is left (0.012 -> 0.058). *Evidence:* `analysis/67`,
+TASKS.md H14, `vtrack.STICKER_CIRCLE_M`.
+
 **STEP 6 IS ON BY DEFAULT (C31, 70b2a63, 2026-08-06), AND THAT INVALIDATES
 EVERY HORIZONTAL AND VERTICAL NUMBER RECORDED IN THIS FILE, IN `TASKS.md` AND
 IN `analysis/README.md`.** `pipeline.run(wrist_offset=)` defaults to `"auto"`,
@@ -1511,6 +1547,15 @@ by fitting it; the sticker-circle diameter with a tape settles it, into
 `bar_path(sticker_diameter_m=)`. `beats_null` barely moves under it, so the
 horizontal verdict does not depend on the open question. *Evidence:*
 `analysis/42`, `python run.py --dlconic`, TASKS.md C27.
+
+**CLOSED 2026-08-17 (H14), BY THE TAPE, AND THE PREDICTION HELD.** See the
+banner at the top of this file. The correction on deadlift is **+6.07%**, inside
+the 4.6-9.3% measured here and derived from geometry rather than fitted to it.
+It was NOT adopted as a ratio, which is the part this paragraph got slightly
+wrong: the sticker inset is an absolute 1.0 cm, so the equivalent ratio is 0.953
+on a 425 plate and 0.956 on a 450 — no single number is right for both, and
+`vtrack.STICKER_CIRCLE_M` holds the measured circle instead. `beats_null`'s
+invariance held exactly as claimed (median 1.25 -> 1.26 corpus-wide).
 
 **C32 tried to close that without a tape on 2026-08-06 and FAILED
 instructively — the ratio is still open and the answer is still a tape.**

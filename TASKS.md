@@ -15,6 +15,175 @@ Related, and deliberately not duplicated here:
 
 
 
+## H14 — the sticker circle, measured with a tape at last (2026-08-17)
+
+Owner-supplied measurement, not a task: *"stickers have a diameter of 1.5cm for
+the reflective area and 2cm for the whole sticker with the edge always placed
+against the edge of the plate"*, corrected minutes later to a **1.3 cm**
+reflective disc, and *"deadlifts use black notched plates around black bumpers
+... Bench only uses black notched, squat only uses blue calibrated"*.
+
+**This is the measurement `markers.py`, `vtrack/path.py`, `capture.py`,
+`CLAUDE.md`, `TASKS.md`, `analysis/README.md` and `src/README.md` had all been
+asking for, in those words, since C27.** It is closed.
+
+### What the geometry gives, and why it is not a ratio
+
+A sticker is 2.0 cm across overall and its OUTER EDGE is placed on the plate
+rim, so its centre sits one sticker radius — **1.0 cm** — inboard, and the
+circle through the sticker centres is **the plate diameter less 2.0 cm**. The
+1.3 cm reflective diameter does not enter: it sizes the blob the detector finds,
+not where its centre is, because the disc is concentric with the sticker. The
+owner's correction from 1.5 to 1.3 therefore changed nothing, which is worth
+recording — the scale depends on the sticker's OUTER size and its placement
+rule, and on nothing else.
+
+**The important part is that this retires the ratio FORM, not just the value.**
+`STICKER_RATIO` expressed the circle as a fraction of the plate. The inset is an
+ABSOLUTE 1.0 cm, so the fraction is 0.953 on a 425 notched plate and 0.956 on a
+450 blue disc, and no single constant can be right for both. `markers.py` had
+already brushed against this — it compared a ratio model against a constant-inset
+model, found them agreeing to 0.8%, and concluded "the choice between the two
+models does not matter". They agreed because the two plate diameters are close;
+the models are not equivalent and the constant-inset one is the true one.
+
+### Two entries of `vtrack.PLATE_M` were also wrong
+
+That table's own comment says it holds "the plate the stickers are ON". The
+owner's answer says otherwise for two of three lifts:
+
+    lift       was      should be   why
+    bench      0.45     0.425       bench loads ONLY black notched
+    squat      0.45     0.45        correct
+    deadlift   0.445    0.425       the 445 is the BUMPER; the stickers are on
+                                    the notched plate loaded around it
+
+**The deadlift entry is C27's defect, reintroduced.** `capture.sticker_plate_
+diameter` exists precisely to say that a deadlift's stickered plate is not its
+widest plate, and F1 gave `vtrack` its own table — with a comment explaining,
+correctly, that routing through `capture` would silently rescale the newest
+captures — and copied the widest-plate value into it. The comment was right and
+the value was wrong.
+
+*It also answers C32's open question in the other direction.* C32 warned that
+bench and squat fall through to 0.425 and 0.450 "by accident rather than by
+evidence" and that squat would be 5.9% out if a stickered plate had moved
+between bars. Nothing moved; the fall-through values were right. They are now a
+decision rather than a coincidence.
+
+### The correction, and the check that does not use the tape
+
+    lift       shipped circle          measured circle      scale
+    bench      0.45  x 0.858 = 0.3861   0.425 - 0.02 = 0.405   +4.90%
+    squat      0.45  x 0.858 = 0.3861   0.450 - 0.02 = 0.430  +11.37%
+    deadlift   0.445 x 0.858 = 0.3818   0.425 - 0.02 = 0.405   +6.07%
+
+**Before the change the video read BELOW the IMU's per-rep vertical ROM on 16 of
+16 captures** — median 0.926 bench, 0.924 squat, 0.936 deadlift. A systematic
+~7% that no per-lift explanation covers, and which nobody had put on one page.
+C27 had measured the deadlift third of it from the other side (video 4.6-9.3%
+below the reconstruction) and predicted "a ratio of ~0.92 would close it
+exactly, and must not be adopted by fitting it". **The tape says +6.07% on
+deadlift, inside C27's range, arrived at from geometry.** That is the strongest
+thing here: a prediction made from the IMU side in August, confirmed by a tape
+measure that never saw it.
+
+Applied, the three medians become 0.971 / 1.029 / 0.993 and the median
+|ratio - 1| falls 0.068 -> 0.029.
+
+### What it moves, on all 16 captures
+
+    quantity              median before -> after     improved on
+    vertical rms            3.92 -> 2.71 cm            14 of 16
+    horizontal rms          2.17 -> 2.26 cm             4 of 16
+    beats_null              1.25 -> 1.26                9 of 16
+
+**The vertical is the axis this repairs and a third of its error was the
+ruler.** Squat is the largest mover, 8.05 -> 3.90, 8.27 -> 4.21, 5.21 -> 1.85.
+The two that worsen are `deadlift_170x4_3` (12.14 -> 12.71, the capture with the
+known 22.8% clock drift G3 recorded and nobody has fixed) and `deadlift_185x3`
+(1.68 -> 2.03).
+
+**The horizontal does not move, and that is P3 restated rather than a
+disappointment.** A scale error is not what the horizontal is made of, so
+rescaling the referee cannot reach it — exactly as C27 predicted when it said
+`beats_null` "barely moves under it, so the horizontal verdict does not depend
+on the open question". It didn't, and it doesn't.
+
+**Verified as a pure rescale: 0 of 16 seeds changed.** This was not assumed —
+seed ranking consults metres through `vtrack.ROM`'s plausibility prior, so a
+scale change could have selected different constellations and made the
+before/after incomparable. Every clip moved by exactly its lift's factor and
+every fitted radius is identical to 6 decimal places, so it is like-for-like.
+
+### Read the residual honestly
+
+The correction removes a COMMON bias and leaves a **wider spread between lifts**
+than it found: 0.012 -> 0.058, with bench now 2.9% low and squat 2.9% high. The
+rival hypothesis — that the IMU reads ~7% high on ROM for all three lifts and
+this is double-counting — is not refuted by the ROM check, because that check is
+what both hypotheses explain. It is refuted by what the tape IS: a direct
+measurement of the referee's own geometry, which `0.858` never was. The ROM
+ratio is the corroboration here, not the source. If a future capture shows the
+IMU's vertical is itself biased, that is a separate correction on the other
+instrument and it composes with this one rather than replacing it.
+
+### Two defects found on the way, one fixed because it blocked the task
+
+**`tracked.ensure(force=True)` never re-tracked anything.** It skips its own
+`read` and then calls `metrics.resolve_path(video)` with `use_cache` defaulted
+TRUE, which returns the same CSV — so `run.py --track --force` rewrote each
+cache from itself with a fresh commit stamp. `CLAUDE.md` instructs agents to run
+exactly that after any change to a tracker, and has done since C31, so **that
+instruction has been a no-op for the life of the cache**. Found because H14's
+scale change came back bit-identical on all sixteen clips; a 6% rescale is a
+loud enough change to expose it, and a subtle one would not have been. Fixed
+with `use_cache=not force`.
+
+**Recorded, not fixed:** `run.py`'s `track_all` builds its clip list by globbing
+`data_v2/video/*.mov` and concatenating the identical glob to itself
+(`run.py:1268`), so every clip is tracked twice and the summary line reports
+"32 cached" for a 16-clip corpus. Harmless except for the time.
+
+### What the suite says, and how H14 was separated from the new captures
+
+**30 failed, 617 passed, 11 skipped, 1 xfailed.** That number is alarming and
+none of it is this change: **thirteen new captures landed in `data_v2/raw`
+while H14 was in flight**, taking the corpus from 16 to 29, and they arrived
+with three IMU miscounts and two broken video tracks of their own.
+
+Two things changed at once, which is exactly the situation where a suite result
+means nothing without an isolation experiment, so one was run. Twenty-three of
+the thirty failures either name a new capture in their own assertion text or
+touch no video at all — and a test that never reads a video cannot be moved by a
+change to the video referee's scale. That leaves seven that DO read video and
+could plausibly be H14's: the three in `test_display.py`, both
+`test_shortset.py::test_truncated_sets_recover_the_known_offset` cases,
+`test_the_sync_landmark_catches_a_whole_rep_error` and
+`test_the_fore_aft_SIGN_agrees_with_the_video_B4_closed`.
+
+**All seven were re-run against the PRE-H14 cached tracks, with the new captures
+still present, and all seven fail identically.** So the corpus change explains
+them and the scale change explains none of them. *(`git stash` is not available
+for this — `CLAUDE.md` forbids it in the shared checkout because it destroys
+every live claim in `HEARTBEAT.md` — so the isolation was done by restoring the
+sixteen old cached CSVs from scratch, running the seven, and restoring the new
+ones. The 16 dominate; the 13 new clips are at the new scale in both arms
+because they have no old version, which is the one impurity in it.)*
+
+The `test_segmentation.py` pair is worth reading rather than counting. Its own
+failure message says the pre-C31a global-spread rule now reaches only 26/29
+where G1 measured 29/29, and calls that **GOOD NEWS** — the gate has been
+predicting that a capture with a post-set movement inside the rep cluster would
+restore the corpus's ability to tell the two cadence rules apart. Something in
+the new session has done that, or the three miscounts have. Which of the two it
+is has NOT been established here and must not be assumed.
+
+*Evidence:* `analysis/67`, `analysis/67_sticker_circle_scale.py`,
+`vtrack.STICKER_CIRCLE_M`, `markers.STICKER_RATIO`'s H14 note.
+
+---
+
 ## H13 — the product display layer: smoothing, speed colour, the average rep (2026-08-16)
 
 Owner's task, and its framing is different from every task before it: the end
@@ -5063,6 +5232,14 @@ Not code, and the highest value per effort available:
   the observable part already recovers P4's table value of 0.0245 m/s², which is
   the first on-wrist measurement of the accelerometer bias — so this is a known
   quantity waiting on a known-cheap capture change.
+- ~~**Tape the sticker-circle diameter**~~ **DONE 2026-08-17 (H14), and it did
+  not need a tape across the circle at all — the PLACEMENT RULE was enough.**
+  The owner sticks every sticker with its outer edge on the rim, so the circle
+  is the plate diameter less one sticker diameter, and both halves of this item
+  (the circle, and which plate carries the stickers on each bar) are answered.
+  Worth +4.9% bench, +6.1% deadlift, +11.4% squat, and it cut the median
+  vertical error against the video from 3.92 to 2.71 cm. See the H14 entry at
+  the top of this file. *The original text follows.*
 - **Tape the sticker-circle diameter**, on each stickered plate, once. Both
   marker referees' absolute scale rests on `STICKER_RATIO = 0.858`, borrowed
   from the old three-sticker plate; C27 finds the video reading 4.6–9.3% below
