@@ -15,6 +15,95 @@ Related, and deliberately not duplicated here:
 
 
 
+## H16 — the filenames were fixed, and fixing them removed a detector (2026-08-17)
+
+Owner: *"Filenames have been fixed"*, answering the three mismatches H15 could
+not resolve. The IMU label won on both disputed captures — the 2026-08-13 videos
+went `95x6` -> `95x5` — and `bench_95x6_20260815`'s log gained its missing `_1`.
+**All 29 captures now pair**, and `pipeline.find_video` needed no change.
+
+### The finding: a CORRECT relabelling silently removed a defect flag
+
+H15 recorded that `bench_spoto_95x6_1_20260813` was mis-tracked and that the
+only automated thing objecting to it was its rep count — 5 found against 6 in
+the filename. **The filename was wrong and is now right, so the count matches,
+and that objection is gone.** The clip still reports **94.1 cm of whole-clip
+travel and 96.4 cm of fore-aft for a bench press**. Its sibling reports 72.2 and
+47.2 at 100% coverage and a 1.72 px residual.
+
+Nothing was wrong with the relabelling. The gate was leaning on a coincidence,
+and this is the cleanest example the project has of why: **a detector that fires
+because two independent records disagree stops firing the moment somebody
+correctly reconciles them.** The disagreement was evidence about the FILENAME,
+never about the TRACK.
+
+### So the flag was made two-sided, which H15 had declined to do
+
+H15 recorded `IMPLAUSIBLE_FRAC` as one-sided and left it, on the grounds that a
+ceiling "changes a gate on every capture and belongs with a measurement of what
+the legitimate whole-clip maximum is". That measurement is now made, and the
+reason to make it is that the alternative detector no longer exists.
+
+Travel over the lift's own per-rep ROM ceiling, all 29 clips:
+
+    band                       GOOD (27 clips)          BROKEN (2)
+    vtrack.ROM (tight)         0.879 - 1.195            2.328, 3.034
+    capture.VERTICAL_ROM_M     0.782 - 1.069            2.062, 2.687
+
+`IMPLAUSIBLE_MULT = 1.5` sits **26% above the worst good clip and 55% below the
+best broken one** under the first band, and 40%/27% under the second. **It
+clears both bands, which is the reason to believe it is not tuned to either.**
+Whole-clip travel legitimately exceeds per-rep ROM — every clip holds an un-rack
+or a walkout — so the ceiling is a multiple above 1.0 rather than the band's top.
+
+On the corpus it flags **exactly the two known-broken clips and nothing else.**
+
+**And it immediately turned a passing gate red, which is the whole point.**
+`tests/test_tracked.py::test_every_cached_clip_is_plausible_now` asserts in so
+many words that no capture in the corpus is mis-tracked. It has been PASSING
+while two captures were mis-tracked, because it asks `review()` for
+`implausible` and `implausible` could only look downward. It now fails with
+`mis-tracked clips are back: bench_spoto_95x5_1_20260813 travel 94.1 cm;
+bench_spoto_95x5_2_20260813 travel 72.2 cm`.
+
+That is this project's signature failure shape — *an aggregate that passes while
+the thing fails* — appearing in the one place built to prevent it. **The gate is
+left RED**, per F1's precedent: it is the finding, and the clips genuinely are
+mis-tracked. It goes green when the footage is re-shot or the two clips are
+removed, and not before.
+
+*A duplication found while doing it, fixed rather than recorded because it made
+the first fix a no-op:* `tracked.review` carries its OWN copy of this rule with
+a DIFFERENT constant (`< lo * 0.9`, against `vtrack`'s `< 0.6 * lo`), because a
+cached path does not carry the flag — `SCALAR_KEYS` has no `implausible` — and
+`review` must work from the cache. Fixing only `vtrack.bar_path` would have left
+the review figure, which is the copy a human actually looks at, still one-sided.
+Both are now two-sided and each says to change the other.
+
+### An independent second detector was already catching them
+
+Neither clip can be scored at all, and not because of the tracking: `vs_truth`
+refuses both through G2's `pause_landmark` guard, because the correlation and
+the per-rep bottoms disagree by **4.03 and 10.59 rep periods** against a 0.25
+tolerance. A garbage bar path has garbage rep bottoms, so the sync landmark
+cannot corroborate the correlation. **Two unrelated mechanisms — a travel
+ceiling and a sync cross-check — now independently condemn the same two clips,
+and neither coverage, residual nor rep count says anything is wrong.**
+
+### The third capture scores, and scores well
+
+`bench_95x6_1_20260815` was unscoreable only because of the missing `_1`:
+
+    bench_95x6_1_20260815   6/6 reps   h 1.93 cm   beats_null 2.23   v 2.66 cm
+
+That is the second-best bench horizontal in the corpus. **The corpus is now 27
+scoreable captures of 29**, the two exceptions being the 2026-08-13 spoto
+benches, which are a FOOTAGE problem and not a pipeline one.
+
+*Evidence:* `vtrack.IMPLAUSIBLE_MULT`, `tracked.review`, `tests/test_vtrack.py`.
+
+---
+
 ## H15 — the thirteen captures of 2026-08-17, and B4's prediction FAILS (2026-08-17)
 
 Owner's task: *"you've got some more workout data, the 145x4_2 squat is filmed
@@ -102,7 +191,11 @@ For a bench press, against 27-29 cm of travel and 20-23 cm of fore-aft on every
 other bench in the corpus.
 
 **And the second one passes every health check** — 100% coverage, 1.72 px
-residual, rep count matching its label, `implausible` False. That is D2's
+residual, rep count matching its label, `implausible` False. *(H16, same day:
+the FIRST one now does too. The owner corrected the filenames, the disputed rep
+count resolved in the IMU's favour, and the count mismatch that was catching it
+disappeared. `implausible` is two-sided as of H16 and catches both. The
+"recorded, not fixed" below is superseded — see the H16 entry above.)* That is D2's
 failure shape again and it is worth naming precisely: **`IMPLAUSIBLE_FRAC` is
 ONE-SIDED.** It fires when travel falls below `0.6 * rom_lo` and has no ceiling,
 because it was written for squat clips reading 14 and 24 cm on a 65 cm lift. A
@@ -125,6 +218,11 @@ against 6 — and that label is the independent ground truth every counting gate
 in this repo is judged against, so it is not something to infer from the data it
 referees.** One question to the owner. Note both are also the broken tracks
 above, so they are unusable twice over.
+
+**ANSWERED the same day (H16): the IMU label was right on both, the videos were
+renamed to `95x5`, and all 29 now pair.** `bench_95x6_1_20260815` scores at
+h 1.93 cm and `beats_null` 2.23. The two spoto benches remain unusable on the
+footage. And the answer had a consequence nobody would have predicted — see H16.
 
 ### Scores, for the eleven new captures that score
 

@@ -161,3 +161,53 @@ def test_the_stickered_plate_is_not_the_widest_plate_on_a_deadlift():
     # Bench loads only black notched; squat only blue calibrated (owner).
     assert vtrack.PLATE_M["bench"] == 0.425
     assert vtrack.PLATE_M["squat"] == 0.450
+
+
+def test_the_implausible_flag_has_a_CEILING_not_only_a_floor():
+    """H16 — the half that was missing, and the relabelling that exposed it.
+
+    `IMPLAUSIBLE_FRAC` was written for squat clips reading 14 and 24 cm on a
+    65 cm lift, so it only ever looked DOWN. Two 2026-08-13 bench clips then
+    reported 94.1 and 72.2 cm of whole-clip travel — for a bench press — behind
+    89.8% and 100% coverage and 1.23/1.72 px residuals, and this flag said fine.
+
+    **What made it urgent is the part to remember.** One of the two was caught
+    for a while by its rep count disagreeing with its filename, 5 found against
+    6 in the name. The owner then corrected the filename — the IMU log said 5
+    and was right — the count matched, and the last automated objection to a
+    bench track claiming 94 cm vanished. A CORRECT relabelling silently removed
+    a defect detector, because the detector was leaning on a coincidence.
+
+    Asserted as the arithmetic rather than by tracking a clip, which is slow:
+    what matters is that a bench travelling 94 cm trips it and one travelling
+    29 cm does not.
+    """
+    lo, hi = vtrack.ROM["bench"]
+    def flagged(travel_m):
+        return (travel_m < vtrack.path.IMPLAUSIBLE_FRAC * lo
+                or travel_m > vtrack.path.IMPLAUSIBLE_MULT * hi)
+
+    assert flagged(0.941), "94.1 cm on a bench press must be implausible"
+    assert flagged(0.722), "72.2 cm on a bench press must be implausible"
+    assert not flagged(0.294), "29.4 cm is the normal bench whole-clip travel"
+    assert not flagged(0.282)
+    assert flagged(0.10), "the floor this was written for must still fire"
+    # The margin, so a re-tune has to argue with the measurement. Worst good
+    # clip 1.195 of the band's top, best broken one 2.328.
+    assert 1.195 < vtrack.path.IMPLAUSIBLE_MULT < 2.328
+
+
+@pytest.mark.skipif(not CLIPS, reason="data_v2 footage not present")
+def test_exactly_the_two_known_broken_clips_are_flagged():
+    """The ceiling on the real corpus: it must catch two and condemn nobody else.
+
+    Runs off the CACHED tracks through `tracked.review`, which is the copy of
+    this rule that the review figure and a human actually see.
+    """
+    from src import tracked
+
+    flagged = sorted(c.stem for c in CLIPS if tracked.review(c)["implausible"])
+    assert flagged == ["bench_spoto_95x5_1_20260813",
+                       "bench_spoto_95x5_2_20260813"], (
+        f"flagged {flagged} — the two 2026-08-13 spoto benches are the only "
+        f"clips in this corpus known not to track")

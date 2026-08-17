@@ -387,12 +387,27 @@ def review(video: str | Path) -> dict:
                     if isinstance(sc, np.ndarray) else float("nan"))
 
     # The flag that would have caught the squat clips. A lift's per-rep travel
-    # is fixed by the lifter's limbs, so a whole-clip travel far below the
+    # is fixed by the lifter's limbs, so a whole-clip travel far OUTSIDE the
     # plausible range means the tracker is following something that is not the
     # bar — however healthy its coverage and residual look.
+    #
+    # **Two-sided since 2026-08-17 (H16), and it was one-sided for the same
+    # reason `vtrack.IMPLAUSIBLE_FRAC` was**: both were written for squat clips
+    # reading 14 and 24 cm on a 65 cm lift, so both only ever looked DOWN. Two
+    # 2026-08-13 bench clips then reported 94.1 and 72.2 cm of whole-clip travel
+    # at 89.8% and 100% coverage, and this flag said fine. The ceiling separates
+    # 0.782-1.069 of `VERTICAL_ROM_M`'s top (27 good clips) from 2.062 and 2.687
+    # (the two broken ones) with ~40% and ~27% margin.
+    #
+    # *This duplicates `vtrack.bar_path`'s flag rather than reading it, because
+    # a CACHED path does not carry it — `SCALAR_KEYS` has no `implausible` — and
+    # this function must work from the cache. The two use different ROM bands on
+    # purpose (`vtrack.ROM` is a tight scoring prior, `VERTICAL_ROM_M` a wide
+    # per-capture gate) and 1.5 clears both. If you change one, change both.*
     try:
-        lo, _ = capture.VERTICAL_ROM_M[capture.lift_of(video)]
-        out["implausible"] = out["travel_cm"] < lo * 100 * 0.9
+        lo, hi = capture.VERTICAL_ROM_M[capture.lift_of(video)]
+        out["implausible"] = bool(out["travel_cm"] < lo * 100 * 0.9
+                                  or out["travel_cm"] > hi * 100 * 1.5)
     except (ValueError, KeyError):
         out["implausible"] = False
     return out

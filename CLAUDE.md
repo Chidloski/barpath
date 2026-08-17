@@ -916,8 +916,16 @@ exists. **THE CORPUS IS 29 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-17).** T
 arrived on 2026-08-17 — five from 2026-08-13, five from 2026-08-15 and three
 squats from 2026-08-17 — taking it from 16. Eleven of the thirteen are clean;
 three miscount on the IMU (see P1), two 2026-08-13 bench clips do not track, and
-three cannot be paired with their video because the IMU log and the clip
-disagree about the filename, two of them about the REP COUNT. One of them,
+three could not be paired with their video because the IMU log and the clip
+disagreed about the filename, two of them about the REP COUNT — **fixed by the
+owner the same day (H16), IMU label right on both, so all 29 now pair and 27 of
+29 are scoreable.** The two 2026-08-13 spoto benches are the exceptions and they
+are a FOOTAGE problem: 94.1 and 72.2 cm of whole-clip travel on a bench press.
+**Fixing the filenames removed the only flag that was catching one of them** —
+its rep count had disagreed with its own name — which is why
+`vtrack.IMPLAUSIBLE_MULT` exists as of H16 and why the flag is now two-sided.
+A detector that fires because two records disagree stops firing when somebody
+correctly reconciles them. One of them,
 `squat_145x4_2_20260817`, is the first capture in the project filmed from the
 lifter's LEFT on a lift other than deadlift. **Everything about them is measured
 under H14's corrected scale and is not comparable to a number taken before

@@ -150,6 +150,37 @@ STICKER_RATIO = 0.858       # markers.STICKER_RATIO — the THREE-sticker plate
 # The failures this is for are 14.0 and 24.7 cm on a 61-68 cm squat.
 IMPLAUSIBLE_FRAC = 0.6
 
+# And ABOVE this multiple of the lift's own UPPER ROM bound, likewise. **This
+# half was missing until 2026-08-17 (H16) and the omission was not academic.**
+# `IMPLAUSIBLE_FRAC` was written for squat clips reading 14 cm on a 65 cm lift,
+# so it only ever looked DOWNWARD, and two 2026-08-13 bench clips reported 94.1
+# and 72.2 cm of whole-clip travel — for a bench press — at 89.8% and 100%
+# coverage with 1.23 and 1.72 px residuals, flagged by nothing.
+#
+# **What forced it is worth recording, because it is a trap rather than an
+# oversight.** One of the two was caught, for a while, by its rep count
+# disagreeing with its filename (5 found, 6 in the name). Then the owner
+# corrected the filename — the IMU log said 5 and was right — and the count
+# matched, and the last automated objection to a track claiming 94 cm on a
+# bench press disappeared. A correct relabelling silently removed a defect
+# detector. Nothing was wrong with the relabelling; the gate was leaning on a
+# coincidence.
+#
+# Measured on all 29 clips, as travel over `ROM[lift]`'s ceiling — this module's
+# own tight band, which is what the flag is computed against here:
+#
+#     GOOD (27 clips)   bench 0.883-0.947   squat 1.032-1.195   deadlift 0.879-0.978
+#     BROKEN (2 clips)  2.328 and 3.034
+#
+# The gap is [1.195, 2.328] and **1.5 sits 26% above the worst good clip and 55%
+# below the best broken one**. Whole-clip travel legitimately EXCEEDS per-rep ROM
+# — every clip contains an un-rack or a walkout — which is why the ceiling is a
+# multiple above 1.0 rather than the band's own top. Scored against
+# `capture.VERTICAL_ROM_M` instead, which `tracked.review` uses, the same 1.5
+# separates 0.782-1.069 from 2.062-2.687; the constant is comfortable under
+# either band, which is the reason to believe it is not tuned to one.
+IMPLAUSIBLE_MULT = 1.5
+
 
 def _lift_of(name) -> str:
     return Path(name).stem.split("_")[0]
@@ -234,7 +265,8 @@ def track_clip(video, cache_dir=None, verbose=False, reacquire=True,
     summ = summarise(trk, fps, c["r"], circle_m)
     return {"name": video.stem, "lift": lift, "trk": trk, "summary": summ,
             "r_px": c["r"], "score": s, "layout": layout, "fps": fps,
-            "implausible": summ["travel_m"] < IMPLAUSIBLE_FRAC * rom_lo,
+            "implausible": bool(summ["travel_m"] < IMPLAUSIBLE_FRAC * rom_lo
+                                or summ["travel_m"] > IMPLAUSIBLE_MULT * rom_hi),
             "runner_up": scored[1][0] if len(scored) > 1 else None}
 
 
