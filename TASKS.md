@@ -15,6 +15,70 @@ Related, and deliberately not duplicated here:
 
 
 
+## H17 — all 29 sets on one page, and a video-free check on the velocity (2026-08-17)
+
+Owner: *"give me an analysis tracking all the sets"*. `analysis/68`, no `src/`
+module touched. Every capture scored as the pipeline ships, singles routed
+through `shortset.run`: **27 of 29 scored, 23 of 29 fully clean**, the two
+untrackable spoto benches unscored and 7 red cells over 6 captures.
+
+**Panel A restates P2 on the whole corpus and the split is by LIFT, sharply.**
+Bench beats the flat-line null on 6 of 7, squat on 9 of 10, deadlift on **1 of
+10** — and that one is `deadlift_200x1`, a single. Every multi-rep deadlift
+loses. Deadlift's range is 0.19–0.93 against the 0.14–0.38 CLAUDE.md records,
+so `d`, H14's scale and B4's sign have bought real ground without changing the
+verdict. **Nothing in the corpus is inside the 1 cm horizontal spec**; the best
+is `bench_117.5x1` at 1.08 cm.
+
+**The new measurement is the load–velocity profile, and its value is that no
+video enters it.** Rep-1 mean concentric velocity against bar load, one point
+per set: bench **r = −0.92** (p = 0.0004), deadlift **r = −0.91** (p = 0.0006),
+squat −0.55 (n.s.). Heavier bar, slower bar is about the most robust
+relationship in strength training, so this is an external check on the velocity
+channel that needs no camera, no tracker and no sync — the first in this
+project that does not route through `vtrack`, and therefore the first that
+cannot inherit a referee artefact.
+
+**Taking rep 1 rather than the set median is the control, and it was predicted
+before it was run.** On set medians the fits are −0.77 / −0.93 / −0.18. Rep 1
+moves bench to −0.92 and squat to −0.55 and leaves **deadlift essentially
+unmoved** (−0.93 → −0.91), which is exactly what the fatigue table demands: the
+deadlift's MCV does not decay within a set (median −2.4%) where bench sheds
+−26%, so there was nothing for the control to remove. A control that improves
+two lifts and correctly does nothing to the third is worth more than three
+better numbers.
+
+**The contrast with panel A is the finding worth carrying.** Deadlift has the
+BEST velocity channel in the corpus and the WORST horizontal position channel,
+on the same captures, the same sensor and the same nine steps. P2's deadlift
+failure is therefore specific to fore-aft POSITION and is not the sensor, the
+attitude, or vertical integration in general. P6 and C11 concluded that from
+momentum closure; this arrives at it without touching the video at all.
+
+**Test-retest, free, from three set specs performed twice a week apart.** Rep-1
+MCV agrees to 4.6% / 0.7% / 0.6% and median ROM to 7.4% / 2.3% / 1.9%. Two of
+the three are the 2026-08-13 spoto benches — the captures with no video score
+at all — so the velocity channel returns a repeatable number where the referee
+returns nothing. **n = 3, and identical load is not identical effort.**
+
+**Recorded, not fixed: CLAUDE.md's IMPACT/SMOOTH statistic no longer
+separates the classes.** It calls the fore-aft growth split "the sharpest
+lift-level split in the project" on +29.2 %/rep deadlift (6 of 6 positive)
+against +0.3 bench and +1.9 squat. On this corpus, per-rep slope over set mean:
+**+6.6 deadlift (6 of 8 positive), +5.7 bench, −2.1 squat** — overlapping.
+**H1 already found this independently** with a different definition and
+recorded it in this file (line ~630) and in `H1_STATE.md`: deadlift 1.2–35.0
+%/rep against bench+squat 1.3–22.8, "overlapping completely". Two measurements,
+two definitions, one conclusion, and **CLAUDE.md carries neither** — it is the
+only one of the three documents still presenting the split as sharp. Part of
+the gap is corpus turnover, since the original spanned v1 and F1 deleted it, so
+this does not falsify the owner's two-class MODEL — only the statistic quoted
+in support of it. Someone should reconcile the three documents; H17 did not,
+because the owner asked for an analysis and not a doc edit.
+
+*Evidence:* `analysis/68`, `analysis/68_corpus_scorecard.json`, analysis/README
+68.
+
 ## H16 — the filenames were fixed, and fixing them removed a detector (2026-08-17)
 
 Owner: *"Filenames have been fixed"*, answering the three mismatches H15 could

@@ -2336,9 +2336,77 @@ before/after is like-for-like. *Two defects found in passing and recorded in
 TASKS.md H14: `tracked.ensure(force=True)` never re-tracked, and `run.py`'s
 clip list globs `data_v2/video` twice.*
 
+## 68 — every set in the corpus, on one page (H17, 2026-08-17)
+
+`68_corpus_scorecard.png`, from `analysis/68_corpus_scorecard.py`. All 29
+captures scored as the pipeline ships — step 6 on, H14's tape scale, B4's
+derived sign — with the five singles routed through `shortset.run` as G3 does.
+**27 of 29 are scored**; the two 2026-08-13 spoto benches are not, because their
+footage does not track. The script caches its sweep to
+`68_corpus_scorecard.json`; `--cache` re-renders from it in a second.
+
+**Panel A is the headline and it is a lift split, not a capture split.** Bench
+beats the flat-line null on 6 of 7, squat on 9 of 10, deadlift on **1 of 10**.
+The one deadlift that wins is `deadlift_200x1`, a single — every multi-rep
+deadlift in the corpus loses. That is P2 restated on the whole corpus at once,
+and it is better than the 0.14–0.38 CLAUDE.md records for deadlift (now
+0.19–0.93) because `d`, H14's scale and B4's sign have all landed since.
+
+**Panel B is new, and the reason to care about it is that no video enters it.**
+Mean concentric velocity against bar load, one point per set, from **rep 1** so
+within-set fatigue cannot confound it. Heavier bar, slower bar is the most
+robust relationship in strength training, and it is an external check the IMU
+can be held to with no camera, no tracker and no sync — the first such check in
+this project that does not route through `vtrack`. Bench **r = −0.92**
+(p = 0.0004), deadlift **r = −0.91** (p = 0.0006), squat −0.55 (p = 0.10, n.s.).
+
+The fatigue control is what makes it a measurement rather than a coincidence,
+and it was predicted before it was run. On the set-median MCV the fits are
+−0.77 / −0.93 / −0.18; taking rep 1 instead moves bench to −0.92 and squat to
+−0.55 while **deadlift barely moves** (−0.93 → −0.91). Panel C says why: the
+deadlift is the lift whose MCV does not decay within a set (median −2.4%, where
+bench sheds −26%), so it had nothing for the control to remove. Squat stays
+weakest and its confound is visible in the table — its two 170 kg points are
+singles, taken fresh, against x4 medians below them.
+
+**The contrast between A and B is the finding.** Deadlift has the best velocity
+channel in the corpus and the worst horizontal position channel, on the same
+captures, the same sensor and the same nine steps. So P2's deadlift failure is
+specific to fore-aft POSITION — it is not the sensor, the attitude, or vertical
+integration in general. P6 and C11 reached that from the momentum side; this
+reaches it from a direction that never touches the video.
+
+**Test-retest, free from three repeated set specs.** `bench_spoto_95x5_1`,
+`bench_spoto_95x5_2` and `squat_170x1` were each performed twice, a week apart.
+Rep-1 MCV agrees to **4.6% / 0.7% / 0.6%** and median ROM to 7.4% / 2.3% / 1.9%.
+Note where two of those three sit: the 2026-08-13 spoto benches are exactly the
+captures with no video score at all, so the velocity channel returns a sane and
+repeatable number on captures the referee cannot grade. **n = 3, and identical
+load is not identical effort** — suggestive, not decisive.
+
+**Panel D is the red list: 7 cells over 6 captures, 23 of 29 fully clean.**
+Three rep-count misses (`deadlift_210x1` 2/1, `squat_140x4_1` 3/4,
+`squat_140x4_2` 2/4 — P1, reopened by H15), two ROM-band failures
+(`deadlift_170x4_3`, and `deadlift_210x1` as a consequence of its miscount) and
+the two untrackable clips. Panel E is the sobering one: **not one capture is
+inside the 1 cm horizontal spec**, the best being `bench_117.5x1` at 1.08 cm.
+
+*One doc correction falls out of this and is recorded rather than acted on.*
+CLAUDE.md still calls the IMPACT/SMOOTH fore-aft growth split "the sharpest
+lift-level split in the project" on +29.2 %/rep deadlift against +0.3 bench and
++1.9 squat. Measured on this corpus with a fitted per-rep slope it is **+6.6
+deadlift, +5.7 bench, −2.1 squat** — overlapping, and deadlift 6 of 8 positive
+rather than 6 of 6. **H1 found the same collapse independently** with a
+different definition (TASKS.md:630, `H1_STATE.md`: deadlift 1.2–35.0 %/rep
+against bench+squat 1.3–22.8, "overlapping completely"). Two measurements, two
+definitions, one conclusion, and CLAUDE.md carries none of it. Part of the
+difference is corpus turnover — the original was measured across v1, which F1
+deleted — so this is not proof the owner's two-class model is wrong, only that
+the statistic quoted for it no longer separates the classes.
+
 ---
 
-*Numbering: 47 through 67 are taken. The next free number is 68. **52
+*Numbering: 47 through 68 are taken. The next free number is 69. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*
