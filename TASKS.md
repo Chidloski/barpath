@@ -15,6 +15,119 @@ Related, and deliberately not duplicated here:
 
 
 
+## H20 — the owner's straps hypothesis, tested: the watch was MOVING (2026-08-18)
+
+Owner, on H19's unexplained 7.6x: *"the 160x6 may be poor data from the 18th,
+this is because I had to wear straps thus the watch was further up my wrist and
+may have been moving around more."* Measurement only — no `src/` module touched,
+so no branch. `analysis/70_straps_hypothesis.py`, `--cache` to re-render.
+
+**A fact no measurement here could have produced.** H19 established that
+`deadlift_160x6_1_20260818` reconstructs at 14.91 cm where the same lift, load
+and rep count on 2026-08-04 gives 1.97, on a clean track, and could not explain
+it. Straps explain it. This is the third time asking the owner about the
+physical rig has beaten inferring from footage.
+
+**The claim was tested rather than accepted, and it contains TWO hypotheses.**
+
+### 1. The session replicates — SUPPORTED
+
+    date       captures                    h_rms
+    2026-08-04 three                       1.76  1.97  1.99
+    2026-08-08 three                       2.47  3.10  (7.80)
+    2026-08-15 two                         3.52  3.90
+    2026-08-18 two, STRAPPED               7.22  14.91
+
+Every trustworthy capture on every other date sits at 1.76–3.90; **both** of the
+18th's are outside it. The 7.80 is `170x4_3`, whose clock fits 22.8% drift (G3)
+and whose score is untrustworthy either way. `190x3_20260818` had never been
+scored before this task — it is the replication, and it is why "one bad capture"
+is the wrong description.
+
+### 2. "Further up the wrist" as GEOMETRY — FALSIFIED, two ways
+
+*Lever length.* Sweeping `d` toward the elbow, 0 to 15 cm:
+
+    capture                  +0 cm   +6 cm   +15 cm
+    160x6_1_20260818         14.91   14.51   13.96
+    190x3_20260818            7.22    7.38    7.68   <- WORSE
+    185x3_20260804 (no straps) 1.99    1.75    1.54   <- best response of all
+
+A physically absurd 15 cm buys 6% on one strapped capture, costs the other, and
+helps an unstrapped capture most. The response to lever length is not
+session-specific, so a too-short tape value is not the mechanism.
+
+*Roll about the arm.* `BAR_ANGLE_DEG` IS this parameter — `anatomical_axis`
+builds `body = [0, sin phi, cos phi]`, a direction in the watch's y-z plane —
+so a rolled watch mis-points step 8's axis. Estimated **from the gyro alone**,
+no video: the hand is clamped to the bar, so the dominant direction of body-frame
+angular velocity is the bar's axis, and gravity at the parked posture gives the
+forearm's. Fore-aft is perpendicular to both.
+
+    well-conditioned captures (|u.g| <= 0.43)    -3.4 .. +8.1 deg
+    160x6_1_20260818  (|u.g| = 0.24, the best)          +21.5   <- ~20 deg out
+
+Real, in the predicted direction, and worth `1 - cos 20 deg` = 6%. Not 7.6x.
+**Two captures are ill-conditioned and must not be read** — `190x3_20260818`
+(+47.3) and `185x3_20260804` (+45.1), the second of which is unstrapped, so the
+large angle is the degeneracy rather than the straps.
+
+*A first attempt failed and the failure is worth keeping.* Reading the roll from
+GRAVITY at the bar-parked posture is degenerate: `arccos|g_x|` is 6-9 deg there,
+i.e. gravity lies along the forearm, and gravity cannot resolve rotation about
+its own direction. Spreads came out at 290-355 deg, which is noise wrapping.
+Same reason yaw has never had an absolute reference in this project.
+
+### 3. "Moving around more" — THIS IS THE MECHANISM
+
+Per-rep horizontal spread, **axis-free** (largest range over any in-plane
+direction), so no projection choice can flatter it:
+
+    160x6_1_20260804  (same set, no straps)    5.4 .. 7.7 cm
+    160x6_1_20260818  (STRAPPED)              19.9 .. 27.9 cm
+    video, all six deadlifts                   4.4 .. 6.0 cm
+
+**A rotation cannot manufacture that.** Rotating the display axis redistributes
+signal between the two horizontal components and leaves the total spread
+unchanged, so the excess is real motion in the reconstruction: the watch
+experienced accelerations the bar never did. That is P6's strap-ringing
+mechanism — the watch not rigidly indexed to the wrist — **escaping the floor
+impact and contaminating the whole set.** Step 6's premise fails for the entire
+capture rather than for 6% of the samples.
+
+*Read against the two known-bad captures rather than in isolation.* `210x1_0815`
+sweeps 30.7-32.7 and `170x4_3` up to 28.6 — both higher. Both were independently
+known bad before this analysis (a miscounted single, H15; a 22.8% clock, G3), so
+the honest statement is that the strapped capture is the only CLEAN one
+inventing this much travel, not that it is the highest.
+
+### What does NOT close
+
+**The two strapped captures do not share the mechanism.** `190x3_20260818`
+invents no travel (6.9-12.0 cm, ordinary for this corpus) and is still bad at
+7.22. Straps explain `160x6_1`; something else is wrong with `190x3`.
+
+**The video-fitted roll wants far more than the gyro supports.** Sweeping
+`angle_deg` over a full period, both strapped captures minimise at approx -50 deg,
+~73 deg from the shipped 23, with the shipped angle near their worst — a shape
+no other capture has. But that is one parameter fitted against the answer, and
+the independent read says 20 deg. Under the fitted angle `190x3` would cross the
+null at `beats_null` 1.44 while `160x6_1` reaches only 0.35, **so even the best
+possible axis does not rescue the strapped capture** — which is itself evidence
+that the axis is not its problem.
+
+### What to do about it
+
+A capture rule, not a code change. **`deadlift_160x6_1_20260818` should not
+referee anything**, and nothing in the repo marks it. **Record whether straps
+were worn, per capture** — invisible in the IMU log, invisible in the video, and
+worth 7.6x. Not built here: that is a capture-protocol change and the owner's
+call.
+
+*Evidence:* `analysis/70`, `analysis/70_straps_hypothesis.json`.
+
+---
+
 ## H19 — deadlift fixes explored: C29 survives 5b, and the FRAME is the blocker (2026-08-18)
 
 Owner: *"explore fixes for the deadlift error"*. Measurement only — **no file

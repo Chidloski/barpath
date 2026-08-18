@@ -993,9 +993,56 @@ corpus-wide median below is the 29-capture figure, including H17's scorecard.
 The one thing measured on all 31 is H19's deadlift work, and it found that
 `deadlift_160x6_1_20260818` reconstructs at **14.91 cm horizontal — the worst in
 the corpus — where the same lift, load and rep count on 2026-08-04 gives 1.97**.
-A 7.6x session-to-session difference on a clean track, unexplained, and the
+A 7.6x session-to-session difference on a clean track, and the
 sharpest restatement yet of H17's finding that the velocity channel repeats
 across sessions while the horizontal position channel does not. See TASKS.md H19.
+
+**IT IS NO LONGER UNEXPLAINED, AND THE OWNER SUPPLIED THE FACT THAT EXPLAINS IT
+(H20, 2026-08-18).** He wore **lifting straps** on 2026-08-18, which put the
+watch further up the forearm and let it move. No measurement in this repo could
+have produced that, and it is the third time asking has beaten inferring from
+frames — see the capture-protocol note about the physical rig.
+
+**Read the mechanism carefully, because the owner's own phrasing contains two
+hypotheses and only one of them survives.**
+
+* **"Further up the wrist", as GEOMETRY — FALSIFIED, twice.** Lengthening `d`
+  along the forearm buys `160x6_1` 6% at a physically absurd 15 cm of
+  displacement and makes `190x3` *worse*, while the unstrapped `185x3_20260804`
+  improves most of all — so the response to lever length is not session-specific.
+  And the watch's roll about the arm, read off the GYRO with no video in it,
+  puts `160x6_1_20260818` about **20 degrees** from the −3…+8 degree cluster
+  every other well-conditioned capture sits in. Real, in the predicted
+  direction, and worth `1 − cos 20° ≈ 6%`. Not 7.6x.
+* **"Moving around more" — THIS IS THE ONE.** Per-rep horizontal spread,
+  measured AXIS-FREE so no projection choice can flatter it: `160x6_1_20260818`
+  sweeps **19.9–27.9 cm** where its own twin sweeps **5.4–7.7** and the video
+  says the bar moved 4.4–6.0. **A rotation cannot manufacture that** — it
+  redistributes signal between the two horizontal components and leaves the
+  total spread alone — so the excess is real motion in the reconstruction. The
+  watch experienced accelerations the bar never did.
+
+So this is P6's strap-ringing mechanism — the watch not rigidly indexed to the
+wrist — **escaping the floor impact and contaminating the whole set.** Step 6's
+premise (`d` rigid in body coordinates) fails for the entire capture rather than
+for 6% of the samples.
+
+**Two qualifications, both load-bearing.** The session replicates at the level
+of `h_rms` — both 2026-08-18 captures are outliers, 7.22 and 14.91 against
+1.76–3.90 for every trustworthy capture on every other date — **but the two do
+not share the mechanism**: `190x3_20260818` invents no travel (6.9–12.0 cm,
+ordinary) and is still bad, so something else is wrong with it. And a video-fitted
+roll wants ≈ −50 degrees for both, ~73 degrees from the shipped
+`BAR_ANGLE_DEG`, which is far more than the gyro supports and should be read as
+one parameter fitted against the answer, not as a measurement. Under it
+`190x3` would cross the null at `beats_null` 1.44 while `160x6_1` only reaches
+0.35 — so even the best axis does not rescue the strapped capture.
+
+**What follows for the corpus, and it is a capture rule rather than a code
+change.** `deadlift_160x6_1_20260818` should not referee anything, and nothing
+in the repo currently marks it. Straps are worth recording per capture; they are
+invisible in the IMU log, invisible in the video, and worth 7.6x.
+*Evidence:* `analysis/70`, TASKS.md H20.
 
 *The 29-capture statement it replaces:* **THE CORPUS IS 29 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-17).** Thirteen
 arrived on 2026-08-17 — five from 2026-08-13, five from 2026-08-15 and three
