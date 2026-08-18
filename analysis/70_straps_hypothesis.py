@@ -2,10 +2,18 @@
 
 H19 recorded that this capture reconstructs at 14.91 cm horizontal, the worst in
 the corpus, where the SAME lift, load and rep count on 2026-08-04 gives 1.97 —
-a 7.6x session-to-session difference on a clean track, and it called that
-unexplained. The owner then supplied a fact no measurement in this repo could
-have produced: **on 2026-08-18 he wore lifting straps, which put the watch
-further up the forearm and may have let it move around more.**
+a 7.6x difference on a clean track, and it called that unexplained. The owner
+then supplied a fact no measurement in this repo could have produced: **he wore
+lifting straps for it, which put the watch further up the forearm and may have
+let it move around more.**
+
+**STRAPS ARE A PER-CAPTURE FACT, NOT A SESSION ONE (owner, correcting an earlier
+version of this file).** `deadlift_160x6_1_20260818` is the ONLY strapped
+deadlift in the corpus. `deadlift_190x3_20260818` was filmed the same day, on
+the same rig, WITHOUT straps — which makes it a within-day control rather than a
+second strapped capture, and makes this comparison much stronger than the
+session-level one first drawn here. Its own elevated 7.22 cm is NOT explained by
+straps and is left open below.
 
 That is two mechanisms, not one, and they make different predictions.
 
@@ -40,7 +48,8 @@ from scipy.spatial.transform import Rotation
 from src import capture, correct, io as bio, metrics, pipeline, project, segment
 
 CACHE = Path(__file__).with_suffix(".json")
-STRAPPED = "20260818"
+STRAPPED = "deadlift_160x6_1_20260818_123507"     # the ONLY strapped capture
+SAME_DAY_CONTROL = "deadlift_190x3_20260818_122535"   # same day, same rig, NO straps
 DELTAS = [-0.03, 0.0, 0.03, 0.06, 0.10, 0.15]
 ANGLES = list(range(-70, 111, 5))
 TWIN_A = "deadlift_160x6_1_20260804_104711"
@@ -91,6 +100,17 @@ def compute():
                                            - np.asarray(rp, float)[:, :2].mean(0))
                          * 100 for rp in (res.get("reps") or [])
                          if len(np.asarray(rp)) > 4]
+
+        # F — the same phenomenon with NO video in it: how fast the raw,
+        # pre-detrend double integration runs away, rep by rep.
+        pos = res.get("position")
+        row["raw_spread"] = []
+        if pos is not None:
+            for a, b in (res.get("bounds") or []):
+                xy = np.asarray(pos, float)[a:b, :2]
+                if len(xy) > 4:
+                    row["raw_spread"].append(
+                        horizontal_spread(xy - xy.mean(axis=0)) * 100)
 
         # D — bar angle straight off the gyro, no video anywhere in it
         log = bio.load_log(csv)
@@ -163,35 +183,51 @@ def short(k):
 
 
 def render(data):
-    fig = plt.figure(figsize=(15.0, 15.5))
-    gs = fig.add_gridspec(3, 2, height_ratios=[1.0, 1.0, 1.05],
-                          hspace=0.42, wspace=0.24)
-    strapped = [k for k, r in data.items() if r["date"] == STRAPPED]
+    fig = plt.figure(figsize=(15.0, 16.0))
+    gs = fig.add_gridspec(3, 2, height_ratios=[1.0, 1.0, 1.08],
+                          hspace=0.46, wspace=0.24)
 
-    # ---- A: does the SESSION replicate? -------------------------------------
-    ax = fig.add_subplot(gs[0, :])
-    dates = sorted({r["date"] for r in data.values()})
-    xs, cols = {d: i for i, d in enumerate(dates)}, []
+    def colour(k):
+        if k == STRAPPED:
+            return "#c0392b"
+        return "#e67e22" if k == SAME_DAY_CONTROL else "#34495e"
+
+    # ---- A: straps are a per-CAPTURE fact --------------------------------
+    ax = fig.add_subplot(gs[0, 0])
+    keys = [k for k in data if data[k]["ship_h"] is not None]
+    keys.sort(key=lambda k: data[k]["ship_h"])
+    for i, k in enumerate(keys):
+        ax.barh(i, data[k]["ship_h"], color=colour(k),
+                height=0.66, zorder=3)
+    ax.set_yticks(range(len(keys)))
+    ax.set_yticklabels([short(k) for k in keys], fontsize=8)
+    ax.axvspan(1.7, 3.95, color="#27ae60", alpha=0.10, zorder=0)
+    ax.set_xlabel("horizontal rms vs video, cm")
+    ax.set_title("A · One capture was strapped, not one session.\n"
+                 "red = STRAPPED · orange = same day, same rig, NO straps "
+                 "(the control)", fontsize=11, loc="left")
+    ax.grid(alpha=0.25, axis="x")
+
+    # ---- F: the same story with NO video in it ---------------------------
+    ax = fig.add_subplot(gs[0, 1])
     for k, r in data.items():
-        if r["ship_h"] is None:
+        rs = r.get("raw_spread")
+        if not rs:
             continue
-        c = "#c0392b" if r["date"] == STRAPPED else "#34495e"
-        j = (hash(k) % 100 - 50) / 320.0
-        ax.scatter(xs[r["date"]] + j, r["ship_h"], s=170, color=c, zorder=3,
-                   edgecolor="white", linewidth=1.4)
-        ax.annotate(short(k).split()[0], (xs[r["date"]] + j, r["ship_h"]),
-                    fontsize=7.5, ha="left", va="center",
-                    xytext=(11, 0), textcoords="offset points", color=c)
-    ax.axhspan(1.7, 3.95, color="#27ae60", alpha=0.10, zorder=0)
-    ax.text(0.02, 0.90, "every trustworthy capture on every other date: 1.8–3.9 cm",
-            transform=ax.transAxes, fontsize=9, color="#27ae60")
-    ax.set_xticks(range(len(dates)))
-    ax.set_xticklabels([f"{d[4:6]}-{d[6:]}" for d in dates])
-    ax.set_ylabel("horizontal rms vs video, cm")
-    ax.set_title("A · The SESSION replicates: both 2026-08-18 captures are outliers\n"
-                 "(red = straps worn. 170x4_3 is the 22.8%-clock-drift capture, "
-                 "untrustworthy either way)", fontsize=11, loc="left")
-    ax.grid(alpha=0.25, axis="y")
+        lead = k in (STRAPPED, SAME_DAY_CONTROL)
+        ax.plot(range(1, len(rs) + 1), rs, marker="o", ms=4,
+                color=colour(k), lw=2.6 if lead else 1.2,
+                zorder=3 if lead else 1,
+                label=short(k) if lead or k.startswith("deadlift_160x6_1_2026080")
+                else None)
+    ax.set_yscale("log")
+    ax.set_xlabel("rep number")
+    ax.set_ylabel("RAW pre-detrend horizontal spread, cm")
+    ax.legend(fontsize=8)
+    ax.set_title("F · Video-free corroboration: the raw integration runs away.\n"
+                 "The strapped set reaches 2744 cm; its own unstrapped twin, "
+                 "same reps, reaches 579.", fontsize=11, loc="left")
+    ax.grid(alpha=0.25, which="both")
 
     # ---- B: geometry 1 — a LONGER lever ------------------------------------
     ax = fig.add_subplot(gs[1, 0])
@@ -201,18 +237,17 @@ def render(data):
             continue
         xs2 = [d for d in DELTAS if f"{d:+.2f}" in lev]
         ys = [lev[f"{d:+.2f}"] for d in xs2]
-        strap = r["date"] == STRAPPED
-        ax.plot([x * 100 for x in xs2], ys, marker="o", ms=4,
-                color="#c0392b" if strap else "#bdc3c7",
-                lw=2.4 if strap else 1.3, zorder=3 if strap else 1,
-                label=short(k) if strap else None)
+        lead = k in (STRAPPED, SAME_DAY_CONTROL)
+        ax.plot([x * 100 for x in xs2], ys, marker="o", ms=4, color=colour(k),
+                lw=2.6 if lead else 1.2, zorder=3 if lead else 1,
+                label=short(k) if lead else None)
     ax.set_xlabel("watch pushed toward the elbow, cm")
     ax.set_ylabel("horizontal rms, cm")
     ax.set_yscale("log")
     ax.legend(fontsize=8)
-    ax.set_title("B · FALSIFIED — a longer lever does not rescue them.\n"
-                 "15 cm of displacement buys 160x6_1 six percent, and makes "
-                 "190x3 worse.", fontsize=11, loc="left")
+    ax.set_title("B · FALSIFIED — a longer lever does not rescue it.\n"
+                 "15 cm of displacement buys the strapped capture six percent.",
+                 fontsize=11, loc="left")
     ax.grid(alpha=0.25, which="both")
 
     # ---- C: geometry 2 — a ROLLED watch ------------------------------------
@@ -223,10 +258,9 @@ def render(data):
             continue
         xs2 = [x for x in ANGLES if str(x) in a]
         ys = [a[str(x)]["h"] for x in xs2]
-        strap = r["date"] == STRAPPED
-        ax.plot(xs2, ys, color="#c0392b" if strap else "#bdc3c7",
-                lw=2.4 if strap else 1.2, zorder=3 if strap else 1,
-                label=short(k) if strap else None)
+        lead = k in (STRAPPED, SAME_DAY_CONTROL)
+        ax.plot(xs2, ys, color=colour(k), lw=2.6 if lead else 1.2,
+                zorder=3 if lead else 1, label=short(k) if lead else None)
     ax.axvline(project.BAR_ANGLE_DEG, color="#2c3e50", ls="--", lw=1.4)
     ax.text(project.BAR_ANGLE_DEG + 2, ax.get_ylim()[1] * 0.72,
             f"ships at {project.BAR_ANGLE_DEG:.0f}°", fontsize=8, color="#2c3e50")
@@ -234,9 +268,9 @@ def render(data):
     ax.set_ylabel("horizontal rms, cm")
     ax.set_yscale("log")
     ax.legend(fontsize=8)
-    ax.set_title("C · SUGGESTIVE, but fitted against the answer.\n"
-                 "Both strapped captures want ≈ −50°, and the shipped angle "
-                 "sits near their worst.", fontsize=11, loc="left")
+    ax.set_title("C · DISCOUNTED — the UNSTRAPPED control wants the same −50°.\n"
+                 "So this optimum is not a strap effect; it is one parameter "
+                 "fitted against the answer.", fontsize=11, loc="left")
     ax.grid(alpha=0.25, which="both")
 
     # ---- D: the same roll, measured WITHOUT the video ----------------------
@@ -245,8 +279,7 @@ def render(data):
         if "gyro_angle" not in r:
             continue
         deg = r["u_dot_g"] > 0.75
-        ax.scatter(r["u_dot_g"], r["gyro_angle"], s=165,
-                   color="#c0392b" if r["date"] == STRAPPED else "#34495e",
+        ax.scatter(r["u_dot_g"], r["gyro_angle"], s=165, color=colour(k),
                    marker="X" if deg else "o", zorder=3,
                    edgecolor="white", linewidth=1.4)
         ax.annotate(short(k), (r["u_dot_g"], r["gyro_angle"]), fontsize=7.5,
@@ -257,8 +290,8 @@ def render(data):
     ax.set_xlabel("|u·g| — conditioning (→1 is degenerate)")
     ax.set_ylabel("roll estimated from the GYRO, deg")
     ax.set_title("D · The independent read: ~20°, not ~73°.\n"
-                 "Of the well-conditioned captures only 160x6_1 0818 leaves the "
-                 "−3…+8° cluster.", fontsize=11, loc="left")
+                 "Of the well-conditioned captures only the strapped one leaves "
+                 "the −3…+8° cluster.", fontsize=11, loc="left")
     ax.grid(alpha=0.25)
 
     # ---- E: the discriminator ----------------------------------------------
@@ -267,15 +300,13 @@ def render(data):
     keys.sort(key=lambda k: (data[k]["date"], k))
     for i, k in enumerate(keys):
         sp = data[k]["spread"]
-        strap = data[k]["date"] == STRAPPED
         bad = k in KNOWN_BAD
-        ax.scatter([i] * len(sp), sp, s=60, zorder=3,
+        ax.scatter([i] * len(sp), sp, s=62, zorder=3,
                    marker="X" if bad else "o",
-                   color="#c0392b" if strap else ("#e67e22" if bad else "#34495e"),
+                   color="#95a5a6" if (bad and k != SAME_DAY_CONTROL) else colour(k),
                    alpha=0.85)
-    for i, k in enumerate(keys):
-        if k in KNOWN_BAD:
-            ax.axvspan(i - 0.42, i + 0.42, color="#e67e22", alpha=0.07, zorder=0)
+        if bad:
+            ax.axvspan(i - 0.42, i + 0.42, color="#95a5a6", alpha=0.13, zorder=0)
     ax.axhspan(*VIDEO_FORE_AFT_CM, color="#27ae60", alpha=0.16, zorder=0)
     ax.text(0.02, 0.055, "what the bar actually did (video, all six deadlifts)",
             transform=ax.transAxes, fontsize=8.5, color="#1e8449")
@@ -284,9 +315,9 @@ def render(data):
                        fontsize=7.5)
     ax.set_ylabel("per-rep horizontal spread, cm  (AXIS-FREE)")
     ax.set_title("E · THE DISCRIMINATOR — invented travel, which no rotation "
-                 "can create.\n160x6_1 0818 sweeps 20–28 cm against its own "
-                 "twin's 5–8. Orange = already known bad,\nso the only CLEAN "
-                 "capture inventing this much travel is the strapped one.",
+                 "can create.\nStrapped 19.9–27.9 cm · its own twin 5.4–7.7 · "
+                 "the same-day unstrapped control 6.9–12.0.\n"
+                 "grey X = already known bad for unrelated reasons.",
                  fontsize=11, loc="left")
     ax.grid(alpha=0.25, axis="y")
 

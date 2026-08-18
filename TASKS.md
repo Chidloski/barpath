@@ -30,19 +30,25 @@ physical rig has beaten inferring from footage.
 
 **The claim was tested rather than accepted, and it contains TWO hypotheses.**
 
-### 1. The session replicates — SUPPORTED
+### 1. It is ONE CAPTURE, and that is a within-day CONTROL — corrected
 
-    date       captures                    h_rms
-    2026-08-04 three                       1.76  1.97  1.99
-    2026-08-08 three                       2.47  3.10  (7.80)
-    2026-08-15 two                         3.52  3.90
-    2026-08-18 two, STRAPPED               7.22  14.91
+**An earlier version of this entry read the two 2026-08-18 captures as a session
+effect. The owner corrected it the same day: `deadlift_160x6_1_20260818` is the
+ONLY strapped deadlift in the corpus.** `deadlift_190x3_20260818` was shot the
+same day, on the same rig, with the same camera, WITHOUT straps.
 
-Every trustworthy capture on every other date sits at 1.76–3.90; **both** of the
-18th's are outside it. The 7.80 is `170x4_3`, whose clock fits 22.8% drift (G3)
-and whose score is untrustworthy either way. `190x3_20260818` had never been
-scored before this task — it is the replication, and it is why "one bad capture"
-is the wrong description.
+Being wrong here made the evidence *weaker* than it is. A day-versus-day
+comparison confounds straps with everything else that changes between sessions;
+a strapped capture beside an unstrapped one from the same hour does not.
+
+    capture                        straps   h_rms   invented travel   raw drift
+    160x6_1_20260818                 YES    14.91    19.9-27.9 cm     831->2744
+    190x3_20260818  (same day)       no      7.22     6.9-12.0 cm     424-> 658
+    160x6_1_20260804  (same set)     no      1.97      5.4-7.7 cm     150-> 579
+
+The strapped capture is the one that invents travel and the one whose raw
+integration runs away. **Its same-day control does neither**, which is what the
+session framing could not have shown.
 
 ### 2. "Further up the wrist" as GEOMETRY — FALSIFIED, two ways
 
@@ -101,17 +107,35 @@ known bad before this analysis (a miscounted single, H15; a 22.8% clock, G3), so
 the honest statement is that the strapped capture is the only CLEAN one
 inventing this much travel, not that it is the highest.
 
+### 4. Corroborated with NO video in it
+
+The RAW pre-detrend double integration runs away far faster on the strapped
+capture. Per-rep horizontal spread of the uncorrected path:
+
+    160x6_1_20260818  (STRAPPED)   831 1044 1503 1884 2152 2744 cm
+    160x6_1_20260804  (its twin)   150  113  165  182  351  579 cm
+    190x3_20260818    (control)    424  477  658 cm
+
+It is the highest of any deadlift at **every** rep index, including rep 1 — so
+this is not only faster accumulation, it is already elevated at the first rep.
+The signature is present before the referee, before step 7 and before any
+projection choice, which is what makes it independent of everything in panel E.
+
 ### What does NOT close
 
-**The two strapped captures do not share the mechanism.** `190x3_20260818`
-invents no travel (6.9-12.0 cm, ordinary for this corpus) and is still bad at
-7.22. Straps explain `160x6_1`; something else is wrong with `190x3`.
+**The control is itself elevated and straps do NOT explain it.**
+`190x3_20260818` scores 7.22 with no straps, no invented travel and ordinary raw
+drift. Part of it is that the bar really did move more — the video reads
+8.7/10.2/4.9 cm of per-rep fore-aft against a corpus norm of 4.4-6.0, which
+lifts its null to 3.11 and leaves `beats_null` at 0.43. Recorded as open rather
+than attributed.
 
-**The video-fitted roll wants far more than the gyro supports.** Sweeping
-`angle_deg` over a full period, both strapped captures minimise at approx -50 deg,
-~73 deg from the shipped 23, with the shipped angle near their worst — a shape
-no other capture has. But that is one parameter fitted against the answer, and
-the independent read says 20 deg. Under the fitted angle `190x3` would cross the
+**The video-fitted roll is DISCOUNTED by the control.** Sweeping `angle_deg`
+over a full period, BOTH 2026-08-18 captures minimise at approx -50 deg, ~73 deg
+from the shipped 23, with the shipped angle near their worst. **If that were a
+strap effect the unstrapped control would not share it, and it does.** So it is
+one parameter fitted against the answer, not a measurement, and the gyro's ~20
+deg is the number to believe. Under the fitted angle `190x3` would cross the
 null at `beats_null` 1.44 while `160x6_1` reaches only 0.35, **so even the best
 possible axis does not rescue the strapped capture** — which is itself evidence
 that the axis is not its problem.
@@ -120,8 +144,9 @@ that the axis is not its problem.
 
 A capture rule, not a code change. **`deadlift_160x6_1_20260818` should not
 referee anything**, and nothing in the repo marks it. **Record whether straps
-were worn, per capture** — invisible in the IMU log, invisible in the video, and
-worth 7.6x. Not built here: that is a capture-protocol change and the owner's
+were worn, per capture** — invisible in the IMU log, invisible in the video,
+worth 7.6x, and demonstrably varying WITHIN a single session, which is why a
+per-session note would not have been enough. Not built here: that is a capture-protocol change and the owner's
 call.
 
 *Evidence:* `analysis/70`, `analysis/70_straps_hypothesis.json`.

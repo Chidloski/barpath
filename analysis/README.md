@@ -2476,38 +2476,48 @@ day by the owner and measured in `70` — he wore straps. See below.**
 
 `70_straps_hypothesis.py`, `--cache` to re-render from the JSON beside it.
 
-`69` left the 7.6x session-to-session gap on `deadlift_160x6_1_20260818`
-unexplained. The owner then supplied what no measurement here could: **straps
-were worn on 2026-08-18**, putting the watch further up the forearm and letting
-it move. Five panels, because the phrasing contains two hypotheses that make
-different predictions and only one survives.
+`69` left the 7.6x gap on `deadlift_160x6_1_20260818` unexplained. The owner
+then supplied what no measurement here could: **he wore straps for it**, putting
+the watch further up the forearm and letting it move. Six panels, because the
+phrasing contains two hypotheses that make different predictions and only one
+survives.
 
-* **A — the session replicates.** Both 2026-08-18 captures are outliers, 7.22
-  and 14.91 cm, against 1.76–3.90 for every trustworthy capture on every other
-  date. `190x3_20260818` had never been scored before H20.
+**Straps are a per-CAPTURE fact.** `160x6_1_20260818` is the only strapped
+deadlift in the corpus; `190x3_20260818` was shot the same day on the same rig
+without them, which makes it a **within-day control**. An earlier version of
+this entry read the two as a session effect, and the owner corrected it — the
+control is what makes the comparison strong, so the correction improved the
+result rather than weakening it.
+
+* **A — one capture, not one session.** The strapped capture at 14.91 cm; its
+  same-day unstrapped control at 7.22; everything else 1.76–3.90.
+* **F — video-free corroboration.** The RAW pre-detrend integration runs away:
+  831 → 2744 cm across the strapped set against 150 → 579 on its own twin, and
+  highest of any deadlift at *every* rep index including the first.
 * **B — a longer lever is FALSIFIED.** 15 cm of displacement buys `160x6_1` 6%,
-  makes `190x3` worse, and helps the *unstrapped* `185x3_20260804` most of all.
-* **C — the roll fitted against the video is SUGGESTIVE and no more.** Both
-  strapped captures minimise at ≈ −50°, ~73° from the shipped `BAR_ANGLE_DEG`,
-  with the shipped angle near their worst — a shape no other capture has. One
-  parameter fitted against the answer; read panel D instead.
+  makes the control worse, and helps the *unstrapped* `185x3_20260804` most.
+* **C — the fitted roll is DISCOUNTED by the control.** Both 2026-08-18 captures
+  minimise at ≈ −50°, ~73° from the shipped `BAR_ANGLE_DEG`. If that were a
+  strap effect the unstrapped control would not share it, and it does — so it is
+  one parameter fitted against the answer. Read panel D instead.
 * **D — the same roll, measured with no video in it.** From the gyro: the hand
   is clamped to the bar, so the dominant direction of body-frame angular
   velocity is the bar's axis. `160x6_1_20260818` sits ~20° off the −3…+8°
   cluster every other well-conditioned capture occupies. Real, predicted
   direction, worth 6%. **The X markers are ill-conditioned and must not be
   read** — one of them is unstrapped.
-* **E — the discriminator.** Per-rep horizontal spread, **axis-free**:
-  `160x6_1_20260818` sweeps 19.9–27.9 cm where its own twin sweeps 5.4–7.7 and
-  the bar moved 4.4–6.0. A rotation cannot create that, so the excess is real
-  motion in the reconstruction. Orange marks the two captures already known bad,
-  which sweep as much or more — so the claim is that the strapped capture is the
-  only CLEAN one inventing this much travel, not that it is the highest.
+* **E — the discriminator.** Per-rep horizontal spread, **axis-free**: the
+  strapped capture sweeps 19.9–27.9 cm, its own twin 5.4–7.7, its same-day
+  unstrapped control 6.9–12.0, and the bar moved 4.4–6.0. A rotation cannot
+  create that, so the excess is real motion in the reconstruction. Grey X marks
+  two captures already known bad for unrelated reasons, which sweep as much or
+  more — so the claim is that the strapped capture is the only CLEAN one
+  inventing this much travel, not that it is the highest.
 
 **Verdict: the watch was MOVING, not merely repositioned** — P6's strap-ringing
 mechanism escaping the floor impact and contaminating a whole set. Does not
-close: `190x3_20260818` invents no travel and is still bad, so the two strapped
-captures do not share a mechanism. See TASKS.md H20.
+close: the unstrapped control is itself elevated at 7.22 cm with no invented
+travel and ordinary raw drift, and straps do not explain it. See TASKS.md H20.
 
 ---
 

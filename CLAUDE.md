@@ -998,10 +998,18 @@ sharpest restatement yet of H17's finding that the velocity channel repeats
 across sessions while the horizontal position channel does not. See TASKS.md H19.
 
 **IT IS NO LONGER UNEXPLAINED, AND THE OWNER SUPPLIED THE FACT THAT EXPLAINS IT
-(H20, 2026-08-18).** He wore **lifting straps** on 2026-08-18, which put the
+(H20, 2026-08-18).** He wore **lifting straps** for this capture, which put the
 watch further up the forearm and let it move. No measurement in this repo could
 have produced that, and it is the third time asking has beaten inferring from
 frames — see the capture-protocol note about the physical rig.
+
+**STRAPS ARE A PER-CAPTURE FACT, NOT A SESSION ONE (owner, correcting H20 the
+same day).** `deadlift_160x6_1_20260818` is **the only strapped deadlift in the
+corpus**. `deadlift_190x3_20260818` was shot the same day on the same rig
+WITHOUT straps. H20 first read the two as a session effect and that was wrong —
+and being wrong made the evidence weaker than it is, because the unstrapped
+session-mate is a **within-day control** with everything but the straps held
+fixed. Read every comparison below as strapped-versus-control, not day-versus-day.
 
 **Read the mechanism carefully, because the owner's own phrasing contains two
 hypotheses and only one of them survives.**
@@ -1027,21 +1035,36 @@ wrist — **escaping the floor impact and contaminating the whole set.** Step 6'
 premise (`d` rigid in body coordinates) fails for the entire capture rather than
 for 6% of the samples.
 
-**Two qualifications, both load-bearing.** The session replicates at the level
-of `h_rms` — both 2026-08-18 captures are outliers, 7.22 and 14.91 against
-1.76–3.90 for every trustworthy capture on every other date — **but the two do
-not share the mechanism**: `190x3_20260818` invents no travel (6.9–12.0 cm,
-ordinary) and is still bad, so something else is wrong with it. And a video-fitted
-roll wants ≈ −50 degrees for both, ~73 degrees from the shipped
-`BAR_ANGLE_DEG`, which is far more than the gyro supports and should be read as
-one parameter fitted against the answer, not as a measurement. Under it
-`190x3` would cross the null at `beats_null` 1.44 while `160x6_1` only reaches
-0.35 — so even the best axis does not rescue the strapped capture.
+**Corroborated with no video in it at all.** The RAW pre-detrend double
+integration runs away far faster on the strapped capture: per-rep horizontal
+spread of the uncorrected path grows **831 → 2744 cm** across its six reps
+against **150 → 579** on its own unstrapped twin, same lift, same load, same rep
+count — and it is the highest of any deadlift at **every** rep index, including
+rep 1. So the signature is present before the referee, before step 7 and before
+any projection choice.
+
+**Two qualifications, both load-bearing.** `deadlift_190x3_20260818` — the
+unstrapped control — is itself elevated at 7.22 cm, and **straps do not explain
+it**: it invents no travel (6.9–12.0 cm, ordinary) and its raw drift is ordinary
+too. Part of it is that the bar really did move more, the video reading
+8.7/10.2/4.9 cm of fore-aft against a corpus norm of 4.4–6.0, which lifts its
+null; `beats_null` is 0.43. It is left open rather than attributed.
+
+And **a video-fitted roll is DISCOUNTED by the control.** Sweeping `angle_deg`,
+both 2026-08-18 captures minimise at ≈ −50 degrees, ~73 from the shipped
+`BAR_ANGLE_DEG`. If that were a strap effect the unstrapped control would not
+share it, and it does — so it is one parameter fitted against the answer, not a
+measurement. The gyro says ~20 degrees and the gyro is the one to believe. Under
+the fitted angle `190x3` would cross the null at 1.44 while `160x6_1` reaches
+only 0.35, so **even the best possible axis does not rescue the strapped
+capture**, which is itself evidence the axis is not its problem.
 
 **What follows for the corpus, and it is a capture rule rather than a code
 change.** `deadlift_160x6_1_20260818` should not referee anything, and nothing
-in the repo currently marks it. Straps are worth recording per capture; they are
-invisible in the IMU log, invisible in the video, and worth 7.6x.
+in the repo currently marks it. Straps are worth recording **per capture** —
+they are invisible in the IMU log, invisible in the video, and worth 7.6x, and
+the corpus already contains a day where one capture had them and the next did
+not.
 *Evidence:* `analysis/70`, TASKS.md H20.
 
 *The 29-capture statement it replaces:* **THE CORPUS IS 29 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-17).** Thirteen
