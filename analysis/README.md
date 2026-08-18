@@ -2412,9 +2412,66 @@ smooth rows do not reproduce either way, so corpus turnover is the right
 explanation only for those. Full argument and the circularity caveat in
 TASKS.md H18 and CLAUDE.md's IMPACT/SMOOTH section.
 
+## 69 — fixes for the deadlift horizontal, explored (H19, 2026-08-18)
+
+`69_deadlift_fixes.png`, from `analysis/69_deadlift_fixes.py`. Measurement only,
+no `src/` module written. Full argument in `analysis/H19_STATE.md`.
+
+**Closes `C31b_STATE.md` item B, open since 2026-08-06.** C29's rest-to-rest
+window + impact correction was measured with step 6 OFF and before H8's step 5b
+existed, and 5b also removes a drift-shaped error — so either 5b had already
+taken what C29 was taking, or they compose. **They compose, and C29 is worth
+MORE after 5b than before it:** median deadlift horizontal, all arms on
+identical windows, control 9.34 cm -> C29 with 5b off 4.08 -> C29 with 5b on
+**2.88**, `beats_null` 0.21 -> 0.83. Inside its own frame the correction is
+better on **10 of 10** captures, paired Wilcoxon **p = 0.002**, and four
+captures cross `beats_null = 1.0` — which no multi-rep deadlift has done.
+
+**And it still cannot ship, now for a measured reason rather than an untested
+one.** Against the shipping pipeline the median goes 3.31 -> 2.88 cm, better on
+**7 of 10** — nominally significant on a paired magnitude test (Wilcoxon
+**p = 0.049**) and not on the sign test (p = 0.34). *That verdict moved during
+the task:* at the eight deadlifts held that morning it was 5 of 8, **p = 0.195**,
+and two captures arriving at 14:03 carried it across the line on their own. Ten
+cannot settle it any more than eight could. Two confounds sit on the comparison
+and they pull in OPPOSITE directions, so both have to be quoted. The rest-to-rest
+frame scores **30 of 46 reps** — pairing consecutive rests gives n-1 windows from
+n impacts, so rep 1 is never scored and `deadlift_185x3` falls to a single rep —
+and its windows carry a **27% larger null** (larger on 9 of 10). The
+bigger null *flatters* `beats_null`, whose numerator it is (C12's shape), while
+*penalising* the raw `h_rms` comparison, because those windows hold 27% more
+real fore-aft travel to get right.
+
+Three sub-results worth not repeating. Recovering the lost rep by prepending the
+segmenter's own first-rep start **fails**, worse on 5 of 5 (`160x4_2` 1.64 ->
+4.66): the bar starts dead on the floor there and the window carries the setup.
+Decoupling "detrend windows" from "rep windows" **cannot be built**, because C29
+itself established that step 7 is load-bearing through per-rep INDEPENDENCE, so
+the detrended position is only defined piecewise inside its own windows. And the
+rep-1 selection effect, which could have explained the whole gain, **runs the
+other way**: rep 1 beats its set average on 3 of 5, and dropping it makes
+SHIPPING worse on 3 of 5.
+
+Finally, C29 is **not** D1's degenerate case. D1 was rejected for converting
+every capture into approximately the null (`beats_null` 0.13-5.39 -> 0.76-1.16);
+under C29 the spread *widens*, 0.19-0.93 -> 0.48-1.65. It is adding information
+rather than deleting a channel. Two implementation notes: pass
+`axes=(0, 1, 2)`, since the default `(0, 1)` leaves vertical rms at 5.83 cm
+against shipping's 2.88, and the width has an interior optimum at 0.20-0.40 s
+that degrades sharply beyond it (0.60 s 3.59 cm, `width_s=None` — C28b's
+rejected whole-interval spread — 4.41), so the correction is genuinely local.
+
+**Two deadlifts arrived mid-task, taking the corpus to 31** (`CLAUDE.md` still
+says 29): `deadlift_160x6_1_20260818` and `deadlift_190x3_20260818`, both
+tracking cleanly at 99.8%/99.7% coverage with rep counts matching their names.
+**The first reconstructs at 14.91 cm, the worst horizontal in the corpus, where
+the same lift/load/reps on 2026-08-04 gives 1.97** — a 7.6x session-to-session
+difference on a clean track, which is H17's velocity-repeats/position-does-not
+split showing up inside a single set spec. Not explained.
+
 ---
 
-*Numbering: 47 through 68 are taken. The next free number is 69. **52
+*Numbering: 47 through 69 are taken. The next free number is 70. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

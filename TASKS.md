@@ -15,6 +15,114 @@ Related, and deliberately not duplicated here:
 
 
 
+## H19 — deadlift fixes explored: C29 survives 5b, and the FRAME is the blocker (2026-08-18)
+
+Owner: *"explore fixes for the deadlift error"*. Measurement only — **no file
+under `src/` was written**, so no branch. `analysis/69`, full argument in
+`analysis/H19_STATE.md`.
+
+**Closes `C31b_STATE.md` item B, open since 2026-08-06.** The question was
+whether H8's step 5b had already taken what C29's rest-window impact correction
+takes, since both remove a drift-shaped error. **They compose:**
+
+    arm                                    h rms    beats_null
+    control  (rest windows, no correction)  9.34        0.21
+    C29      (+ 0.20 s jump), 5b OFF        4.08        0.69
+    C29      (+ 0.20 s jump), 5b ON         2.88        0.83
+
+(numbers are n=10, after the two captures below arrived mid-task).
+C29 is worth MORE after 5b than before it. Inside its own frame it is better on
+**10 of 10**, paired Wilcoxon **p = 0.002**, and four captures cross
+`beats_null = 1.0` — which no multi-rep deadlift in this project ever has.
+
+**Against shipping the gain is MARGINAL and moved during the task.** Median
+3.31 -> 2.88 cm, `beats_null` 0.57 -> 0.83, better on **7 of 10**: nominally
+significant on a paired magnitude test (**Wilcoxon p = 0.049**) and not on the
+sign test (p = 0.34). At the eight deadlifts held that morning it was 5 of 8,
+**p = 0.195** — not demonstrated at all. **Two deadlifts arrived at 14:03 and
+both favour C29 heavily** (14.91 -> 5.45 and 7.22 -> 4.13), carrying it across
+the line. Ten captures cannot settle a 0.4 cm median difference any more than
+eight could; read p = 0.049 as "worth pursuing", not as "established".
+
+**Two confounds sit on that comparison and they pull in OPPOSITE directions**,
+which is why neither can be quoted alone:
+
+* *Coverage, and it is structural.* Pairing consecutive rests gives **n-1
+  windows from n impacts**: 30 of 46 reps scored, rep 1 never scored on any
+  capture, `deadlift_185x3` down to ONE rep — so its `beats_null` of 1.41 must
+  not be quoted.
+* *The null moves 27%.* Larger on 9 of 10. It
+  **flatters** `beats_null`, whose numerator it is — C12's shape, where the
+  referee's own invented motion inflated the null and flattered the pipeline —
+  and simultaneously **penalises** the raw `h_rms` comparison, because those
+  windows hold 27% more real fore-aft travel to reconstruct.
+
+**Three things tried or ruled out, recorded so they are not repeated:**
+
+1. *Recovering the lost rep* by prepending the segmenter's own first-rep start:
+   coverage returns, and the horizontal is worse on **5 of 5** tested
+   (`160x4_2` 1.64 -> 4.66). The bar starts dead on the floor and that window
+   carries the setup, so the impact does not sit inside it as the construction
+   requires.
+2. *Decoupling detrend windows from rep windows* — the obvious fix — **cannot be
+   built.** C29 itself established that step 7 is load-bearing through per-rep
+   INDEPENDENCE (its continuous piecewise-linear variant cost 8.21 -> 17.00 cm),
+   so the detrended position is only defined piecewise inside its own windows.
+   Windows and reps are the same object.
+3. *The rep-1 selection effect*, which could have explained the entire gain,
+   **runs the other way**: rep 1 beats its set's average on 3 of 5 measured, and
+   dropping rep 1 from SHIPPING makes shipping worse on 3 of 5.
+
+**C29 is not D1's degenerate case, which is the first thing to check of any
+deadlift fix.** D1 was rejected for converting every capture into approximately
+the null (0.13-5.39 -> 0.76-1.16). Under C29 the spread WIDENS, 0.19-0.93 ->
+0.48-1.65, with captures separating rather than converging.
+
+**Two implementation notes.** `oracle.jump_rest_windows` defaults to
+`axes=(0, 1)`; left there the frame's vertical rms is 6.08 cm against shipping's
+2.88, and passing `axes=(0, 1, 2)` gives 2.80 with the horizontal bit-identical.
+C29's own table corrected all three axes and the default does not. The width has
+an INTERIOR optimum at 0.20-0.40 s — `beats_null` peaks at 0.20, raw `h_rms`
+bottoms at 0.40 — and degrades sharply beyond it (0.60 s 3.59 cm, 1.20 s 4.68,
+`width_s=None` i.e. C28b's whole-interval spread 4.41). So the correction is
+genuinely LOCAL, and 0.20-0.40 s brackets where B6 measured the strap ringing.
+
+**What would settle it, cheapest first.** (1) More deadlifts, and this is no
+longer hypothetical — two arrived mid-task and moved the headline from p = 0.195
+to p = 0.049 by themselves. (2) A decision about rep 1: if
+losing the first rep of a set is acceptable, the frame-internal case is strong
+and this becomes a product question, not a measurement one — and a triple losing
+2 of 3 reps is not the same proposition as a six losing 2 of 6. (3) A genuine
+rest anchor before the first pull; the bar IS still on the floor there, but
+`phase == 0` ends ~8 s too early and the segmenter's rep-1 start is too late.
+Nothing in `segment.py` looks for it.
+
+**TWO CAPTURES ARRIVED MID-TASK AND THE CORPUS IS NOW 31; `CLAUDE.md` SAYS 29.**
+`deadlift_160x6_1_20260818` and `deadlift_190x3_20260818`, tracked under the C31
+protocol: coverage 99.8%/99.7%, travel 56.7/54.9 cm, residual 0.72/0.76 px, rep
+counts 6/6 and 3/3 matching their filenames, neither flagged implausible.
+
+**And one of them is alarming.** `deadlift_160x6_1_20260818` reconstructs at
+**14.91 cm horizontal, the worst in the corpus by a factor of two** (`beats_null`
+0.12), on a clean track with a normal null — while **the same lift, load and rep
+count on 2026-08-04 reconstructs at 1.97 cm.** Same lifter, same bar, same nine
+steps, **7.6x between two sessions.** Put that beside H17's finding that rep-1
+MCV repeats across sessions to 0.6-4.6%: the velocity channel is reproducible
+session to session and the horizontal position channel is not. Not explained,
+not chased, and the sharpest available restatement of H17's velocity/position
+split — this time within a single set spec rather than across lifts.
+
+`deadlift_190x3_20260818` is the more useful of the two: at 190 kg the video
+shows the bar genuinely drifting ~8 cm, giving it a null of **3.11 cm, twice the
+deadlift median**, and under C29 it crosses the null at 1.05. Heavy sets with
+real fore-aft travel are the condition under which this lift is easiest to
+grade, and the corpus has almost none of them.
+
+*Also recorded, not chased:* the deadlift null is the smallest in the corpus by
+~2.5x (1.63 cm against bench 3.93, squat 4.61), so beating it requires
+reconstructing fore-aft to about the 1 cm spec itself. Deadlift is not only
+reconstructed worse, it is graded against a much harder bar.
+
 ## H18 — the IMPACT/SMOOTH statistic did not fail, step 5b fixed it (2026-08-17)
 
 Owner: *"fix the CLAUDE.md impact/smooth section"*, after H17 recorded that its

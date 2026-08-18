@@ -984,7 +984,20 @@ video and log, four gitignored files, unrecoverable — because that plate's
 stickers are placed too unevenly to referee (C23). They had supplied a rep
 count of 9 of 10 and squat's first replication of the attitude bound; both are
 gone with them, and C22's fatigue finding is measured on data that no longer
-exists. **THE CORPUS IS 29 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-17).** Thirteen
+exists. **THE CORPUS IS 31 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-18).**
+Two deadlifts arrived on 2026-08-18 — `deadlift_160x6_1_20260818` and
+`deadlift_190x3_20260818` — both tracking cleanly (99.8% / 99.7% coverage, rep
+counts matching their filenames) and both already cached in `data_v2/tracked/`.
+**Nothing else in this file has been re-measured on 31**; every count and every
+corpus-wide median below is the 29-capture figure, including H17's scorecard.
+The one thing measured on all 31 is H19's deadlift work, and it found that
+`deadlift_160x6_1_20260818` reconstructs at **14.91 cm horizontal — the worst in
+the corpus — where the same lift, load and rep count on 2026-08-04 gives 1.97**.
+A 7.6x session-to-session difference on a clean track, unexplained, and the
+sharpest restatement yet of H17's finding that the velocity channel repeats
+across sessions while the horizontal position channel does not. See TASKS.md H19.
+
+*The 29-capture statement it replaces:* **THE CORPUS IS 29 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-17).** Thirteen
 arrived on 2026-08-17 — five from 2026-08-13, five from 2026-08-15 and three
 squats from 2026-08-17 — taking it from 16. Eleven of the thirteen are clean;
 three miscount on the IMU (see P1), two 2026-08-13 bench clips do not track, and
