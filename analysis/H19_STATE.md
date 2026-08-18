@@ -144,6 +144,17 @@ comparison available for free: **the same lift, load and rep count on
 2026-08-04 reconstructs at 1.97 cm.** Same lifter, same bar, same nine steps,
 a 7.6x difference in horizontal error between two sessions.
 
+*Checked, because there was an obvious candidate and it is NOT the cause.* The
+suite flags this capture's rep 6 as a broken window — `up 122 cm vs down 37 cm,
+the window is missing a phase` — which would be the natural explanation. It is
+not: the error is **uniform across all six reps at 10.4-15.7 cm**, and dropping
+the last rep moves the total only 14.35 -> 14.11. Meanwhile the VERTICAL is
+1.1-1.6 cm per rep and the IMU's per-rep ROM (52.8-54.5 cm) matches the video's
+(53.9-56.3) to about a centimetre. **So this capture reconstructs its vertical
+and its extent correctly and is uniformly ~14 cm wrong fore-aft on every rep** —
+which is a cleaner statement of the defect than "one bad rep" would have been,
+and it rules out segmentation as the cause.
+
 That is worth putting beside H17's result that rep-1 MCV repeats across sessions
 to 0.6–4.6%. **The velocity channel is reproducible session to session and the
 horizontal position channel is not**, which is the same split H17 found between

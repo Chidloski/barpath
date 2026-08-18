@@ -106,7 +106,17 @@ counts 6/6 and 3/3 matching their filenames, neither flagged implausible.
 **14.91 cm horizontal, the worst in the corpus by a factor of two** (`beats_null`
 0.12), on a clean track with a normal null — while **the same lift, load and rep
 count on 2026-08-04 reconstructs at 1.97 cm.** Same lifter, same bar, same nine
-steps, **7.6x between two sessions.** Put that beside H17's finding that rep-1
+steps, **7.6x between two sessions.**
+
+*The obvious explanation was checked and rejected.* The suite flags this
+capture's rep 6 as a broken window (`up 122 cm vs down 37 cm`), but the
+horizontal error is **uniform across all six reps at 10.4-15.7 cm** and dropping
+the last rep moves the total 14.35 -> 14.11. Vertical is 1.1-1.6 cm per rep and
+IMU ROM matches the video to ~1 cm. The capture gets its vertical and its extent
+right and is uniformly ~14 cm wrong fore-aft. **Segmentation is not the cause.**
+That rep-6 window defect is a SEPARATE, genuinely new red gate —
+`test_every_rep_contains_both_phases[deadlift_160x6_1_20260818_123507]`, the
+only new failure the two captures introduce. Put that beside H17's finding that rep-1
 MCV repeats across sessions to 0.6-4.6%: the velocity channel is reproducible
 session to session and the horizontal position channel is not. Not explained,
 not chased, and the sharpest available restatement of H17's velocity/position
@@ -117,6 +127,14 @@ shows the bar genuinely drifting ~8 cm, giving it a null of **3.11 cm, twice the
 deadlift median**, and under C29 it crosses the null at 1.05. Heavy sets with
 real fore-aft travel are the condition under which this lift is easiest to
 grade, and the corpus has almost none of them.
+
+**Suite after the two new captures: 32 failed / 626 passed** (was 30 / 594).
+Two of the 32 are a `test_heartbeat` read-during-edit race — the suite parsed
+`HEARTBEAT.md` while claims were being released, and it passes 6/6 standalone.
+**Exactly one failure is genuinely new**, and it is the owner's new capture
+rather than any code: `test_every_rep_contains_both_phases[
+deadlift_160x6_1_20260818_123507]`. Everything else is the standing set. No file
+under `src/` or `tests/` was touched by H19.
 
 *Also recorded, not chased:* the deadlift null is the smallest in the corpus by
 ~2.5x (1.63 cm against bench 3.93, squat 4.61), so beating it requires
