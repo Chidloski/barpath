@@ -5737,6 +5737,26 @@ confirm nothing behavioural survives.
 
 Not code, and the highest value per effort available:
 
+- **NO LIFTING STRAPS. Owner's decision, 2026-08-19, and it is the first rule
+  here because it is the only one that has already cost a capture.** Straps put
+  the watch further up the forearm and let it move, and H20 measured what that
+  does: `deadlift_160x6_1_20260818` — **the only strapped capture in the
+  corpus** — invents 19.9-27.9 cm of per-rep fore-aft where its own unstrapped
+  twin invents 5.4-7.7 and the bar really moved 4.4-6.0, reconstructing at
+  14.91 cm against the twin's 1.97. Its raw pre-detrend drift runs to 2744 cm
+  against 579. **It should referee nothing**, and nothing in the repo marks it
+  — see the note below.
+
+  *This supersedes H20's own recommendation, which was to RECORD straps per
+  capture. Omitting them is better: the effect is large, it is invisible in both
+  the IMU log and the video, and a recorded-but-present confound still has to be
+  excluded from every corpus median by hand.*
+
+  **Not done, and deliberately left for the owner rather than assumed:** whether
+  `deadlift_160x6_1_20260818` should be excluded from scoring IN CODE. That
+  changes what every corpus-wide median means, so it is a decision and not a
+  tidy-up. Until it is taken, exclude it by hand and say so.
+
 - **TWO DEADLIFT SETS FOR THE NEXT GYM SESSION (added 2026-08-16, H10/B4).**
   These are the cheapest things that would de-risk what just landed on `main`,
   and each tests something **no capture in this corpus can**. One set each.

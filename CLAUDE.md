@@ -1061,10 +1061,16 @@ capture**, which is itself evidence the axis is not its problem.
 
 **What follows for the corpus, and it is a capture rule rather than a code
 change.** `deadlift_160x6_1_20260818` should not referee anything, and nothing
-in the repo currently marks it. Straps are worth recording **per capture** —
-they are invisible in the IMU log, invisible in the video, and worth 7.6x, and
-the corpus already contains a day where one capture had them and the next did
-not.
+in the repo currently marks it.
+
+**THE OWNER'S CALL, 2026-08-19: NO STRAPS, from now on.** H20 recommended
+*recording* straps per capture; the owner went further and removed them from the
+protocol, which is the better answer — the effect is large, it is invisible in
+both the IMU log and the video, and a recorded-but-present confound still has to
+be excluded from every corpus median by hand. See TASKS.md, Capture protocol,
+where it is now the first rule. **Whether to exclude the one strapped capture
+from scoring IN CODE is NOT decided** — that changes what every corpus-wide
+median means. Until it is, exclude it by hand and say so.
 *Evidence:* `analysis/70`, TASKS.md H20.
 
 *The 29-capture statement it replaces:* **THE CORPUS IS 29 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-17).** Thirteen
