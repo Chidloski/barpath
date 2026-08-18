@@ -1075,3 +1075,295 @@ def parabola_detrend(reps: list, bounds: list, t: np.ndarray,
                 p[:, ax] -= (float(basis @ p[:, ax]) / den) * basis
         out.append(p - p[0])
     return out
+
+
+# ------------------------------------------------------------------ H22 -----
+#
+# H22 (2026-08-19) asked what else the floor impact licenses. The owner's
+# framing: use the impulse to advantage, overlap the reps slightly to find a
+# rest PERIOD rather than an instant, and exploit that the bounces decay and
+# that the watch translates very little while the strap rings.
+#
+# One of the three pays, and it is the one that closes H19's blocker. C29's
+# rest-to-rest frame pairs consecutive rest instants, so n impacts give n-1
+# windows and rep 1 of every set is structurally unscoreable. There IS a rest
+# before the first pull — the bar is on the floor and the lifter is set — and
+# `prepull_rest` finds it on 9 of 9 deadlifts, quieter than every post-impact
+# rest instant in the same capture. Nothing in `segment.py` looks for it.
+
+
+def still_mask(log: dict, gyro_max: float = 0.60, amag_max: float = 4.0,
+               smooth_s: float = 0.10) -> np.ndarray:
+    """Samples where the watch is neither rotating nor accelerating. H22.
+
+    Raw gyro and raw USER acceleration only — no attitude, no integration, no
+    filtering — which is the discipline `segment.impact_anchors`,
+    `segment.rest_instants` and `segment.dwell_instants` all keep, and for the
+    same reason: an anchor derived from the reconstruction cannot correct it.
+
+    `log["accel"]` is user acceleration with gravity already removed, so
+    "still" here is a small MAGNITUDE and not ~g. Note it is not small in any
+    absolute sense: at the rest instants this project already trusts, mean |a|
+    is 1.3-6.3 m/s^2 (`segment.rest_instants`), which is why `amag_max` is 4.0
+    rather than something near zero. The gate is a rejection rule, not a claim
+    that the wrist is motionless.
+
+    Measured on the nine scoreable deadlifts: the run this returns after a
+    floor landing lasts a **median 0.96 s** (37 landings, range 0.28-3.25), so
+    a rest PERIOD is available where the pipeline has only ever used a rest
+    INSTANT. The exceptions are informative — the final landing of a set has no
+    still run at all on 4 of 9 captures, because the lifter releases the bar
+    and stands up.
+    """
+    fs = log["fs"]
+    w = max(int(round(smooth_s * fs)), 3)
+    k = np.ones(w) / w
+    rate = np.convolve(np.linalg.norm(log["gyro"], axis=1), k, mode="same")
+    amag = np.convolve(np.linalg.norm(log["accel"], axis=1), k, mode="same")
+    return (rate < gyro_max) & (amag < amag_max)
+
+
+def prepull_rest(result: dict, look_s: float = 3.0) -> int | None:
+    """The quietest instant before the FIRST pull — C29's missing boundary. H22.
+
+    `segment.rest_instants` answers "when did the bar come to rest AFTER each
+    landing", so it returns n instants for n impacts and `rest_windows` pairs
+    them into n-1 windows. Rep 1 is therefore never inside a window, and H19
+    measured that as the one thing standing between C29 and shipping.
+
+    The boundary that is missing is not missing from the signal. The bar is on
+    the floor and the lifter is set immediately before the first pull, and on
+    all nine scoreable deadlifts the quietest sample in the 3 s before the
+    segmenter's first rep start scores **0.04-0.71** on `rest_instants`' own
+    accel+gyro variance score, against **0.17-7.15** for the post-impact rest
+    instants of the same captures. It is the quietest anchor in the capture, on
+    every one.
+
+    **What it does and does not buy, measured (H22).** Prepending it takes the
+    rest-to-rest frame from 23 of 36 reps to 31 and is EXACTLY ADDITIVE — every
+    downstream window is bit-identical, because the correction it enables lives
+    entirely inside the new first window and what leaks past it is a constant
+    velocity offset, which is linear in position and removed by step 7's
+    per-window line. But the window it recovers is the hardest in the set on 4
+    of 6, and on its own it costs 2.00 -> 2.77 cm. Use it with
+    `jump_period_windows`, which buys that back.
+
+    Returns None where there are no rep bounds to search back from.
+
+    *What would falsify the anchor:* a lifter who fidgets on the bar right up
+    to the pull, or a capture where the walk-in never settles. `look_s` is 3 s
+    because the quiet instant lands 0.01-0.90 s before the rep start on this
+    corpus; a longer window starts admitting the walk-in.
+    """
+    log = result["log"]
+    if not result.get("bounds"):
+        return None
+    fs = log["fs"]
+    a0 = result["bounds"][0][0]
+    lo = max(int(a0 - look_s * fs), 0)
+    if a0 <= lo:
+        return None
+    from . import segment
+    w = max(int(round(0.05 * fs)), 3)
+    av = segment._rolling_var(np.linalg.norm(log["accel"], axis=1), w)
+    gv = segment._rolling_var(np.linalg.norm(log["gyro"], axis=1), w)
+    score = av / (np.median(av) + 1e-12) + gv / (np.median(gv) + 1e-12)
+    return int(lo + int(np.argmin(score[lo:a0])))
+
+
+def rest_anchors(result: dict, prepull: bool = True) -> list[int]:
+    """`segment.rest_instants`, optionally with the pre-pull anchor in front."""
+    from . import segment
+    rest = list(segment.rest_instants(result["log"], result.get("impacts")))
+    if prepull:
+        k = prepull_rest(result)
+        if k is not None and (not rest or k < rest[0]):
+            rest = [k] + rest
+    return rest
+
+
+def still_periods(result: dict, anchors: list[int], min_s: float = 0.10,
+                  pad_s: float = 0.05, **kw) -> list[tuple[int, int]]:
+    """Grow each anchor INDEX into the still interval containing it. H22.
+
+    One interval per anchor, in the same order, so this can never lose an
+    anchor `rest_anchors` found: where the anchor is not inside a still run of
+    at least `min_s`, a symmetric +/- `pad_s` window stands in. On this corpus
+    that fallback fires on the final landing of most sets and nowhere else.
+    """
+    log = result["log"]
+    m = still_mask(log, **kw)
+    n = len(log["t"])
+    fs = log["fs"]
+    w = max(int(round(pad_s * fs)), 2)
+    out = []
+    for k in anchors:
+        a = b = int(k)
+        if m[k]:
+            while a > 0 and m[a - 1]:
+                a -= 1
+            while b < n - 1 and m[b + 1]:
+                b += 1
+        if (b - a) / fs < min_s:
+            a, b = max(int(k) - w, 0), min(int(k) + w, n - 1)
+        out.append((int(a), int(b)))
+    return out
+
+
+def jump_period_windows(result: dict, width_s: float = 0.30,
+                        axes: tuple = (0, 1, 2),
+                        wrist_offset: np.ndarray | None = None,
+                        boundary: str = "mid", dv_from: str = "period",
+                        anchors: list[int] | None = None) -> dict:
+    """C29 over rest PERIODS, with the pre-pull anchor. H22.
+
+    Same machinery as `jump_rest_windows` — step 7's independent endpoint
+    lines, the correction applied over a window at the floor impact — with two
+    changes, and **neither one helps alone**, which is C29's own shape
+    repeated:
+
+    * the boundary list starts at `prepull_rest`, so the frame yields n windows
+      from n impacts instead of n-1 and rep 1 is scored;
+    * `dv` is the MEAN reconstructed velocity over the still interval rather
+      than the value at its single quietest sample. The bar is on the floor for
+      a median 0.96 s (`still_mask`), so an average is available and it is a
+      lower-variance read of the same observable.
+
+    Measured on eight deadlifts (`deadlift_160x6_1_20260818` excluded for the
+    straps of H20, `deadlift_170x4_3` for its 22.8% clock drift, and
+    `deadlift_210x1` for miscounting a labelled single), median horizontal rms
+    against the video, all arms with `d` and step 5b on:
+
+        arm                                       h rms   beats_null   reps
+        shipping                                   2.78      0.68      36/36
+        rest windows, NO correction (control)      8.52      0.22      23/36
+        C29, rest instants                         2.00      0.95      23/36
+        C29 + the pre-pull anchor                  2.77      0.78      31/36
+        this, period frame + period-averaged dv    2.14      0.84      31/36
+
+    and the 2x2 that attributes it, all four with the pre-pull anchor:
+
+        boundary \\ dv        at the instant   over the period
+        rest instant             2.98              2.70
+        period midpoint          2.98              2.14
+
+    **Read the coverage column before the accuracy column.** C29's 2.00 is
+    measured on 23 of 36 reps and this on 31, and H19 already showed the
+    dropped rep is not an easy one. The honest reading is that the coverage
+    blocker is closed at a cost of 0.14 cm rather than that C29 got worse.
+
+    **And one confound of H19's is REMOVED rather than inherited.** C29's frame
+    inflates `null_h_rms` by a median 1.28x, which flatters `beats_null`,
+    whose numerator it is — C12's shape. This frame's null is **0.97x**
+    shipping's, so its 0.68 -> 0.84 is like-for-like where C29's 0.68 -> 0.95
+    was not.
+
+    **What it still does not do.** It is not a demonstrated improvement on
+    shipping: better on 6 of 8, paired Wilcoxon p = 0.383 (on all ten captures
+    including the three excluded ones, 8 of 10 and p = 0.105). It remains
+    frame-internally decisive — better than its own no-correction control on
+    8 of 8, p = 0.008 — exactly as C29 was. And the LAST rep of a set can never
+    be recovered this way: the lifter releases the bar, so the final landing
+    has no still interval at all on 4 of 9 captures and no rest instant on 4 of
+    12. That is a property of the lift, not of the estimator.
+
+    `boundary` is the owner's question about overlapping the reps. "mid" has
+    consecutive windows meet at each still interval's midpoint; "overlap" runs
+    window j from the START of period j to the END of period j+1, so the
+    windows share a whole still interval; "tight" excludes the still intervals
+    entirely. **Overlapping is the worst of the three** at every width tried
+    (2.93 against 2.14 and 2.59 at 0.30 s), which is the direct answer to that
+    half of the task. Mechanically it is `detrend_knots`' failure again from
+    the other side: a shared stretch is claimed by two independent detrend
+    lines that disagree there, and C29 established that step 7's power is
+    exactly its per-window independence.
+    """
+    from . import correct, segment
+    log = result["log"]
+    t = log["t"]
+    if anchors is None:
+        anchors = rest_anchors(result)
+    periods = still_periods(result, anchors)
+    world = np.asarray(result["world_accel"], dtype=float).copy()
+    vel = result["velocity"]
+    ax = list(axes)
+    impacts = list(result.get("impacts") or [])
+    dtm = float(np.median(log["dt"]))
+
+    def vbar(p):
+        a, b = p
+        return vel[a:b + 1].mean(axis=0) if dv_from == "period" else vel[(a + b) // 2]
+
+    def edge(p, which):
+        a, b = p
+        if boundary == "overlap":
+            return a if which == "start" else b
+        if boundary == "tight":
+            return b if which == "start" else a
+        return (a + b) // 2
+
+    bounds = []
+    for j in range(len(periods) - 1):
+        p0, p1 = periods[j], periods[j + 1]
+        i0, i1 = edge(p0, "start"), edge(p1, "end")
+        if i1 <= i0:
+            continue
+        bounds.append((int(i0), int(i1) + 1))
+        if width_s is not None and width_s < 0:      # the control arm
+            continue
+        inside = [k for k in impacts if p0[1] <= k <= p1[0]]
+        if not inside:
+            continue
+        a = inside[-1]
+        b = min(p1[0], a + max(1, int(round(width_s / dtm))))
+        span = t[b] - t[a]
+        if span <= 0:
+            continue
+        world[a:b + 1, ax] -= ((vbar(p1) - vbar(p0))[ax] / span)
+
+    _, position = integrate.integrate(world, log["dt"])
+    if wrist_offset is not None:
+        position = correct.apply_offset(position, result["quat"], wrist_offset)
+    out = dict(result)
+    out["bounds"] = bounds
+    out["reps"] = correct.detrend_set(position, bounds, t) if bounds else []
+    out["bar_position"] = position
+    out["still_periods"] = periods
+    return out
+
+
+def ring_duration(log: dict, k: int, thresh: float = 4.0,
+                  smooth_s: float = 0.05, max_s: float = 1.2) -> tuple[float, int]:
+    """How long the strap rings after the landing at `k`. Raw |a| only. H22.
+
+    The owner's "the bounces at the drop will decrease", turned into a number:
+    the time from the impact onset until smoothed |a| settles below `thresh`
+    and stays there. Median **0.61 s** over 37 landings, range 0.41-1.20, and
+    the bounce train decays at a median peak-to-peak ratio of **0.83**.
+
+    Two things it is good for and one it is not.
+
+    *It separates a landing you can anchor from one you cannot.* Every value at
+    the `max_s` ceiling in this corpus is a FINAL landing — the ringing never
+    settles because the lifter releases the bar and walks away — which is the
+    same captures `segment.rest_instants` refuses on its own `max_accel` gate,
+    reached from raw acceleration by a different route.
+
+    *It says the correction window is half the ringing, not all of it.* C29's
+    optimum width is 0.20-0.30 s against a measured ringing of 0.61.
+
+    *It does NOT make a better window.* Setting the width per landing to a
+    fixed fraction of this measurement is no better than a single constant:
+    0.50 x ring gives a median 2.17 cm against 2.14 for a flat 0.30 s, on the
+    same eight captures. The ringing's length carries no information the
+    constant does not already have.
+    """
+    fs = log["fs"]
+    t = log["t"]
+    w = max(int(round(smooth_s * fs)), 3)
+    amag = np.convolve(np.linalg.norm(log["accel"], axis=1), np.ones(w) / w, mode="same")
+    stop = min(int(k + max_s * fs), len(t) - 1)
+    for j in range(int(k), stop):
+        if amag[j] < thresh and amag[j:min(j + w, stop)].max() < thresh:
+            return float(t[j] - t[k]), int(j)
+    return float(t[stop] - t[k]), int(stop)

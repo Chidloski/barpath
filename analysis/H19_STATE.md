@@ -209,3 +209,14 @@ Three things would move it, in order of cost:
    ends ~8 s before the first pull on `deadlift_150x4_1`, so neither existing
    anchor is the right one. A still instant found in the last second before the
    bar breaks the floor would be, and nothing in `segment.py` looks for it.
+
+   **BUILT AND MEASURED (H22, 2026-08-19) — the prediction in this paragraph
+   was right, and it does not by itself make C29 shippable.**
+   `oracle.prepull_rest` finds that instant on 9 of 9 deadlifts and it is
+   quieter than every post-impact rest instant in the same capture. Coverage
+   goes 30 of 46 reps to 40 and rep 1 is scored; the null inflation this file
+   records as confound 2 goes from 1.28x to 0.97x, so that confound is removed
+   rather than inherited. But the recovered window is the HARDEST in the set on
+   4 of 6, so the gain over shipping stays marginal (8 of 10, p = 0.105, where
+   C29 was 7 of 10 at p = 0.049). See `analysis/H22_STATE.md` and
+   `analysis/72`.

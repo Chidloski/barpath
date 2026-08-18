@@ -589,3 +589,138 @@ def test_step_5b_REMOVES_the_parabola_D1_found():
         f"It is supposed to be REMOVING that parabola — if the video score still "
         f"improved, it improved by some other route and the mechanism in "
         f"correct.fit_drift_tilt is not what is doing the work")
+
+
+# ------------------------------------------------------------------ H22 --
+#
+# H22 (2026-08-19) closed C29's coverage blocker with a rest anchor BEFORE the
+# first pull. Two of these are the load-bearing claims — that the anchor is
+# quieter than the ones the project already trusts, and that adding it is
+# exactly additive downstream — and the third is the coverage arithmetic the
+# whole thing exists for. All three are real-data, because none of them is a
+# statement about algebra: they are statements about what a barbell does.
+
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_the_prepull_anchor_is_quieter_than_every_rest_it_joins(csv):
+    """The claim `oracle.prepull_rest` rests on, checked per capture.
+
+    A new anchor is only worth having if it is at least as good as the anchors
+    already in use, and "as good" here has a definition that needs no video:
+    `segment.rest_instants`' own accel-plus-gyro variance score. If a capture
+    ever puts the pre-pull instant ABOVE its post-impact rests, the anchor is
+    picking up the walk-in or a lifter still setting their grip, and the frame
+    built on it in `jump_period_windows` is resting on a moment the bar was not
+    still.
+    """
+    from src import pipeline, segment
+
+    res = pipeline.run(csv, wrist_offset=None)
+    pre = oracle.prepull_rest(res)
+    if pre is None:
+        pytest.skip("no rep bounds")
+    rest = segment.rest_instants(res["log"], res.get("impacts"))
+    if not rest:
+        pytest.skip("no post-impact rest instants to compare against")
+
+    log = res["log"]
+    w = max(int(round(0.05 * log["fs"])), 3)
+    av = segment._rolling_var(np.linalg.norm(log["accel"], axis=1), w)
+    gv = segment._rolling_var(np.linalg.norm(log["gyro"], axis=1), w)
+    score = av / (np.median(av) + 1e-12) + gv / (np.median(gv) + 1e-12)
+
+    assert score[pre] <= min(score[k] for k in rest), (
+        f"the pre-pull anchor scores {score[pre]:.3f} against a best "
+        f"post-impact rest of {min(score[k] for k in rest):.3f}")
+    assert pre < rest[0], "the pre-pull anchor must precede the first landing"
+
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_the_prepull_anchor_leaves_every_later_window_BIT_IDENTICAL(csv):
+    """Adding a boundary in front must add a window and change nothing else.
+
+    This is why the anchor can be evaluated on its own: the correction it
+    enables is applied inside the new first window, and what leaks past it is a
+    CONSTANT velocity offset — linear in position, and removed exactly by step
+    7's per-window line. So the recovered rep's error is attributable to the
+    recovered rep.
+
+    If this ever fails, the pre-pull anchor is no longer a clean addition and
+    every "coverage 23 -> 31 at a cost of 0.14 cm" statement in
+    `jump_period_windows` has to be re-derived, because the cost would then be
+    spread over reps that used to be scored correctly.
+    """
+    from src import capture, correct, pipeline
+
+    res = pipeline.run(csv, wrist_offset=None)
+    d = correct.WRIST_OFFSET_M[capture.lift_of(csv)]
+    a0 = oracle.rest_anchors(res, prepull=False)
+    a1 = oracle.rest_anchors(res, prepull=True)
+    if len(a1) != len(a0) + 1 or len(a0) < 2:
+        pytest.skip("no extra anchor, or too few windows to compare")
+
+    off = oracle.jump_period_windows(res, width_s=0.30, wrist_offset=d, anchors=a0)
+    on = oracle.jump_period_windows(res, width_s=0.30, wrist_offset=d, anchors=a1)
+
+    assert len(on["bounds"]) == len(off["bounds"]) + 1
+    assert on["bounds"][1:] == off["bounds"]
+    for later, base in zip(on["reps"][1:], off["reps"]):
+        assert np.allclose(later, base, atol=1e-12), (
+            "adding the pre-pull anchor perturbed a later window")
+
+
+@_needs_deadlifts
+def test_the_period_frame_scores_more_reps_than_C29s(cache=[]):
+    """The arithmetic H22 exists for: n-1 windows becomes n.
+
+    `jump_rest_windows` pairs consecutive rest instants, so rep 1 of every set
+    is structurally unscoreable — H19 recorded that as the reason C29 could not
+    ship. This asserts the frame is strictly wider, never narrower, on every
+    deadlift in the corpus.
+
+    It deliberately does NOT assert full coverage. The final rep of a set can
+    never be recovered this way: the lifter releases the bar and walks away, so
+    the last landing has no still interval at all on several captures. That is
+    a property of the lift.
+    """
+    from src import pipeline
+
+    wider = same = 0
+    for csv in _DL:
+        res = pipeline.run(csv, wrist_offset=None)
+        old = len(oracle.rest_windows(res))
+        new = len(oracle.jump_period_windows(res, width_s=-1)["bounds"])
+        assert new >= old, f"{csv.stem}: {new} windows against C29's {old}"
+        wider += int(new > old)
+        same += int(new == old)
+    assert wider >= len(_DL) - 2, (
+        f"the pre-pull anchor widened only {wider} of {len(_DL)} deadlifts")
+
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_the_ringing_settles_except_where_the_lifter_lets_go(csv):
+    """`ring_duration` at its ceiling means "no anchor here", not "long ring".
+
+    The owner's observation is that the bounces decay, and they do — median
+    0.61 s to settle over 37 landings. The exceptions are the informative part
+    and this pins them: every landing that does NOT settle inside the search is
+    the LAST landing of its set, which is exactly the case
+    `segment.rest_instants` refuses through its own `max_accel` gate, reached
+    from raw acceleration by an unrelated route. If an INTERIOR landing ever
+    fails to settle, the two detectors have stopped agreeing and the frame
+    built on them is resting on something that is not a bar on a floor.
+    """
+    from src import pipeline
+
+    res = pipeline.run(csv, wrist_offset=None)
+    imp = list(res.get("impacts") or [])
+    if len(imp) < 2:
+        pytest.skip("needs at least two landings")
+    for j, k in enumerate(imp[:-1]):
+        dur, _ = oracle.ring_duration(res["log"], k)
+        assert dur < 1.2, (
+            f"interior landing {j} at t={res['log']['t'][k]:.2f}s never settles "
+            f"({dur:.2f} s) — it should not be interior")
