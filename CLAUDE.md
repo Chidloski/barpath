@@ -115,7 +115,7 @@ behind after a merge diverges and stops fast-forwarding.
 
    | branch | main |
    |---|---|
-   | `io.py`, `calibrate.py`, `orient.py`, `integrate.py`, `segment.py`, `correct.py`, `project.py`, `pipeline.py` | `metrics.py`, `truth.py`, `markers.py`, `plot.py`, `synth.py`, `run.py`, `tests/`, `analysis/`, all docs |
+   | `io.py`, `calibrate.py`, `orient.py`, `integrate.py`, `segment.py`, `correct.py`, `project.py`, `pipeline.py` | `metrics.py`, `capture.py`, `vtrack/`, `plot.py`, `synth.py`, `run.py`, `tests/`, `analysis/`, all docs |
 
    Anything that changes the bar path gets a branch, because it can be measured
    and rejected — B3's quadratic detrend and B6's splice both were, and both
@@ -403,9 +403,19 @@ pause included. Still n=3, and still not a reason to change any gate.
 
 **The moment a video is supplied: track it, cache the path to CSV beside the
 capture, and render a review figure. Then LOOK at the figure.** `src/tracked.py`,
-`python run.py --track`. Figures land in `analysis/tracking/v1` (the plate
-template's corpus) and `analysis/tracking/v2` (the markers' corpus), split
-because the two are scored by different referees. The CSVs are committed, so a clip is tracked once for
+`python run.py --track`. Figures land in `analysis/tracking/v2` — **the "v2"
+names the CORPUS `data_v2/`, not a tracker, and this sentence used to say
+otherwise** (corrected 2026-08-19, H21). It read that figures land in
+`analysis/tracking/v1` "the plate template's corpus" and `analysis/tracking/v2`
+"the markers' corpus", split because the two are scored by different referees.
+Both halves have since gone: v1 and its tracker were deleted on 2026-08-14 and
+`analysis/tracking/v2/` has held `vtrack`'s figures ever since, under a caption
+naming the referee it replaced. The directory was NOT renamed — it is keyed by
+dataset, `tracked.DATASET_DIR` says so, and renaming to fix a caption would
+break every path recorded in `TASKS.md` and on the board.
+`analysis/tracking/v2_rebuild/` is a different thing: F1's dated report on the
+rebuild with its own frozen copy of the tracker code, not an output directory
+anything writes to. The CSVs are committed, so a clip is tracked once for
 the life of the repo rather than once per analysis — `metrics.resolve_path`
 reads the cache and a scored comparison went from minutes to milliseconds.
 
@@ -419,10 +429,14 @@ shows a path no human would mistake for a barbell.
 
 Two costs of reading the cache, both real: the CSV carries per-frame arrays and
 scalars but **not** the tracker's own diagnostics, and **a cached read does not
-run `markers.validate`, so its per-capture warnings do not fire.** Use
-`resolve_path(use_cache=False)` or `run.py --track --force` when you want the
-tracker to speak up, and after ANY change to `markers.py` or `truth.py`, because
-a cached path is only valid for the tracker code that produced it.
+run `vtrack.validate`, so its per-capture warnings do not fire** — notably the
+`implausible` flag, which is the one statistic that catches a rigid, well-covered
+track that is not the bar. Use `resolve_path(use_cache=False)` or
+`run.py --track --force` when you want the tracker to speak up, and after ANY
+change under `src/vtrack/` or to `capture.py`, because a cached path is only
+valid for the tracker code that produced it. *(This named `markers.validate`,
+`markers.py` and `truth.py` until 2026-08-19; both of those modules have been
+deleted and `src/vtrack/` is the only tracker left — H21.)*
 
 **AND `run.py --track --force` DID NOT DO THAT UNTIL 2026-08-17 (H14).**
 `tracked.ensure(force=True)` skipped its own `read` and then called
@@ -507,11 +521,33 @@ module docstring before quoting a number from it — `dispersion` needs no truth
 and is blind to exactly the error that dominates, so the two are not
 interchangeable.
 
-**THERE ARE NOW THREE VIDEO REFEREES, AND `data_v2/` CHANGED HANDS ON
-2026-08-14 (F1).** `src/vtrack/` replaces `markers.py` as the referee for
-`data_v2/`; `metrics.infer_tracker` returns `"vtrack"` there. `markers.py` is
-**not deleted, not edited, and still reachable** by passing `tracker="markers"`,
-and everything recorded under it below stands as history.
+**THERE IS ONE VIDEO REFEREE AS OF 2026-08-19 (H21): `src/vtrack/`.** This
+project has had three, and the other two are deleted — the plate template with
+the v1 corpus on 2026-08-14 (F1), and `markers.py` on 2026-08-19.
+`metrics.TRACKERS` is `("vtrack",)`, `resolve_path(tracker="markers")` raises,
+`metrics.infer_tracker` returns `"vtrack"` for `data_v2/` and raises for
+anything else, and there is no second tracking path in the repo that can be run
+— the last one was `run.py --dlconic`, which called `markers.bar_path` directly
+and went with the module.
+
+**The consolidation moved NO number and was gated on it.** Every one of the 31
+captures in `data_v2/raw/` was scored before and after — the tracked path itself
+(per-frame arrays hashed), `_video_quality`, `vs_truth`, `shortset.run`, the
+segmenter's windows — and every one is bit-identical. That is what a correct
+consolidation had to look like, since `infer_tracker` had already returned
+`"vtrack"` for the whole corpus since 2026-08-14; anything that moved would have
+meant something was still reaching the old referee. `markers.py`'s one live
+dependency, `top_of_travel_residual` and `MAX_TOP_RESIDUAL_CM`, moved into
+`vtrack.path` unchanged (with `capture.TOP_FRAC`), and its gates moved to
+`tests/test_vtrack.py`. Recover the module with `git show 0e87f28:src/markers.py`.
+**Everything recorded under it below stands as history and none of it can be
+re-run.**
+
+*The paragraph this replaces, true from 2026-08-14 to 2026-08-19:* **THERE ARE
+NOW THREE VIDEO REFEREES, AND `data_v2/` CHANGED HANDS ON 2026-08-14 (F1).**
+`src/vtrack/` replaces `markers.py` as the referee for `data_v2/`;
+`metrics.infer_tracker` returns `"vtrack"` there. `markers.py` is **not deleted,
+not edited, and still reachable** by passing `tracker="markers"`.
 
 Why it changed hands: `markers.py` was not good enough on that footage. Six of
 eleven squat clips were unusable, `squat_170x1` and `squat_pause_140x4_3`
@@ -547,6 +583,9 @@ deadlifts of 2026-08-04 as of C27**; everything else is scored by `truth.py`,
 because `data/video/` has no markers. The deadlifts are the first captures
 refereed by the CONIC path, and the first marker footage of a lift other than
 bench. See the C21/C23 note below.
+*(That whole paragraph describes the arrangement of 2026-08-01 to 2026-08-14.
+`markers.py` was deleted on 2026-08-19 and `truth.py` on 2026-08-14; a "future
+capture" is judged by `src/vtrack/`.)*
 `markers.py` is what a future capture should be judged by: on the same five
 clips it tracks 100% of frames where the plate template loses the bar at every
 lockout and reports 0.2 cm of travel on one bench set. See `src/README.md` and
@@ -789,6 +828,10 @@ hypothesis, and the specific open defect is that groups are pooled by
 circumradius alone, so the true constellation is absorbed into a size bucket
 with spurious ones and the representative is then reselected by appearance
 score. Gated by `tests/test_markers.py`; see `analysis/39` and TASKS.md C21.
+*(That test file was deleted with the module on 2026-08-19 — H21. Its algebraic
+gates, on a tracker nothing can run, were unit tests for dead code; the two that
+gate a LIVE function, `top_of_travel_residual`, moved to `tests/test_vtrack.py`
+with it. `git show 0e87f28:tests/test_markers.py`.)*
 
 Two things that made this small, and one that is still unmeasured. The path
 dicts were already compatible — `markers.bar_path` returns a superset of
@@ -930,10 +973,14 @@ and a number you cannot re-derive cannot be used to referee a change.
 
 **`truth.py` is gone; `src/capture.py` holds what survived it** — `lift_of`, the
 plate diameters, `VERTICAL_ROM_M`/`rom_flags`, `FORE_AFT_ACCEL_MAX`, the decode
-helpers, `find_plate` as a rim detector only, and `landings`/`sync`/
+helpers, `find_plate` as a rim detector only — **which has had no caller at all
+since `markers.py` was deleted on 2026-08-19, along with `sticker_plate_diameter`
+and `STICKER_PLATE_DIAMETER_M`; recorded as orphaned rather than removed, since
+nothing can score with them** — and `landings`/`sync`/
 `to_imu_time`, which are the deadlift clock match at 9-19 ms. `metrics.TRACKERS`
-is `("markers", "vtrack")`; the `"plate"` referee no longer exists and
-`infer_tracker` raises outside `data_v2/` rather than falling back to it.
+is `("vtrack",)` as of 2026-08-19 — it was `("markers", "vtrack")` when this was
+written; the `"plate"` referee no longer exists and `infer_tracker` raises
+outside `data_v2/` rather than falling back to it.
 
 **AND THE SUITE HAD NOT BEEN RUNNING ON THE NEW CAPTURES.** Every gate in
 `tests/test_real_data.py` and `tests/test_segmentation.py` globbed `data/raw`,
@@ -2157,10 +2204,35 @@ moved through. `h_rms` improves on 6 of 6; excursion on only 3 of 6.
 **Read the caveats before quoting it.** Dropping the first and last rep from
 SHIPPING too puts it at 7.05 rather than 8.21, so the like-for-like gain is
 7.05 -> 3.93. Zero reps are under 1 cm in either arm. The rest-window frame
-scores 19 of 30 reps — `rest_instants` rejects the final impact of each set — so the honest
+scores 19 of 30 reps — so the honest
 number is the frame-internal 10.66 -> 3.93, NOT 8.21 -> 3.93. Deadlift-only,
 six captures, and 0.70 median `beats_null` is still below a flat line. A large
 step, not an arrival. Nothing is proposed for the pipeline yet.
+
+**THE CAUSE OF THAT REP LOSS WAS MISDIAGNOSED HERE, AND THE LARGER HALF IS
+FIXABLE (H22, 2026-08-19).** This sentence read "`rest_instants` rejects the
+final impact of each set", naming ONE cause. There are two, and the one it named
+is the smaller:
+
+* **The missing FIRST boundary.** `rest_instants` answers "when did the bar come
+  to rest AFTER each landing", so n impacts give n rest instants and
+  `oracle.rest_windows` pairs them into **n-1** windows — rep 1 of every set is
+  never inside one. **This is fixable and H22 fixed it.** `oracle.prepull_rest`
+  finds the quietest sample in the 3 s before the first pull, on the same raw
+  accel-plus-gyro score, and on **9 of 9** deadlifts it is quieter than every
+  post-impact rest that frame already uses (0.04-0.71 against 0.17-7.15).
+  Prepending it is exactly additive, gated bit-identical on every later window.
+* **The final rep, which is NOT fixable** and is the half this sentence named.
+  The lifter releases the bar, so no rest-to-rest window can close on the last
+  rep. Three independent detectors agree. That is a property of the lift.
+
+Coverage goes 23 of 36 -> 31 of 36 on today's corpus. **Read what it costs**:
+the recovered rep 1 is the hardest window in the set on 4 of 6, so part of
+C29's headline was a COVERAGE effect — 2.00 -> 2.77 cm, bought back to 2.14 by
+averaging the velocity correction over the still period rather than taking it at
+the instant. The gain over shipping is smaller than C29 looked (2.78 -> 2.14)
+and it is now like-for-like, because the null inflation goes 1.28x -> 0.97x.
+*Evidence:* `analysis/72`, TASKS.md H22, `oracle.jump_period_windows`.
 
 *And one thing the failed first attempt taught:* a CONTINUOUS piecewise-linear
 detrend cost 8.21 -> 17.00 with ROM at 70-138 cm. Step 7 is load-bearing because

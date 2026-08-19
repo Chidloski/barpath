@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import butter, filtfilt, savgol_filter
 
-from . import correct, markers, orient, project, segment, capture, vtrack
+from . import correct, orient, project, segment, capture, vtrack
 
 GRID = 100          # samples per rep on the normalised-time grid
 
@@ -651,8 +651,10 @@ def bench_sync(path: dict, log: dict, velocity_z: np.ndarray,
         # accepts on the SHAPE of it rather than on the height of its peak, and
         # a claim about a shape should be checkable from the function's own
         # output rather than only from its docstring — the same reason
-        # `markers.bar_path` returns both of its scale variants. Diagnostic
-        # only: nothing reads these back, and `vs_truth` does not carry them.
+        # `markers.bar_path` used to return both of its scale variants (that
+        # module was deleted on 2026-08-19; the habit is worth keeping).
+        # Diagnostic only: nothing reads these back, and `vs_truth` does not
+        # carry them.
         "lags": lags,
         "curve": curve,
     }
@@ -775,46 +777,65 @@ def pause_landmark(path: dict, log: dict, bounds: list[tuple[int, int]]) -> dict
 
 
 # ---------------------------------------------------------------- vs truth --
-TRACKERS = ("markers", "vtrack")
+# The video referees this project has had, in order, and there is ONE now.
+#
+#   "plate"     `truth.bar_path`, a matched template on the dark plate. Referee
+#               for `data/video/`. Deleted with that corpus on 2026-08-14 (F1).
+#   "markers"   `markers.bar_path`, a rigid constellation of retroreflective
+#               stickers. Referee for `data_v2/` until 2026-08-14, when F1's
+#               rebuild replaced it because it left six of eleven squat clips
+#               unusable. Reachable by name but refereeing nothing for five
+#               days; **deleted on 2026-08-19 (H21)**.
+#   "vtrack"    `src/vtrack/`, the eight-sticker referee. The only one left.
+#
+# Kept as a tuple rather than collapsed away, because it is what makes an
+# explicit `tracker=` a checked argument instead of a string nobody validates,
+# and because a fourth referee is a live possibility — the corpus has already
+# outgrown two.
+TRACKERS = ("vtrack",)
 
 
 def resolve_path(video: str | Path | dict, tracker: str | None = None,
                  use_cache: bool = True) -> dict:
-    """Get a tracked bar path, from either referee, or accept a ready-made one.
+    """Get a tracked bar path, or accept a ready-made one.
 
-    THIS PROJECT HAS TWO VIDEO REFEREES AND WHICH ONE APPLIES IS DECIDED BY THE
-    FOOTAGE, NOT BY PREFERENCE. `capture.bar_path` matches a template to the dark
-    plate and is the referee for `data/video/`. `markers.bar_path` fits a rigid
-    constellation of retroreflective stickers and is the referee for `data_v2/`,
-    which is filmed from a tripod with markers applied. A capture cannot be
-    scored by the tracker its footage was not shot for: the template does not
-    find the plate on marker-less bench reliably, and the constellation cannot
-    find stickers that were never applied.
+    **THERE IS ONE VIDEO REFEREE AS OF 2026-08-19 (H21): `src/vtrack/`.** This
+    function used to dispatch between two, and before that three; the history is
+    in `TRACKERS` above. What survives is the dispatch's useful half — the cache,
+    and accepting a path dict — plus an argument that now has exactly one legal
+    value and says so when it is given another.
 
-    Three ways to say which:
+    Three ways to say which, of which only the first two still choose anything:
 
-    * pass a **dict** — an already-tracked path from either module, used as-is.
-      This is how a caller tracks once and scores several ways without paying
-      for the decode twice, and how the tests feed synthetic paths in.
-    * pass **`tracker=`** explicitly, one of `TRACKERS`.
+    * pass a **dict** — an already-tracked path, used as-is. This is how a
+      caller tracks once and scores several ways without paying for the decode
+      twice, and how the tests feed synthetic paths in.
     * pass **neither** and it is inferred from the location: anything under a
-      `data_v2` directory is marker footage, everything else is not.
+      `data_v2` directory is this referee's footage and anything else raises.
+      See `infer_tracker`.
+    * pass **`tracker=`** explicitly, which can only be `"vtrack"`. It is kept
+      because it makes a wrong value fail here, loudly, rather than somewhere
+      downstream, and because `vs_truth` and `_video_on_imu_clock` pass it
+      through from callers that predate the consolidation.
 
     The inference is deliberately about WHERE THE FILE IS rather than what is
     in it, because that is the fact that is actually known. Sniffing the footage
-    for markers would be a second tracker running on every call and a new way to
+    for stickers would be a second tracker running on every call and a new way to
     be wrong; the directory layout already records the answer, and `data_v2/`
     exists precisely because the capture protocol changed.
-
-    Back-compatible by construction: a plain path outside `data_v2` resolves to
-    `capture.bar_path` with its own defaults, so every pre-existing call is
-    unchanged. `tests/test_video_capture.py` pins that.
     """
     if isinstance(video, dict):
         return video
 
     inferred = infer_tracker(video)
     tracker = inferred if tracker is None else tracker
+    if tracker == "markers":
+        raise ValueError(
+            "tracker='markers': the sticker-constellation referee was deleted "
+            "on 2026-08-19 (H21) — `src/vtrack/` had already replaced it as the "
+            "referee for data_v2/ on 2026-08-14 and it was scoring nothing. "
+            "Recover it with `git show 0e87f28:src/markers.py` if you need to "
+            "re-derive something it measured.")
     if tracker not in TRACKERS:
         raise ValueError(f"tracker must be one of {TRACKERS}, got {tracker!r}")
 
@@ -825,29 +846,30 @@ def resolve_path(video: str | Path | dict, tracker: str | None = None,
     #
     # **Two costs of reading the cache, and neither is hypothetical.** The CSV
     # carries the per-frame arrays and the scalars, NOT the tracker's own
-    # diagnostics (`hub`, `centre_px`, `calibration`) — ask for those and you
-    # must re-track. And a cached read does not run `markers.validate`, so the
-    # per-capture warnings it raises — the sticker-ratio warning that C32 chased,
-    # the top-of-travel warning C12 added — DO NOT FIRE. Pass `use_cache=False`
-    # or `tracked.ensure(force=True)` when you want the tracker to speak up.
+    # diagnostics (`trk`, `centre_px`, `runner_up`) — ask for those and you
+    # must re-track. And a cached read does not run `vtrack.validate`, so the
+    # per-capture warnings it raises — the `implausible` flag that catches a
+    # rigid, well-covered track that is not the bar — DO NOT FIRE. Pass
+    # `use_cache=False` or `tracked.ensure(force=True)` when you want the
+    # tracker to speak up.
     #
-    # An explicit `tracker=` that differs from the inferred one never reads the
-    # cache, because the cache is keyed by clip and not by tracker.
-    # A cache is only this tracker's if it SAYS it is (2026-08-14). The comment
-    # above notes the cache is keyed by clip and not by tracker, which was safe
-    # while the inferred tracker for a directory never changed. It does now:
-    # `data_v2/` moved from `markers` to `vtrack`, so every CSV written before
-    # that would otherwise be handed back as though `vtrack` had produced it —
+    # A cache is only this tracker's if it SAYS it is (2026-08-14). The cache is
+    # keyed by clip and not by tracker, which was safe while the inferred
+    # tracker for a directory never changed. It did on 2026-08-14: `data_v2/`
+    # moved from `markers` to `vtrack`, so every CSV written before that would
+    # otherwise have been handed back as though `vtrack` had produced it —
     # silently scoring the new referee's captures with the old referee's paths,
     # including the six squat clips it exists to fix. `tracked.write` has always
-    # recorded `# tracker = ...`; this reads it.
+    # recorded `# tracker = ...`; this reads it. **Keep this check even though
+    # one referee is left**: it is what makes a stale CSV from a retired tracker
+    # detectable at all, and the corpus has changed referee twice already.
     if use_cache and tracker == inferred:
         from . import tracked as _tracked
         hit = _tracked.read(video)
         if hit is not None and hit.get("tracker", tracker) == tracker:
             return hit
 
-    return vtrack.bar_path(video) if tracker == "vtrack" else markers.bar_path(video)
+    return vtrack.bar_path(video)
 
 
 def infer_tracker(video: str | Path) -> str:
@@ -867,7 +889,9 @@ def infer_tracker(video: str | Path) -> str:
     So a clip outside `data_v2/` now RAISES rather than falling back. That is
     deliberate: the old fallback returned `"plate"` for any unrecognised path,
     and with no template tracker left that would fail later and less clearly.
-    `markers.py` survives and is still reachable by passing `tracker="markers"`.
+    `markers.py` survived that change and was still reachable by passing
+    `tracker="markers"`. **It was deleted on 2026-08-19 (H21)**, so there is now
+    exactly one answer this function can give and one way to be outside it.
     """
     parts = {p.lower() for p in Path(video).resolve().parts}
     if any(p.startswith("data_v2") for p in parts):
@@ -875,20 +899,22 @@ def infer_tracker(video: str | Path) -> str:
     raise ValueError(
         f"{Path(video).name}: only data_v2/ footage has a referee. The plate "
         f"template tracker and the data/video/ corpus it scored were deleted "
-        f"on 2026-08-14; pass tracker='markers' explicitly, or a path dict.")
+        f"on 2026-08-14, and the sticker tracker on 2026-08-19. Pass an "
+        f"already-tracked path dict if the clip lives somewhere else.")
 
 
 def _video_quality(path: dict) -> dict:
     """The referee's own health, measured WHERE IT IS USED.
 
-    Each tracker gets the statistic that means something for it, and NaN for the
-    other, rather than one field that silently means two things. Both are
-    top-of-travel figures over `capture.TOP_FRAC`, because lockout is where both
-    referees are weakest and where C12 found the template failing while its
-    whole-clip median passed.
+    Each tracker got the statistic that means something for it, and NaN for the
+    other, rather than one field that silently means two things. Both were
+    top-of-travel figures over the same span of travel, because lockout is where
+    both referees were weakest and where C12 found the template failing while
+    its whole-clip median passed. One referee is left, so one of the two fields
+    is now always NaN — see `top_ncc` below.
 
     `top_residual_cm` is what is reported now, in centimetres because that is the
-    unit of the spec it is refereeing. Above `markers.MAX_TOP_RESIDUAL_CM` the
+    unit of the spec it is refereeing. Above `vtrack.MAX_TOP_RESIDUAL_CM` the
     fit near lockout is not good enough to referee a 1 cm target.
 
     `top_ncc` is retained as NaN rather than dropped. It was the template
@@ -900,12 +926,19 @@ def _video_quality(path: dict) -> dict:
     """
     if "residual_px" in path:
         # `top_of_travel_residual` is geometry over `height`, `residual_px` and
-        # `m_per_px_t`, so it reads a `vtrack` path as happily as a `markers`
-        # one. Only the LABEL has to distinguish them, and a path that knows its
-        # own tracker says so — including one read back from the CSV cache,
-        # whose header carries the same field.
-        top = markers.top_of_travel_residual(path)
-        return {"tracker": path.get("tracker", "markers"),
+        # `m_per_px_t`, which is why it read a `vtrack` path as happily as the
+        # `markers` path it was written for, and why it moved into `vtrack` with
+        # that module's deletion rather than being rewritten (H21).
+        #
+        # **The label used to default to "markers" for any path that did not
+        # name its own tracker, whichever tracker had actually produced it** —
+        # so a synthetic or hand-built path was reported under the name of the
+        # referee that had already been replaced. Every real path has carried a
+        # `tracker` field since 2026-08-14, cached ones included (the CSV header
+        # records it), so the default was only ever reachable from test
+        # fixtures; it is now the one referee that exists.
+        top = vtrack.top_of_travel_residual(path)
+        return {"tracker": path.get("tracker", "vtrack"),
                 "top_ncc": float("nan"),
                 "top_residual_cm": top["median_cm"]}
     # No `residual_px` means the path did not come from a constellation tracker.
@@ -950,14 +983,16 @@ def _video_on_imu_clock(result: dict, video: str | Path | dict,
     error partly inherits that and bench horizontal does not, and its validation
     is transferred from deadlift rather than measured on bench.
 
-    **Both routes work unchanged on a marker path, and that is a fact about the
-    path dicts rather than luck.** `capture.landings` reads only `t` and `height`,
-    and both trackers zero `height` at the lowest tracked point and report
-    seconds from the clip start — so landings, `capture.sync`, `capture.to_imu_time`
-    and `bench_sync` are all tracker-agnostic already. `markers.bar_path`
-    returns a superset of `capture.bar_path`'s keys for the same reason. The only
-    thing that ever had to know the difference was which tracker to call, which
-    is now `resolve_path`.
+    **Both routes worked unchanged across all three referees this project has
+    had, and that is a fact about the path dicts rather than luck.**
+    `capture.landings` reads only `t` and `height`, and every tracker zeroed
+    `height` at the lowest tracked point and reported seconds from the clip
+    start — so landings, `capture.sync`, `capture.to_imu_time` and `bench_sync`
+    were all tracker-agnostic before anyone tried. `markers.bar_path` returned a
+    superset of the template's keys and `vtrack.bar_path` returns a superset of
+    `markers.bar_path`'s, each for that reason. The only thing that ever had to
+    know the difference was which tracker to call, which is `resolve_path`, and
+    since 2026-08-19 there is one to call.
 
     What has NOT been checked, because nothing in `data_v2/` has an IMU log
     beside it: whether a deadlift landing detected on marker footage lands at
@@ -1426,14 +1461,19 @@ def vs_truth(result: dict, video: str | Path | dict,
         # from 0.70/0.35/0.13 down to 0.59/0.21/0.07. All three deadlifts fail
         # this; all seven benches pass. See capture.top_of_travel_score.
         "video_top_ncc": _q.get("top_ncc", float("nan")),
-        # Markers only, NaN for the template. The constellation cannot lose the
-        # bar the way a template can, so this is fit quality rather than a
-        # tracking failure — reported in cm because that is the unit of the spec
-        # it is refereeing. See markers.top_of_travel_residual.
+        # The constellation cannot lose the bar the way the deleted template
+        # tracker could, so this is fit quality rather than a tracking failure —
+        # reported in cm because that is the unit of the spec it is refereeing.
+        # See vtrack.top_of_travel_residual, which moved there with markers.py's
+        # deletion (H21) and is unchanged.
         "video_top_residual_cm": _q.get("top_residual_cm", float("nan")),
-        # Which referee produced the numbers above. `data/video/` has no markers
-        # and `data_v2/` is filmed for them, so this is decided by the footage.
-        "video_tracker": _q.get("tracker", "plate"),
+        # Which referee produced the numbers above. There has been exactly one
+        # since 2026-08-19 (H21) and this reads "vtrack" on every capture in the
+        # corpus; it is kept because a stored result from before then says
+        # something else, and because the field is what would make a fourth
+        # referee legible. The default named "plate", a referee deleted on
+        # 2026-08-14 — unreachable, since `_video_quality` always sets the key.
+        "video_tracker": _q.get("tracker", "vtrack"),
         # The referee, checked against the same table as the reconstruction.
         # Non-empty means this capture's video vertical scale is wrong and its
         # vertical numbers — video_rom_cm, pipeline_v_rms, raw_v_rms — carry it.

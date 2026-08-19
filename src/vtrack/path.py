@@ -346,3 +346,118 @@ def validate(path: dict, video) -> None:
         warnings.warn(
             f"{name}: only {path['coverage'] * 100:.1f}% of frames tracked.",
             stacklevel=2)
+
+
+# ----------------------------------------------- the referee's own fit --
+# `TOP_FRAC`, `MAX_TOP_RESIDUAL_CM` and `top_of_travel_residual` MOVED HERE FROM
+# `markers.py` ON 2026-08-19 (H21), UNCHANGED. `markers.py` was deleted when
+# `vtrack` became the only tracker that can run, and this was its one live
+# dependency: `metrics._video_quality` calls it on every scored capture,
+# whichever tracker produced the path. It is geometry over `height`,
+# `residual_px` and `m_per_px_t` and never touched a constellation, so it reads
+# a `vtrack` path exactly as it read a `markers` one — which is why the move is
+# numerically inert and was gated as such.
+#
+# `TOP_FRAC` lived in `capture.py` so that BOTH trackers meant the same span of
+# travel by "at lockout" and their top-of-travel figures stayed comparable. With
+# one referee left there is nothing to keep comparable, so it belongs to the
+# referee that measures it. The value is unchanged.
+#
+# `validate` above does NOT gate on `MAX_TOP_RESIDUAL_CM`, where `markers.validate`
+# did. That is deliberately left alone rather than carried over: adding a warning
+# would be a behaviour change, and H21 was a consolidation gated on moving no
+# number. `metrics.vs_truth` still REPORTS the figure as `video_top_residual_cm`.
+TOP_FRAC = 0.15       # "at lockout" = the top this fraction of vertical travel
+
+MAX_TOP_RESIDUAL_CM = 0.5   # the referee's own fit error, where it is worst
+
+
+def top_of_travel_residual(path: dict, frac: float = TOP_FRAC) -> dict:
+    """How well the rigid model fits WHERE THE FIT IS WORST, not on average.
+
+    The exact counterpart of `capture.top_of_travel_score` — the plate template's
+    version, deleted with that tracker on 2026-08-14 — and it exists for the
+    same reason that one did. This project has now been bitten five times by an
+    aggregate that passes while the thing fails exactly where it matters —
+    milestones 1-6, C8's peak-height threshold, C10's clip-composition artefact,
+    C12's whole-clip NCC median, and this. **A referee needs checking where it
+    is used.**
+
+    `frac` was `capture.TOP_FRAC` until H21 (2026-08-19), so that "at lockout"
+    meant the same span of travel for both trackers and the two remained
+    comparable. There is one tracker now and the constant moved here with the
+    function; the value did not change.
+
+    What it found, measured 2026-08-02 over all five `data_v2` captures THEN
+    HELD, through `markers.py`, which was the referee at the time and has since
+    been deleted (H21). The rows are history and cannot be re-derived — three of
+    the five captures no longer exist and the tracker that produced them is
+    gone — but the SHAPE is what the function is for. The whole-clip median is
+    the quantity the old gate tested:
+
+        capture                whole    top 15%    ratio
+        deadlift_150x5         0.519      0.775      1.5
+        deadlift_160x5         0.611      0.724      1.2
+        deadlift_190x1         0.150      1.595     10.6
+        bench_85x6             1.096      1.311      1.2
+        bench_110x1            1.066      1.075      1.0
+
+    all in px, and the third row is the point. **`deadlift_190x1` has the
+    lowest whole-clip residual of the five and the highest at lockout** — the
+    old gate ranked it the best-fitting capture we hold while it was the worst
+    where the measurement is taken. It passed at 0.150 against a 1.5 px limit
+    with a tenfold margin, and its lockout sits at 1.595, over the line.
+
+    **But read the pixels in metres before alarming anyone**, which is why this
+    reports both. Converted through each frame's own scale the same column is
+    0.177 / 0.168 / **0.333** / 0.279 / 0.226 cm. The worst lockout fit in the
+    set is a third of the 1 cm spec, so the stratification is real and the
+    tracker is still comfortably inside tolerance — which is exactly the
+    distinction C15 drew against the template, and it survives being measured
+    properly. The template does not degrade, it *fails*: 100% of its top-10 cm
+    frames fall below `capture.GOOD_SCORE`.
+
+    Why the residual degrades with height at all: the marker is further from the
+    camera at lockout and subtends fewer pixels, so its centroid is noisier.
+    Correlation with height is +0.24 to +0.93 across the five.
+
+    Conservative by about sqrt(3). The residual is the misfit of three markers
+    to a rigid triangle; the CENTROID those markers determine is better
+    conditioned than any one of them. So this over-states the position error,
+    and is the right way round for a gate.
+
+    **That last paragraph was written for `markers.py`'s three-marker similarity
+    fit and does not describe this module's `residual_px` (H21, 2026-08-19).**
+    Here the residual is the rms of the eight-slot lattice fit at a held radius
+    (`track.summarise`), so the averaging is over up to eight points rather than
+    three and the conditioning argument is different in size, not in direction:
+    a centre determined by N points is still better conditioned than any one of
+    them, so this still over-states the position error. The sqrt(3) is NOT a
+    number to quote for a `vtrack` path; nobody has measured the equivalent
+    factor for the lattice fit. It is kept because it is the derivation of a
+    threshold — `MAX_TOP_RESIDUAL_CM` — that is still in force.
+    """
+    h, r = path["height"], path["residual_px"]
+    mpp = path["m_per_px_t"]
+    ok = np.isfinite(h) & np.isfinite(r)
+    if not ok.any():
+        return {"median_px": float("nan"), "median_cm": float("nan"),
+                "whole_px": float("nan"), "whole_cm": float("nan"),
+                "ratio": float("nan"), "n": 0}
+
+    top = np.nanmax(h[ok])
+    span = top - np.nanmin(h[ok])
+    near = ok & (h > top - frac * span)
+    cm = r * mpp * 100.0
+
+    whole_px = float(np.nanmedian(r[ok]))
+    med_px = float(np.nanmedian(r[near])) if near.any() else float("nan")
+    return {
+        "median_px": med_px,
+        "median_cm": float(np.nanmedian(cm[near])) if near.any() else float("nan"),
+        "whole_px": whole_px,
+        "whole_cm": float(np.nanmedian(cm[ok])),
+        "ratio": med_px / whole_px if whole_px > 0 else float("nan"),
+        "n": int(near.sum()),
+    }
+

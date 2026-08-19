@@ -33,8 +33,9 @@ must not inherit a segmentation error from the thing it exists to check. See
 What the cache does NOT protect you from
 ----------------------------------------
 **A cached path is only valid for the tracker code that produced it.** Change
-`markers.py` or `capture.py` and every CSV is stale, silently, in exactly the way
-this project keeps getting hurt by. The header records the tracker, the git
+anything under `src/vtrack/` — or `capture.py`, which supplies the lift and the
+plate — and every CSV is stale, silently, in exactly the way this project keeps
+getting hurt by. The header records the tracker, the git
 commit and the time, so staleness is visible if you look — but nothing enforces
 it. `refresh` and `force=True` exist for that; use them after any tracker
 change, and re-render the figures.
@@ -121,21 +122,38 @@ def csv_path(video: str | Path) -> Path:
     return _dataset(video) / "tracked" / f"{Path(video).stem}.csv"
 
 
-# Which subdirectory of `analysis/tracking/` a dataset's figures go in. The two
-# datasets are refereed by DIFFERENT TRACKERS — `data/` by capture.py's plate
-# template, `data_v2/` by markers.py's conic — so interleaving their figures in
-# one directory puts two incomparable things side by side under names that sort
-# by lift. Split so that browsing a directory means browsing one referee.
-DATASET_DIR = {"data": "v1", "data_v2": "v2"}
+# Which subdirectory of `analysis/tracking/` a dataset's figures go in.
+#
+# **"v2" NAMES THE CORPUS, NOT THE TRACKER, and this comment used to say the
+# opposite (corrected 2026-08-19, H21).** It read that `data/` was refereed by
+# the plate template and `data_v2/` by "markers.py's conic", so the split was
+# one referee per directory. That was true when C31 wrote it and has been false
+# twice over since: `data/` and its tracker were deleted on 2026-08-14, and
+# `data_v2/` has been refereed by `src/vtrack/` since the same day, so
+# `analysis/tracking/v2/` has been holding vtrack's figures under a name the
+# docs glossed as the markers' corpus. The name is still right — it is the
+# directory `data_v2/` maps to — and the figures were NOT moved: they are the
+# per-capture review gallery for the live corpus, keyed by dataset, and
+# renaming them would break every path recorded in `TASKS.md` and on the board
+# to fix a caption. `analysis/tracking/v2_rebuild/` is a different thing and
+# stays where it is: F1's dated report on the rebuild, with its own frozen copy
+# of the tracker code, not an output directory anything writes to now.
+#
+# The mapping is kept rather than collapsed to the identity because
+# `figure_path` falls back to the dataset's own directory name, so a third
+# corpus lands somewhere obvious instead of silently joining this one.
+DATASET_DIR = {"data_v2": "v2"}
 
 
 def figure_path(video: str | Path, root: Path | None = None) -> Path:
-    """Where the review figure for `video` lives, `analysis/tracking/<v1|v2>/`.
+    """Where the review figure for `video` lives, `analysis/tracking/v2/`.
 
-    Split by dataset (C31, 2026-08-07) because the two datasets are scored by
-    different referees and a shared directory hid that. A dataset not in
-    `DATASET_DIR` falls back to its own directory name rather than guessing, so
-    a third corpus lands somewhere obvious instead of silently joining v1.
+    Split by dataset (C31, 2026-08-07) because the two datasets then held were
+    scored by different referees and a shared directory hid that. One corpus and
+    one referee are left; the split survives it because the directory names the
+    DATASET. A dataset not in `DATASET_DIR` falls back to its own directory name
+    rather than guessing, so a third corpus lands somewhere obvious instead of
+    silently joining this one.
     """
     root = root or Path(__file__).resolve().parents[1] / "analysis" / "tracking"
     name = _dataset(video).name

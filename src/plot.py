@@ -1232,128 +1232,16 @@ def plot_v2_video_rom(data: dict):
     return fig
 
 
-def plot_v2_deadlift_conic(data: dict):
-    """The 8-sticker deadlifts: conic marker referee against the pipeline. C27.
+# `plot_v2_deadlift_conic` was HERE and was deleted on 2026-08-19 (H21) with
+# `src/markers.py` and its driver `run.py --dlconic`. It drew C27's figure —
+# the three 8-sticker deadlifts scored by the conic marker referee against the
+# reconstruction, `analysis/42_conic_deadlift.png`. **The figure is not
+# deleted**: it is C27's record and it stands. What is gone is the ability to
+# regenerate it, and that went the moment its referee did; regenerating it
+# through `vtrack` would produce a different measurement under an old figure's
+# name, which is the mistake G5 named. Recover the function with
+# `git show 0e87f28:src/plot.py` if a marker-era figure ever has to be redrawn.
 
-    `data` maps capture stem -> dict with `t_vid`, `height` (m, IMU clock),
-    `bounds`, `t`, `per_rep` (from `metrics.vs_truth`), `h_rms`, `null_h_rms`,
-    `beats_null`, `imu_rom_cm`, `n_rim`, `coverage`, `resid_px` and
-    `decile_markers` (median markers matched per decile of travel, floor first).
-
-    Four rows, and the third is the one to read
-    --------------------------------------------
-    Row 1 puts both instruments' VERTICAL on one clock. They should lie on top
-    of each other; where they do not, one of them is wrong and the shading says
-    which reps the IMU thinks it is in.
-
-    Row 2 is per-rep vertical ROM, pipeline against video. This is the axis the
-    reconstruction has always been decent on, and it is here as the control:
-    agreement here is necessary, not sufficient, and `capture.VERTICAL_ROM_M`
-    admits both instruments even when they disagree by 20% (C24).
-
-    Row 3 is HORIZONTAL, per rep, video against pipeline, with the flat-line
-    null drawn as well. **This is the project's actual question** — the display
-    stretches this axis 4x, the spec is ~1 cm, and `beats_null` below 1.0 means
-    the reconstruction is worse than drawing no fore-aft motion at all. A
-    reconstruction can pass row 2 and fail this completely; six of the ten
-    captures scored before this one did exactly that.
-
-    Row 4 is the referee's own health, which C12 is the reason for. It plots
-    markers matched against decile of travel. The plate TEMPLATE loses the bar
-    at lockout — 166/166 frames below `capture.GOOD_SCORE` — so every deadlift
-    number in P2 is measured through a referee that fails exactly where the
-    measurement is taken. The conic tracker's failure is at the FLOOR instead,
-    which is the opposite end and matters for a different reason: ROM is
-    top-minus-bottom, so a bad bottom inflates it.
-    """
-    stems = list(data)
-    n = len(stems)
-    fig, axes = plt.subplots(4, n, figsize=(5.2 * n, 15.5), squeeze=False)
-
-    for col, stem in enumerate(stems):
-        d = data[stem]
-        t_vid = np.asarray(d["t_vid"])
-        hv = np.asarray(d["height"]) * 100.0
-
-        # --- row 1: both instruments' vertical, one clock -------------------
-        ax = axes[0][col]
-        for k, (a, b) in enumerate(d["bounds"]):
-            ax.axvspan(d["t"][a], d["t"][b - 1], color="0.88", zorder=0,
-                       label="IMU rep window" if k == 0 else None)
-        ax.plot(t_vid, hv - np.nanmin(hv), lw=1.1, color="tab:blue",
-                label="video (conic markers)")
-        for k, r in enumerate(d["per_rep"]):
-            if not r.get("covered"):
-                continue
-            c = np.asarray(r["curve_pipeline"])
-            tt = np.linspace(d["t"][d["bounds"][k][0]], d["t"][d["bounds"][k][1] - 1],
-                             len(c))
-            ax.plot(tt, (c[:, 1] - c[:, 1].min()) * 100, lw=1.1, color="tab:red",
-                    label="reconstruction" if k == 0 else None)
-        ax.set_title(f"{stem}\nn_rim {d['n_rim']}   coverage {d['coverage']*100:.1f}%"
-                     f"   residual {d['resid_px']:.2f} px", fontsize=9)
-        ax.set_ylabel("height above lowest, cm", fontsize=8)
-        ax.legend(fontsize=6.5, loc="upper right")
-
-        # --- row 2: per-rep vertical ROM ------------------------------------
-        ax = axes[1][col]
-        vid_rom = [r["video_rom_cm"] for r in d["per_rep"] if r.get("covered")]
-        imu_rom = d["imu_rom_cm"]
-        x = np.arange(len(vid_rom))
-        ax.bar(x - 0.2, imu_rom[:len(vid_rom)], 0.4, label="reconstruction",
-               color="tab:red", alpha=.8)
-        ax.bar(x + 0.2, vid_rom, 0.4, label="video", color="tab:blue", alpha=.8)
-        ax.axhspan(53, 61, color="tab:green", alpha=.12, zorder=0,
-                   label="VERTICAL_ROM_M band")
-        ax.set_ylabel("per-rep vertical ROM, cm", fontsize=8)
-        ax.set_xlabel("rep", fontsize=8)
-        ax.legend(fontsize=6.5)
-
-        # --- row 3: HORIZONTAL, the actual question -------------------------
-        ax = axes[2][col]
-        for k, r in enumerate(d["per_rep"]):
-            if not r.get("covered"):
-                continue
-            v = np.asarray(r["curve_video"]) * 100
-            p = np.asarray(r["curve_pipeline"]) * 100
-            ax.plot(v[:, 0] - v[0, 0], v[:, 1] - v[:, 1].min(), lw=1.0,
-                    color="tab:blue", alpha=.75,
-                    label="video" if k == 0 else None)
-            ax.plot(p[:, 0] - p[0, 0], p[:, 1] - p[:, 1].min(), lw=1.0,
-                    color="tab:red", alpha=.75,
-                    label="reconstruction" if k == 0 else None)
-        ax.axvline(0.0, color="0.4", ls="--", lw=1.0, label="flat-line null")
-        beats = d["beats_null"]
-        verdict = "BEATS null" if beats >= 1.0 else "WORSE than null"
-        ax.set_title(f"horizontal  h_rms {d['h_rms']:.2f} cm   null "
-                     f"{d['null_h_rms']:.2f}   beats_null {beats:.2f}  ({verdict})",
-                     fontsize=8.5,
-                     color="tab:green" if beats >= 1.0 else "tab:red")
-        ax.set_xlabel("fore-aft, cm (spec ~1 cm)", fontsize=8)
-        ax.set_ylabel("height, cm", fontsize=8)
-        ax.legend(fontsize=6.5)
-
-        # --- row 4: where the referee is strong ----------------------------
-        ax = axes[3][col]
-        dm = np.asarray(d["decile_markers"], dtype=float)
-        ax.bar(np.arange(len(dm)), dm, color="tab:purple", alpha=.75)
-        ax.axhline(d["n_rim"], color="0.3", ls="--", lw=1.0,
-                   label=f"all {d['n_rim']} found")
-        ax.set_xlabel("decile of travel   (0 = floor, 9 = lockout)", fontsize=8)
-        ax.set_ylabel("markers matched (median)", fontsize=8)
-        ax.legend(fontsize=6.5)
-
-    for ax in axes.ravel():
-        ax.tick_params(labelsize=7)
-        ax.grid(alpha=.25)
-
-    fig.suptitle(
-        "The first 8-sticker captures: conic marker referee vs the reconstruction (C27)\n"
-        "Row 3 is the question this project exists to answer; row 4 says where "
-        "the referee can be believed",
-        fontsize=11)
-    fig.tight_layout(rect=(0, 0, 1, 0.965))
-    return fig
 
 
 def plot_squat_pause_segmentation(data: dict):

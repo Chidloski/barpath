@@ -148,15 +148,22 @@ Requires `ffmpeg` on PATH. No new Python dependencies.
 
 ### Which referee scores a capture (C17, 2026-08-02)
 
-`metrics.vs_truth` and `metrics.momentum_closure` take either tracker. You
-normally say nothing and it is inferred from where the clip lives:
+**REWRITTEN 2026-08-19 (H21): THERE IS ONE REFEREE, `src/vtrack/`.** This
+section described a choice between two trackers and then three. Both of the
+others have been deleted — the plate template with the v1 corpus on 2026-08-14
+(F1), `markers.py` on 2026-08-19 — so `resolve_path` no longer dispatches, and
+`metrics.TRACKERS` is a one-element tuple whose job is to make a wrong
+`tracker=` fail loudly instead of silently.
+
+`metrics.vs_truth` and `metrics.momentum_closure` take a clip or a tracked path.
+You normally say nothing and the referee is inferred from where the clip lives:
 
 ```python
-metrics.vs_truth(result, "data/video/deadlift_180x3_20260728.mov")     # template
-metrics.vs_truth(result, "data_v2/video/deadlift_150x5_20260801.mov")  # markers
+metrics.vs_truth(result, "data_v2/video/deadlift_160x6_1_20260804.mov")
 
-metrics.vs_truth(result, clip, tracker="markers")   # or say so explicitly
-metrics.vs_truth(result, markers.bar_path(clip))    # or hand it a tracked path
+metrics.vs_truth(result, clip, tracker="vtrack")   # or say so explicitly
+metrics.vs_truth(result, vtrack.bar_path(clip))    # or hand it a tracked path
+metrics.vs_truth(result, clip, tracker="markers")  # ValueError: was deleted
 ```
 
 The third form is how you track once and score several ways without decoding
@@ -165,20 +172,27 @@ twice. `pipeline.find_video` pairs a capture inside its own dataset, so a
 
 **The inference is about the directory, not the footage.** `data_v2/` exists
 because the capture protocol changed, so the layout already records the answer;
-sniffing frames for markers would be a second tracker on every call and a new way
-to be wrong. A capture cannot be scored by the tracker its footage was not shot
-for — the template does not reliably find a marker-less bench plate, and the
-constellation cannot find stickers nobody applied.
+sniffing frames for stickers would be a second tracker on every call and a new
+way to be wrong. A clip outside `data_v2/` RAISES rather than falling back,
+because the referee it would have fallen back to no longer exists. (The
+principle it enforced still holds and is why the inference was built: a capture
+cannot be scored by the tracker its footage was not shot for — the template did
+not reliably find a marker-less bench plate, and a constellation cannot find
+stickers nobody applied.)
 
 `vs_truth` reports `video_tracker`, and `video_top_ncc` **or**
 `video_top_residual_cm` with NaN for the other, because one field that silently
 means two things is a failure mode this project already has a collection of.
+With one referee left `video_top_ncc` is now always NaN — it was the template's
+statistic — and `video_tracker` reads `"vtrack"` on every capture in the corpus.
+The fields are kept rather than collapsed: a stored result from before the
+consolidation says something else, and they are what would make a fourth referee
+legible.
 
-**Nothing has yet been scored through the markers**, because no `data_v2`
-capture has an IMU log beside it. The plumbing is gated; the agreement is not.
-Specifically unmeasured: whether a landing found on marker footage falls at the
-same instant as one on template footage, which matters at the deadlift sync's
-13.5 ms.
+*The paragraph that followed said "nothing has yet been scored through the
+markers, because no `data_v2` capture has an IMU log beside it". Six arrived on
+2026-08-03 and the whole corpus is `data_v2` now, so it went out of date within
+two days and is deleted rather than kept.*
 
 ---
 
@@ -344,7 +358,21 @@ Roughly in value-per-effort order.
 
 ---
 
-# The sticker tracker — `markers.py`
+# The sticker tracker — `markers.py` (DELETED 2026-08-19)
+
+**THIS MODULE NO LONGER EXISTS. THE SECTION IS KEPT AS THE RECORD OF WHAT IT
+ESTABLISHED, WHICH IS THE PART THAT WAS WORTH KEEPING (H21, 2026-08-19).** It
+was the referee for `data_v2/` from 2026-08-01 until F1's rebuild replaced it on
+2026-08-14, after which it refereed nothing and was reachable only by passing
+`tracker="markers"` — a second answer to a question that should have one. Read
+everything below in the past tense; nothing in it can be re-run.
+
+    git show 0e87f28:src/markers.py        # the module
+    git show 0e87f28:tests/test_markers.py # its gates
+
+Its one live dependency, `top_of_travel_residual` and `MAX_TOP_RESIDUAL_CM`,
+moved into `vtrack.path` unchanged, along with `capture.TOP_FRAC`. That move was
+gated on every capture in the corpus scoring bit-identically, and it did.
 
 A second referee, added 2026-08-01 (C15) for the `data_v2/` captures, which are
 filmed from a tripod with retroreflective markers on the plate: three near the
@@ -499,6 +527,8 @@ bench — real but small, and much smaller than the tracking failures it sits
 alongside.
 
 Gated by `tests/test_markers.py`, which skips cleanly when `data_v2/` is absent.
+*(Deleted with the module on 2026-08-19; by then its gates were algebraic only —
+`git show 0e87f28:tests/test_markers.py`.)*
 
 **The fit residual rises with height, and is reported here so it is not
 discovered later as a surprise.** Pooled over the three deadlifts it runs 0.16 px
@@ -516,7 +546,12 @@ gate, "which passes because it tests the whole-clip median". C17 stopped writing
 that down and fixed it (2026-08-02).** `markers.top_of_travel_residual` measures
 the fit over `truth.TOP_FRAC` of travel — the same span `truth.top_of_travel_
 score` uses, so the two referees stay comparable — `validate` warns on it, and
-`tests/test_markers.py` gates on it per capture.
+`tests/test_markers.py` gates on it per capture. *(As of 2026-08-19 the function
+and its threshold are `vtrack.top_of_travel_residual` and
+`vtrack.MAX_TOP_RESIDUAL_CM`, gated by `tests/test_vtrack.py`, over
+`vtrack.path.TOP_FRAC` — same code, same value. The `validate` warning did NOT
+come with them: adding one would have been a behaviour change and H21 was gated
+on moving no number. `metrics.vs_truth` reports the figure regardless.)*
 
 Two things fell out of measuring it properly, and the second is the reassuring
 one. **`deadlift_190x1` has the lowest whole-clip residual of the five (0.150 px)
@@ -528,8 +563,9 @@ taken. That is C12's shape exactly, in the module written to fix C12. And
 1 cm spec. The stratification is real; the tracker is still comfortably usable
 at its worst point, which is precisely the claim C15 made against the template
 and it survives being measured properly. The gate is therefore in **centimetres
-against the spec** rather than pixels — `markers.MAX_TOP_RESIDUAL_CM`, set at
-half the accuracy the referee is asked to judge — with the per-capture values
+against the spec** rather than pixels — `markers.MAX_TOP_RESIDUAL_CM`, now
+`vtrack.MAX_TOP_RESIDUAL_CM` and still 0.5 cm, set at half the accuracy the
+referee is asked to judge — with the per-capture values
 pinned at 25% headroom so they can only improve.
 
 **It tracks at full resolution and holds the whole clip, so mind the memory.**
@@ -623,9 +659,11 @@ and IMU log, gitignored and unrecoverable. `data_v2` is four bench captures now.
 
 # The eight-sticker tracker — `src/vtrack/`
 
-**This is the referee for `data_v2/` as of 2026-08-14 (F1).** It replaces
-`markers.py` there, and `markers.py` above is untouched, undeleted, and still
-reachable by passing `tracker="markers"` — everything recorded for it stands.
+**This is the referee for `data_v2/` as of 2026-08-14 (F1), and since
+2026-08-19 (H21) it is the only tracker in the repo.** It replaced `markers.py`,
+which was left untouched and reachable by `tracker="markers"` for five days and
+then deleted — everything recorded for it above stands as history and none of it
+can be re-run.
 
 ## Why it exists
 
@@ -699,9 +737,18 @@ video fore-aft is **4.4-6.0 cm on all six deadlifts** against C27's independent
     # key-compatible with truth.bar_path and markers.bar_path:
     #   t, x, height, residual_px, m_per_px, m_per_px_t, travel_m, coverage
 
-`metrics.resolve_path` reaches it automatically for anything under `data_v2/`.
-A cached CSV is only reused when its header records the same tracker, so the
-paths `markers.py` wrote are re-tracked rather than silently reused.
+`metrics.resolve_path` reaches it automatically for anything under `data_v2/`,
+which is the whole corpus. A cached CSV is only reused when its header records
+the same tracker, so the paths `markers.py` wrote were re-tracked rather than
+silently reused — that check is kept now that one tracker is left, because it is
+what makes a stale CSV from a retired referee detectable at all.
+
+`vtrack.top_of_travel_residual` and `vtrack.MAX_TOP_RESIDUAL_CM` live here since
+H21 (2026-08-19); `metrics._video_quality` calls the first on every scored
+capture and reports it as `video_top_residual_cm`. Note `vtrack.validate` does
+NOT warn on it, where `markers.validate` did — carrying that over would have
+been a behaviour change and H21 was gated on moving no number. Gated by
+`tests/test_vtrack.py`.
 
 Evidence, figures and the full comparison against the IMU pipeline:
 `analysis/tracking/v2_rebuild/REPORT.md`.

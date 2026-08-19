@@ -10,16 +10,23 @@ tracker was sitting on top of and which the rest of the project still needs:
   * what a plausible rep looks like vertically (`VERTICAL_ROM_M`) and fore-aft
     (`FORE_AFT_ACCEL_MAX`) — the only external bounds bench and squat have;
   * decoding a clip to greyscale frames;
-  * `find_plate`, a single-frame rim detector, kept because `markers.py` uses it
-    as an independent cross-check on its own scale — NOT because anything tracks
-    with it any more;
+  * `find_plate`, a single-frame rim detector, which `markers.py` used as an
+    independent cross-check on its own scale — NOT because anything tracks with
+    it. **`markers.py` was deleted on 2026-08-19 (H21), so `find_plate` now has
+    NO CALLER**, and neither do `sticker_plate_diameter`,
+    `STICKER_PLATE_DIAMETER_M` and `MIN_TRAVEL_M` (that last one already had
+    none). They are recorded as orphaned rather than deleted in the same pass:
+    removing them is a separate judgement about what this module is for, and
+    H21 was scoped to retiring a REFEREE. Nothing can score with any of them —
+    a single-frame rim detector is not a tracker — so leaving them costs
+    correctness nothing;
   * **`landings`, `sync` and `to_imu_time` — the deadlift clock match**, which
     is the best-validated sync in the project (video landings against IMU floor
     impacts, offset AND slope, 9-19 ms residual) and is used by every deadlift
     comparison `metrics.py` makes.
 
-**Nothing here tracks a bar.** `src/vtrack/` is the referee for `data_v2/`, and
-`markers.py` remains reachable as `tracker="markers"`. The template tracker's
+**Nothing here tracks a bar.** `src/vtrack/` is the referee for `data_v2/` and,
+since 2026-08-19, the only tracker in the repo. The template tracker's
 own record — `bar_path`, `SEEDS`, `GOOD_SCORE`, `top_of_travel_score`, and C12's
 finding that it lost the plate at lockout on 166/166 frames — is in the git
 history and in `TASKS.md`; it is not reproducible now, because the footage it
@@ -466,7 +473,11 @@ def find_plate(frame: np.ndarray, radii=range(40, 110, 4)) -> tuple[int, int, in
 
 MIN_TRAVEL_M = 0.10   # a tracked barbell moves. Less than this means it did not.
 
-TOP_FRAC = 0.15       # "at lockout" = the top this fraction of vertical travel
+# `TOP_FRAC` MOVED TO `vtrack.path` ON 2026-08-19 (H21). It lived here so that
+# both trackers meant the same span of travel by "at lockout" and their
+# top-of-travel figures stayed comparable; with one referee left it belongs to
+# the referee that measures it, and its only consumer moved there with
+# `top_of_travel_residual`. The value did not change.
 
 
 def landings(path: dict, floor_m: float = 0.05, refractory_s: float = 1.5,

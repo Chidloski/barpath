@@ -1208,7 +1208,9 @@ mechanism. Not proven: testing it needs footage that tracks at lockout.
 retroreflective markers on the plate — three near the rim about a third of the
 way round from each other, one on the bar's end cap. **No IMU data**; the
 session did not produce any, so these are video-only and `data_v2/video_only/`
-is named for it. `src/markers.py` tracks them.
+is named for it. `src/markers.py` tracked them — **the module was deleted on
+2026-08-19 (H21), five days after `src/vtrack/` replaced it as the referee, so
+every figure in this section is history and none of it can be re-rendered.**
 
 `35_markers_detection.png` — what is detected and that it survives lockout.
 Columns: the plate at its lowest and at lockout with the fitted constellation
@@ -1285,8 +1287,12 @@ which the scatter falsifies: median fit residual runs 0.16 px at the floor to
 whole-clip median (0.15 px there) and still passes.
 
 *That last clause was a defect being written down rather than fixed, and C17
-fixed it on 2026-08-02.* `markers.top_of_travel_residual` now measures the fit
-over the top `truth.TOP_FRAC` of travel and `tests/test_markers.py` gates on it.
+fixed it on 2026-08-02.* `markers.top_of_travel_residual` measured the fit
+over the top `truth.TOP_FRAC` of travel and `tests/test_markers.py` gated on it.
+*(Both moved on 2026-08-19 when `markers.py` was deleted: the function and its
+threshold are `vtrack.top_of_travel_residual` and `vtrack.MAX_TOP_RESIDUAL_CM`,
+unchanged, gated by `tests/test_vtrack.py`. `truth.TOP_FRAC` became
+`capture.TOP_FRAC` and then `vtrack.path.TOP_FRAC`; the value never moved.)*
 Measuring it across all five captures rather than the three deadlifts sharpened
 the finding: **`deadlift_190x1` is the best capture held by the old statistic and
 the worst by the new one** — 0.150 px whole-clip against 1.595 px at lockout,
@@ -1547,7 +1553,18 @@ it, and on the two mis-synced captures window 0 had been reporting 2.4 and
 
 ## 42 — the first 8-sticker footage: conic referee vs the reconstruction (C27, 2026-08-04)
 
-`python run.py --dlconic` -> `analysis/42_conic_deadlift.png`. Three deadlifts,
+`python run.py --dlconic` -> `analysis/42_conic_deadlift.png`.
+
+**THE DRIVER IS GONE AS OF 2026-08-19 (H21) AND THIS FIGURE CANNOT BE
+REGENERATED. THE FIGURE ITSELF STANDS.** `--dlconic` was the last caller of
+`markers.bar_path` anywhere in the repo, so it was deleted with that module when
+`src/vtrack/` became the only tracker that can run; `plot.plot_v2_deadlift_conic`
+went with it. It was deliberately NOT repointed at `vtrack`: that would produce
+a different measurement under an old figure's name, which is exactly the mistake
+G5 named. Recover both with `git show 0e87f28:run.py` and
+`git show 0e87f28:src/plot.py` if a marker-era figure ever has to be redrawn.
+
+Three deadlifts,
 `deadlift_160x6_1`, `_2` and `deadlift_185x3`, 15 reps. Everything is measured
 through `layout="auto"` — the path a caller gets by default — because C27's
 whole finding is that `auto` had been silently taking the wrong one.
@@ -2521,7 +2538,55 @@ travel and ordinary raw drift, and straps do not explain it. See TASKS.md H20.
 
 ---
 
-*Numbering: 47 through 70 are taken. The next free number is 71. **52
+## 72 — the deadlift impulse: a pre-pull rest anchor (H22, 2026-08-19)
+
+`72_deadlift_rest_anchor.py`, with its `.json` committed beside it. Owner's
+task: use the impulse, or overlap the reps to find a rest period; the bounces
+decay and the watch barely moves during the ringing. **One of the three works.**
+
+*n* = 8 deadlifts, 36 reps. Three excluded by hand and named every time:
+`160x6_1_20260818` (straps, H20), `170x4_3` (22.8% clock drift, G3),
+`210x1_20260815` (miscounts a single, H15).
+
+* **A — one landing in full.** The bounces decay (median peak ratio 0.83, 13-26
+  peaks, settle 0.61 s) and a ~1 s rest PERIOD follows the single sample
+  `segment.rest_instants` returns.
+* **A2 — the reconstruction claims ~1 m/s of horizontal velocity while the bar
+  is provably flat on the floor.** Visible with no video in the frame.
+* **B — the anchor C29's frame was missing exists**, and is quieter than every
+  rest that frame already uses, on **9 of 9** deadlifts (0.04-0.71 against
+  0.17-7.15).
+* **C — the coverage blocker, closed.** 23 of 36 reps -> 31. Shipping 2.78 cm
+  (`beats_null` 0.68) · C29 2.00 (0.95, 23 reps, null inflated 1.28x) ·
+  **H22 period frame + period-averaged dv 2.14 (0.84, 31 reps, null 0.97x)**.
+  H19's null-inflation confound is REMOVED rather than inherited, so 0.68 ->
+  0.84 is like-for-like where C29's 0.68 -> 0.95 was not.
+* **D — neither change helps alone** (2.98 / 2.70 / 2.98 / 2.14). C29's own
+  shape again.
+* **E — "the watch barely moves during the ringing" CANNOT be spent.** Zero net
+  displacement 11.30 cm, clamped horizontal velocity 4.76, against C29's 2.00.
+  Step 7 already absorbs a constant velocity error exactly, so the absolute
+  statement is invisible to the metric; imposing it inside one window
+  manufactures a kink, which is the shape C29 exists to remove. The window also
+  starts at impact ONSET, where the bar is still moving at 0.4-1.0 m/s.
+* **F — the decay buys nothing.** A per-landing adaptive width gives 2.17
+  against 2.14 for a flat constant.
+
+**Overlapping the windows loses at every width** (2.93 against 2.14) — it breaks
+the per-rep INDEPENDENCE C29 showed is load-bearing. And the **last** rep of a
+set can never get a rest-to-rest window, because the lifter releases the bar;
+three independent detectors agree, and it is gated.
+
+Recommendation: `oracle.jump_period_windows` supersedes `jump_rest_windows` as
+the best deadlift candidate, on coverage and the removed confound rather than on
+accuracy, which is within noise. **Ship neither.** See TASKS.md H22 and
+`analysis/H22_STATE.md`.
+
+---
+
+*Numbering: 47 through 72 are taken. The next free number is 73 — H21
+(retiring `markers.py`) claimed nothing, because it moved no number and had
+nothing to draw. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

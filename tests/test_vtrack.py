@@ -37,10 +37,58 @@ def test_data_v2_infers_vtrack():
     assert metrics.infer_tracker("data_v2/video/deadlift_160x6_1.mov") == "vtrack"
     with pytest.raises(ValueError, match="only data_v2/ footage has a referee"):
         metrics.infer_tracker("data/video/squat_130x5.mov")
-    assert "vtrack" in metrics.TRACKERS
-    # markers.py is NOT deleted and stays reachable by name.
-    assert "markers" in metrics.TRACKERS
-    assert "plate" not in metrics.TRACKERS
+    assert metrics.TRACKERS == ("vtrack",)
+
+
+def test_no_other_tracker_can_be_asked_for():
+    """`markers` is not a tracker any more, and asking must say so.
+
+    Until 2026-08-19 (H21) `markers.py` was reachable by name. It had refereed
+    nothing since F1's rebuild replaced it on 2026-08-14, and a referee that
+    can still be selected is a second answer to the same question — the very
+    thing `TRACKERS` exists to stop being ambiguous. The error names the way to
+    recover the module, because the finding trail matters more than the code.
+    """
+    with pytest.raises(ValueError, match="was deleted"):
+        metrics.resolve_path("data_v2/video/deadlift_160x6_1.mov",
+                             tracker="markers")
+    with pytest.raises(ValueError, match="must be one of"):
+        metrics.resolve_path("data_v2/video/deadlift_160x6_1.mov",
+                             tracker="plate")
+
+
+def test_top_of_travel_residual_sees_what_a_whole_clip_median_cannot():
+    """The gate discriminates — asserted, not assumed.
+
+    MOVED HERE FROM `tests/test_markers.py` ON 2026-08-19 (H21) with the
+    function it gates, unchanged. `metrics._video_quality` calls it on every
+    scored capture, so it is this referee's gate now whoever wrote it.
+
+    Algebraic, so it runs without `data_v2`. Builds the exact blind spot: a
+    track that is excellent everywhere except the top of travel. The old
+    whole-clip gate passes it with a 30x margin; the new one must fail it.
+
+    Worth having as a test rather than a comment because "we replaced an
+    aggregate with a stratified statistic" is only worth anything if the
+    stratified one actually responds to the stratification.
+    """
+    n = 400
+    h = np.linspace(0.0, 1.0, n)
+    r = np.where(h > 0.85, 6.0, 0.05)
+    path = {"height": h, "residual_px": r, "m_per_px_t": np.full(n, 0.002)}
+
+    top = vtrack.top_of_travel_residual(path)
+    assert np.nanmedian(r) < 1.5                       # old gate: passes
+    assert top["median_cm"] > vtrack.MAX_TOP_RESIDUAL_CM   # new gate: fails
+    assert top["ratio"] > 50
+    assert top["n"] > 20
+
+    # and it stays quiet on a track that is uniformly good
+    flat = {"height": h, "residual_px": np.full(n, 0.4),
+            "m_per_px_t": np.full(n, 0.002)}
+    good = vtrack.top_of_travel_residual(flat)
+    assert good["median_cm"] < vtrack.MAX_TOP_RESIDUAL_CM
+    assert 0.9 < good["ratio"] < 1.1
 
 
 def test_rom_prior_is_tighter_than_the_capture_gate():
@@ -80,6 +128,9 @@ def test_a_foreign_cache_is_not_read_as_ours(tmp_path):
     # RECORDED tracker against the one being asked for.
     hit["tracker"] = "markers"
     assert hit.get("tracker", "vtrack") != "vtrack"
+    # Still worth checking with one tracker left: this is what makes a CSV
+    # written by a retired referee detectable at all, and the corpus has
+    # changed referee twice.
 
 
 @pytest.mark.skipif(not CLIPS, reason="data_v2 footage not present")
