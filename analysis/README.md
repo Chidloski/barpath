@@ -2609,7 +2609,31 @@ not an arrival, and nothing is proposed for the pipeline. See TASKS.md H24.
 
 ---
 
-*Numbering: 47 through 73 are taken. The next free number is 74 — H21
+## 74 — the bar paths under the final cut, and the cost H24 missed (H24b, 2026-08-19)
+
+`74_final_cut_paths.py`. The owner asked to see the bar paths for H24. Every
+curve is `metrics.vs_truth`'s own paired `curve_video` / `curve_pipeline`, so
+the figure invents no alignment; thin is every rep, bold is the arm's mean, and
+a **red halo** marks a rep outside `capture.VERTICAL_ROM_M`.
+
+**Drawing them caught a real cost H24 never measured.** H24 was scored on the
+horizontal alone. The first reps come out visibly tall and distorted, and the
+measurement confirms it: vertical rms goes from shipping's **2.88 cm** — inside
+the ±2–3 cm spec, 0 of 36 reps out of band — to **4.03** (H22) and **5.15**
+(with the cut), 9 of 31 and 6 of 36 out of band, with reps of 70–79 cm on a lift
+whose range is 40–61.
+
+**The cost is inherited from the rest-to-rest frame, not caused by the cut** —
+the first rep's ROM is identical under both (78.3/78.3, 75.2/75.2, 79.2/79.2),
+so it belongs to H22's pre-pull anchor, and the cut *reduces* the out-of-band
+fraction from 29% to 17%. The bottom row shows the trade on both axes.
+
+So the frame is a **trade, not a win**. The coverage requirement H23 added is
+still met, 36 of 36, and the cut is what meets it. See TASKS.md H24.
+
+---
+
+*Numbering: 47 through 74 are taken. The next free number is 75 — H21
 (retiring `markers.py`) claimed nothing, because it moved no number and had
 nothing to draw. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this

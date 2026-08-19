@@ -77,6 +77,45 @@ not significance. **This is the first frame to satisfy all three standing
 requirements simultaneously; it is not yet a working horizontal.** Not proposed
 for the pipeline.
 
+### THE COST THIS ENTRY ORIGINALLY FAILED TO REPORT (H24b, same day)
+
+**H24 was scored on the horizontal alone. The frame damages the VERTICAL, and
+past spec.** Found by drawing the paths (`analysis/74`) rather than by any
+summary statistic — the first reps came out visibly tall and distorted, and the
+measurement confirmed it:
+
+    arm             median v rms   reps outside 40-61 cm ROM band
+    shipping            2.88 cm              0 of 36
+    H22 period frame    4.03 cm              9 of 31
+    H24 + final cut     5.15 cm              6 of 36
+
+Shipping's vertical is INSIDE the +/-2-3 cm spec; the frame's is not, and it
+produces reps of 70-79 cm on a lift whose range of motion is 40-61.
+
+**The cost is INHERITED from the rest-to-rest frame, not caused by the cut.**
+The offending rep is the FIRST one on each capture and its ROM is identical
+under H22 and under the cut — 78.3/78.3, 75.2/75.2, 79.2/79.2 — so it belongs to
+H22's pre-pull anchor. The cut in fact *reduces* the out-of-band fraction, 29%
+to 17%, and improves two of the worst captures (`160x5_2` 10.75 -> 6.18,
+`185x3` 9.21 -> 8.71).
+
+**So the frame is a TRADE, not a win**, and the H24 headline above should be
+read as "better horizontal at a vertical cost that currently breaks spec"
+rather than as the best deadlift result in the project. What is still true and
+unaffected: the coverage requirement H23 added is met, 36 of 36, and the cut is
+what meets it.
+
+*This is the project's oldest failure shape and it caught the author of H24: an
+aggregate improved while the thing got worse on an axis nobody looked at. The
+same shape as milestones 1-6, C8's peak-height threshold, C12's whole-clip NCC
+and F1's unrun suite. **Score both axes before claiming a deadlift result.***
+
+*Next, and not done here:* the pre-pull anchor's first window is the thing to
+fix. It is a longer window than the others (it starts at the quietest sample in
+the 3 s before the pull rather than at a landing), and a longer window gives the
+detrend line more room to tilt. Whether shortening it recovers the vertical
+without losing rep 1 again is the open question.
+
 ### Two bugs of mine, recorded because each made the idea look inert
 
 1. **Implemented conditionally when the owner said it unconditionally.** The

@@ -2288,6 +2288,29 @@ motion at all — and p = 0.078 is not significance. **Nothing is proposed for t
 pipeline.** What it changes is that the rest-to-rest family is no longer
 disqualified on coverage, which is the thing H23 closed it for.
 
+**AND THE TABLE ABOVE IS ONLY THE HORIZONTAL. THE FRAME DAMAGES THE VERTICAL,
+PAST SPEC (H24b, 2026-08-19).** Caught by DRAWING THE PATHS rather than by any
+summary statistic:
+
+    arm             median v rms   reps outside 40-61 cm ROM band
+    shipping            2.88 cm              0 of 36
+    H22 period frame    4.03 cm              9 of 31
+    H24 + final cut     5.15 cm              6 of 36
+
+Shipping's vertical is inside the ±2–3 cm spec; the frame's is not, and it
+produces reps of 70–79 cm on a lift whose range is 40–61. **The cost is
+INHERITED from the rest-to-rest frame rather than caused by the cut** — the
+offending rep is the FIRST on each capture and its ROM is identical under H22
+and under the cut (78.3/78.3, 75.2/75.2, 79.2/79.2), so it belongs to H22's
+pre-pull anchor; the cut in fact reduces the out-of-band fraction from 29% to
+17%. **So the family is a TRADE, not a win.**
+
+*This is this file's oldest failure shape and it caught H24's own author: an
+aggregate improved while the thing got worse on an axis nobody looked at —
+milestones 1–6, C8's peak-height threshold, C12's whole-clip NCC, F1's unrun
+suite, and now this.* **Score both axes before claiming a deadlift result.**
+*Evidence:* `analysis/74`, TASKS.md H24.
+
 *And a measurement rule that came out of it, which generalises past this
 result:* **count reps SCORED (`n_compared`), not windows produced
 (`len(bounds)`)** — a frame can produce a window for a rep and still fail to
