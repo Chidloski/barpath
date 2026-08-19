@@ -2164,6 +2164,59 @@ impulse, consistently, at 2.7x the pulls); the deficit is **-0.126 m/s, not
 figures against these captures.
 *Evidence:* `analysis/75`, TASKS.md H25.
 
+**AND THE NON-IMPACT HALF IS A STANDING TILT, IN ONE DIRECTION, ON EVERY
+DEADLIFT (H26, 2026-08-19).** The owner picked three priors and asked for
+measurement before any correction. Two survive:
+
+* **The lockout is a second, impact-free anchor, and the error it exposes is
+  systematic.** Mean horizontal acceleration error over pull-only intervals is
+  **NEGATIVE on 9 of 9 captures** — sign test p = 0.002, across three sessions,
+  150-190 kg and both camera sides — with direction coherence 0.83-0.99 against
+  a random null of ~0.60. As a tilt: 0.09-0.91 degrees, median 0.43.
+  **AND STEP 5b DOES NOT REMOVE IT** — under the attitude the pipeline SHIPS
+  (step 2's bias correction and 5b's fitted drift tilt both applied) it is
+  still negative on 9 of 9, at 55% of the raw magnitude, a residual of
+  0.06-0.41 degrees with a median of 0.23. 5b fits a world-horizontal drift
+  RATE and this is an OFFSET, so it survives. That check is what makes the
+  prior live rather than a description of an error already corrected.
+  `project.FORE_AFT_SENSE` fixes the sign per lift, so that is one fixed
+  ANATOMICAL direction, not a projection artefact. And the pull error does NOT
+  predict the same rep's landing error (Spearman +0.06, p = 0.83, n = 15), so
+  they are two causes — which is why one number per rest-to-rest interval, what
+  C28b, C29, H22 and H24 all fit, cannot absorb both.
+* **Excising the ring is licensed on the HORIZONTAL and forbidden on the
+  VERTICAL.** Removing `oracle.ring_duration`'s window takes the horizontal
+  closure error 0.256 -> 0.153 m/s (better on 15 of 24) and the vertical
+  0.128 -> 0.653 (better on 1 of 24), because that vertical impulse is REAL and
+  B5 measured the IMU capturing it at a ratio of 1.04. An axis-selective
+  excision is licensed to be TRIED; nothing shows one works.
+
+**And one died: the tilt does NOT track acceleration.** Correlated within H25's
+four interval CLASSES — so neither the lift nor the impact is the confound — the
+PULL class reaches |r| = 0.15 with every p above 0.5 against peak |a|, mean
+specific-force deviation and peak gyro. Core Motion losing its gravity reference
+under load does not explain the pull-phase tilt. It correlates only on the
+LANDING, where the mechanism is P6's strap ringing and already known.
+
+**READ THIS AGAINST C28 BEFORE BUILDING ANYTHING, BECAUSE IT LOOKS LIKE A
+CONTRADICTION AND IS NOT.** P3 records that C28's ladder found P3's error "is
+not a constant in ANY frame", and a world-frame tilt was one of its rungs. The
+two coexist because C28's failure was **transfer**: a tilt fitted on some
+captures did not hold on a held-out one. H26 agrees — the magnitude ranges over
+10x (0.015 to 0.156 m/s^2) across captures, so no single constant would transfer
+either. What is new is the SIGN being universal and the tilt being estimable
+from an INTERNAL observable rather than from the video. A per-capture tilt is
+not the thing C28 rejected; a corpus-wide constant is, and it still is.
+
+**Nothing is proposed for the pipeline and nothing was built.** Three things
+would have to hold first, none established: that the tilt is estimable without
+the video (these intervals are video-defined); that it survives `vs_truth` on
+BOTH axes and the ROM band (H24b's lesson); and that it covers every rep, which
+prior 1's own coverage caveat currently denies — only 15 of 39 intervals carry a
+lockout dwell, because a touch-and-go deadlift is not still enough at lockout on
+most reps.
+*Evidence:* `analysis/76`, TASKS.md H26.
+
 **P6 — The floor impact is trustworthy, INFORMATIVE, and misspent by every
 correction tried.** Closed as a worry by B5, opened as an opportunity, and
 sharpened by C28b on 2026-08-05.

@@ -16,6 +16,144 @@ Related, and deliberately not duplicated here:
 
 
 
+## H26 — three priors on the remaining horizontal error, measured (2026-08-19)
+
+Owner, after H25: *"there is probably an element of both within, whatever bias
+you corrected from vertical will also be needed in horizontal. Then investigate
+what can be done to mitigate remaining horizontal error. To do this, come up
+with a list of priors and check them with me before you move on."*
+
+**The premise's first half is already true in the code and worth stating before
+anything else.** `oracle.jump_period_windows` runs with `axes=(0, 1, 2)`, so the
+H22/H24 frame applies the ZUPT velocity correction to all three axes together —
+which is exactly why H24 damaged the vertical (H24b). "Apply the vertical fix
+horizontally too" is done, and it lands at `beats_null` 0.77. H25 says why that
+ceiling exists: half the horizontal error is present in the impact-free pull, so
+nothing sized at the landing can reach it.
+
+Seven priors were put to the owner. He picked three and asked for **measurement
+first, with no correction built**. Nothing in `src/` changed and no arm is
+proposed. `analysis/76`.
+
+The interval set is H25's exactly — moments the VIDEO says the bar was still, so
+the closure identity supplies the error with nothing tunable in it.
+`deadlift_160x6_1_20260818` excluded by hand for the straps of H20.
+
+### PRIOR 1 — the lockout as a second, impact-free anchor. SURVIVES.
+
+The falsifier was that the pull-only error might scatter rep to rep, making it
+noise. It does not. Mean horizontal acceleration error over impact-free pull
+intervals, per capture:
+
+    capture              n      RAW    SHIPS    coherence   null
+    deadlift_150x4_1     1   -0.106   -0.049        -         -
+    deadlift_155x5_1     2   -0.050   -0.043       0.99      0.63
+    deadlift_160x4_2     1   -0.073   -0.040        -         -
+    deadlift_160x5_2     1   -0.077   -0.068        -         -
+    deadlift_160x6_1     3   -0.156   -0.011       0.99      0.51
+    deadlift_160x6_2     1   -0.108   -0.013        -         -
+    deadlift_170x4_3     2   -0.032   -0.018       0.83      0.63
+    deadlift_185x3       2   -0.022   -0.011       0.86      0.63
+    deadlift_190x3       2   -0.015   -0.070       0.94      0.63
+
+m/s^2. **RAW** is Core Motion's attitude as logged, which is what H25 measured.
+**SHIPS** is the attitude the pipeline actually uses — step 2's bias correction
+and step 5b's fitted drift tilt both applied.
+
+**Negative on 9 of 9 captures, sign test p = 0.002**, across three sessions,
+loads from 150 to 190 kg and both camera sides. As a tilt that is 0.09-0.91
+degrees, median 0.43 — the size H25 predicted from the other direction and the
+size C6 measured at still holds. `project.FORE_AFT_SENSE` fixes the sign
+convention per lift, so "all negative" is one fixed anatomical direction
+relative to the lifter, not an artefact of projection.
+
+**AND STEP 5b DOES NOT REMOVE IT, WHICH IS THE CHECK THAT DECIDES WHETHER THE
+PRIOR IS LIVE.** 5b already fits a world-horizontal attitude drift rate, so a
+standing tilt it had already absorbed would make this measurement a description
+of a fixed error. It has not: under the SHIPPED attitude the pull error is
+**still negative on 9 of 9** captures, at **55%** of its raw magnitude — a
+residual of 0.011-0.070 m/s^2, median 0.040, i.e. **0.06-0.41 degrees, median
+0.23**. So 5b removes a little under half of it and leaves a systematic,
+same-signed remainder on every capture. That is consistent with 5b fitting a
+RATE where this is an OFFSET.
+
+**And the two readings are LARGELY INDEPENDENT: Spearman r = +0.06, p = 0.83,
+n = 15.** The pull error does not predict the same rep's landing error, so they
+are two causes rather than one seen twice — and one number per rest-to-rest
+interval, which is what C28b, C29, H22 and H24 all fit, is absorbing both.
+
+**THE CAVEAT DECIDES WHETHER THIS IS BUILDABLE.** Only **15** intervals carry a
+lockout dwell against **24** landings: on a touch-and-go deadlift the bar is not
+still enough at lockout on most reps for `metrics._video_zero_dwells` to name
+the moment. The second anchor exists on fewer than half the reps, so H23's third
+requirement — cover EVERY rep — is not met by using it per rep. What this
+licenses is estimating a per-SET standing tilt from the reps that do have one
+and applying it to all of them. It does not license a per-rep correction.
+
+### PRIOR 2 — excise the ring rather than compensate. LICENSED ON ONE AXIS.
+
+The ring window is `oracle.ring_duration`, raw |a| only, median 0.60 s and 20%
+of the landing interval. The test is not what fraction of the error lives inside
+it — the interval's net partly cancels, so that ratio exceeds 100% and says
+nothing, which a first version of this measurement got wrong. It is what the
+closure error BECOMES if those samples are removed:
+
+    axis          as is      ring excised    better on
+    horizontal   0.256 m/s     0.153          15 of 24     <- LICENSED
+    vertical     0.128         0.653           1 of 24     <- FORBIDDEN
+
+Inside the ring the bar is on the floor, so its true horizontal acceleration is
+~zero and everything integrated there is error. The vertical is the opposite:
+that impulse is REAL, B5 measured the IMU capturing it at a ratio of 1.04, and
+excising it inflates the closure error 5x — which would destroy vertical ROM,
+the failure H24b caught the hard way.
+
+**Read the horizontal row honestly: a 1.7x median improvement on 15 of 24, not
+a universal one.** It licenses an axis-selective excision to be TRIED. It does
+not show one works, and any attempt still owes H23's three requirements.
+
+### PRIOR 4 — does the tilt track acceleration? DEAD WHERE IT WAS PROPOSED.
+
+Correlated WITHIN H25's four interval classes, so neither the lift nor the
+impact can be the confound. A within-LIFT correlation on deadlift would merely
+rediscover H25's result, because the high-|a| intervals are exactly the ones
+containing an impact — that is the trap this avoids.
+
+    class                 peak |a|      mean ||a||-g     peak gyro
+    deadlift PULL       -0.12 (0.68)   -0.15 (0.59)   +0.12 (0.67)
+    deadlift LANDING    +0.45 (0.03)   +0.56 (0.00)   +0.54 (0.01)
+    bench               +0.13 (0.34)   -0.08 (0.56)   +0.22 (0.09)
+    squat               -0.33 (0.05)   +0.38 (0.02)   -0.15 (0.39)
+
+In the PULL class — the one the hypothesis exists to explain — nothing reaches
+|r| = 0.15 and every p is above 0.5. It correlates only on the LANDING, where
+the mechanism is already named: P6's strap ringing, harder landings ringing
+more. Squat's two significant cells disagree in SIGN with each other, which is
+what a spurious correlation at n = 35 looks like.
+
+**So the pull-phase tilt is not driven by the vigour of the rep.** It behaves
+like a standing attitude offset — which is independently what prior 1 says, from
+a completely different statistic.
+
+### What this adds up to, and what it does not
+
+Two of the three priors survive and they point the same way: a **standing tilt**
+of ~0.4 degrees, one direction, present on every deadlift, independent of how
+hard the rep was and independent of the landing error. That is a different
+object from everything B7, B6, C19, C28b, C29, H22 and H24 tried to correct,
+all of which sized one number per rest-to-rest interval against the landing.
+
+**Nothing is proposed for the pipeline and nothing was built.** Three things
+would have to be true before it could be, and none is established here: that the
+tilt is estimable WITHOUT the video (these intervals are video-defined); that
+applying it survives `metrics.vs_truth` on both axes and the ROM band; and that
+it covers every rep, which prior 1's own coverage caveat currently denies.
+
+*Note step 5b already fits a world-horizontal attitude drift RATE, and this is a
+standing OFFSET — a different quantity, and 5b's `beta` is fitted against the
+set's own rep-to-rep dispersion rather than against anything external. Whether
+the two are the same error seen twice is not tested here.*
+
 ## H25 — where the horizontal acceleration error comes from (2026-08-19)
 
 Owner: *"i don't understand where the horizontal acceleration stems from, does

@@ -2656,9 +2656,50 @@ So the horizontal error is about half impact and about half gravity leaking
 through attitude, and the pause cannot remove either — two still instants give
 two numbers, and step 7's line already spends both. See TASKS.md H25.
 
+## 76 — three priors on the remaining horizontal error (H26, 2026-08-19)
+
+`76_horizontal_priors.png`. The owner picked three of seven candidate priors
+after H25 and asked for **measurement first, with no correction built**. Nothing
+in `src/` changed. Same interval set as `analysis/75` — moments the video says
+the bar was still, so the closure identity supplies the error with nothing
+tunable in it. `deadlift_160x6_1_20260818` excluded by hand (straps, H20).
+
+* **A — PRIOR 1, the lockout as a second, impact-free anchor. SURVIVES.** The
+  pull-only horizontal error is **negative on 9 of 9 captures** (sign test
+  p = 0.002) across three sessions, 150-190 kg and both camera sides, with
+  direction coherence 0.83-0.99 against a random null of ~0.60. As a tilt that
+  is 0.09-0.91°, median 0.43 — the size H25 predicted and the size C6 measured
+  at still holds. A standing tilt, not noise. **And step 5b does not remove it:**
+  under the attitude the pipeline SHIPS it is still negative on 9 of 9, at 55%
+  of the raw magnitude (0.06-0.41°, median 0.23). 5b fits a RATE; this is an
+  OFFSET. That check is what makes the prior live rather than a description of
+  an error already corrected.
+* **B — PRIOR 1, one cause or two?** The pull error does not predict the same
+  rep's landing error: Spearman **r = +0.06, p = 0.83, n = 15**. Two causes. So
+  the one number per rest-to-rest interval that C28b, C29, H22 and H24 all fit
+  is absorbing both, and cannot.
+* **C — PRIOR 2, excise the ring rather than compensate.** Not "what fraction of
+  the error is inside the ring" — the interval's net partly cancels, so that
+  ratio exceeds 100% and means nothing, which a first version of this got wrong.
+  What the closure error BECOMES when those samples are removed: horizontal
+  **0.256 -> 0.153 m/s, better on 15 of 24**; vertical **0.128 -> 0.653, better
+  on 1 of 24**. Licensed on one axis, forbidden on the other, because the
+  vertical impulse is real (B5, ratio 1.04).
+* **D — PRIOR 4, does the tilt track acceleration? DEAD where proposed.**
+  Correlated within H25's four INTERVAL CLASSES, so neither the lift nor the
+  impact is the confound. In the PULL class nothing reaches |r| = 0.15 and every
+  p is above 0.5. It correlates only on the LANDING (+0.45..+0.56), where the
+  mechanism is P6's strap ringing and already known.
+
+Two of three survive and point the same way: a standing tilt of ~0.4°, one
+direction, on every deadlift, independent of the rep's vigour and of the landing
+error. **The coverage caveat is what stops it being buildable today** — only 15
+of 39 intervals carry a lockout dwell, so H23's cover-every-rep requirement is
+not met per rep. See TASKS.md H26.
+
 ---
 
-*Numbering: 47 through 75 are taken. The next free number is 76 — H21
+*Numbering: 47 through 76 are taken. The next free number is 77 — H21
 (retiring `markers.py`) claimed nothing, because it moved no number and had
 nothing to draw. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
