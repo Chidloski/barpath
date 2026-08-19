@@ -2234,6 +2234,28 @@ the instant. The gain over shipping is smaller than C29 looked (2.78 -> 2.14)
 and it is now like-for-like, because the null inflation goes 1.28x -> 0.97x.
 *Evidence:* `analysis/72`, TASKS.md H22, `oracle.jump_period_windows`.
 
+**AND THE OWNER HAS NOW RULED THE WHOLE FRAME OUT (H23, 2026-08-19): "do not
+lose the last rep of every set, again this is unacceptable."** So C29 and
+`jump_period_windows` are closed as SHIPPING candidates, though not as
+measurements — their evidence stands and they remain the sharpest deadlift
+result here. The last rep is the half that cannot be recovered: a rest-to-rest
+window must close on a moment when the bar is at rest AND the watch is still
+indexed to it, and after the final rep the lifter releases the bar. A property
+of the lift, not of the code.
+
+**There are now THREE requirements on any deadlift correction, where this file
+recorded two.** Local in time (B6, C19, C28b each failed this); boundaries not
+on the impacts, or step 7 annihilates it (C29's discovery); and **new: it must
+cover every rep** — a correction that improves the median by dropping the reps
+it cannot handle is not a correction. H22's honest accounting is what made the
+third visible, by reporting the null inflation rep-dropping causes: C29 looked
+like `beats_null` 0.68 -> 0.95 and was 0.68 -> 0.84 once coverage was paid for.
+
+*Not ruled out, and nobody has tried it:* requirement 2 is about where the
+detrend's BOUNDARIES sit and requirement 3 is about which samples are COVERED.
+Nothing says one implies the other — a detrend whose knots move off the impacts
+while every rep stays covered would satisfy both. See TASKS.md H23.
+
 *And one thing the failed first attempt taught:* a CONTINUOUS piecewise-linear
 detrend cost 8.21 -> 17.00 with ROM at 70-138 cm. Step 7 is load-bearing because
 of its per-rep INDEPENDENCE — two free parameters per rep, no continuity — not

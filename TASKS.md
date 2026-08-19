@@ -16,6 +16,54 @@ Related, and deliberately not duplicated here:
 
 
 
+## H23 — the owner's ruling: a correction may not drop a rep (2026-08-19)
+
+Owner, on H22's recommendation: *"do not lose the last rep of every set, again
+this is unacceptable."*
+
+**This closes the rest-to-rest frame family — C29's `jump_rest_windows` and
+H22's `jump_period_windows` — as SHIPPING candidates.** Not as measurements:
+both remain the sharpest deadlift result in the project and their evidence
+stands. What is settled is that neither can ever ship in its current form,
+because coverage is a product requirement and not a tuning parameter.
+
+**Read why it is now closed rather than open, because H19 and H22 both left it
+as "the owner's call" and this is the call.** The frame has two coverage holes
+and they are not the same kind of thing:
+
+* **Rep 1 was FIXABLE and H22 fixed it** — `oracle.prepull_rest` supplies the
+  missing first boundary, verified quieter than every rest the frame already
+  uses on 9 of 9 deadlifts.
+* **The LAST rep is not fixable within the frame.** A rest-to-rest window has to
+  close on a moment when the bar is at rest AND the watch is still indexed to
+  it. After the final rep the lifter releases the bar, so no such moment exists.
+  Three independent detectors agree. That is a property of the lift, not of the
+  code, and no estimator improves it.
+
+So the requirement on any future deadlift correction is now explicit and is
+**three** things, where this file previously recorded two:
+
+1. **local in time** — B6, C19 and C28b each failed by imposing a correction
+   smooth across the rep when the error is an impulse at the landing;
+2. **not annihilated by step 7** — the detrend's window boundaries must not
+   coincide with the impact, which is what C29 discovered and what its frame
+   exists to fix;
+3. **NEW: it must cover every rep.** A correction that improves the median by
+   dropping the reps it cannot handle is not a correction, and the honest
+   accounting H22 introduced — reporting the null inflation that rep-dropping
+   causes — is what made this visible. C29 looked like 0.68 -> 0.95 and was
+   0.68 -> 0.84 once coverage was paid for.
+
+**What this does NOT rule out**, recorded so the next agent does not read this
+as a dead end: a correction that keeps step 7's existing per-rep windows, which
+already cover every rep, and attacks the impact some other way — or a detrend
+whose knots are moved off the impacts WITHOUT changing which samples belong to a
+rep. Requirement 2 is about where the BOUNDARIES sit, and requirement 3 is about
+which samples are COVERED; nothing says one implies the other. Nobody has tried
+to separate them.
+
+---
+
 ## H22 — the deadlift impulse: a pre-pull rest anchor, and two ideas that fail (2026-08-19)
 
 Owner: *"explore new ways to fix deadlifts ... use the impulse ... or by
