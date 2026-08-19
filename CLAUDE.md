@@ -2127,6 +2127,43 @@ does. Per-rep polynomial detrending cannot bring deadlift near spec, whoever
 writes the estimator. *Evidence:* `analysis/38`, `python run.py --b3oracle`,
 TASKS.md B3, `tests/test_real_data.py`.
 
+**P6 IS HALF THE HORIZONTAL STORY, NOT ALL OF IT (H25, 2026-08-19).** C11's
+closure identity had only ever been run on the VERTICAL. Run on the horizontal,
+with C11's own within-capture control:
+
+    interval class                    n   |dv_h| med   mean |a_h| err   implied tilt
+    deadlift, PULL only              15     0.144 m/s     0.059 m/s^2      0.34 deg
+    deadlift, interval WITH impact   24     0.256         0.102            0.60
+    bench, lifting                   59     0.031         0.021            0.13
+    squat, lifting                   35     0.070         0.023            0.13
+
+**The impact roughly DOUBLES the horizontal error and does not create it** — 1.8x,
+where on the vertical the landing is the whole story. A deadlift pull with no
+impact in it already carries 2-3x bench's error. **The other half is gravity
+leaking through attitude**: a tilt theta leaks `g*sin(theta)` horizontally
+against `g*(1-cos theta)` vertically, 100x less, which is why the same attitude
+error is fatal on one axis and invisible on the other. The implied tilts are
+independently the right size — C6 measured 0.05-0.14 deg at still holds on bench
+and squat, and this asks 0.13. Gravity is 9.81 m/s^2 against the bar's real
+0.13-0.21 horizontal, so a third of a degree is a third of the signal.
+
+**And the PAUSE cannot kill it, because it is already spent.** Two still
+instants give two numbers — the velocity error at each end — and step 7's
+closure is the second. A line has two parameters, so the per-rep detrend already
+consumes exactly that information; H22 measured the consequence, that clamping
+velocity to zero inside a window is invisible to the metric. What the pause
+cannot give is the SHAPE — a steady tilt and an impulse at the landing produce
+the SAME velocity at the pause and different position curves. That is why C29's
+window move works: it adds no information, it puts the impact inside a window so
+the detrend sees a kink instead of a slope.
+
+**C11's magnitudes do NOT reproduce on the live corpus** — they were measured on
+the v1 captures deleted on 2026-08-14. The shape holds (landings lose vertical
+impulse, consistently, at 2.7x the pulls); the deficit is **-0.126 m/s, not
+-0.589**, against pulls at -0.046 rather than -0.010. Do not quote the old
+figures against these captures.
+*Evidence:* `analysis/75`, TASKS.md H25.
+
 **P6 — The floor impact is trustworthy, INFORMATIVE, and misspent by every
 correction tried.** Closed as a worry by B5, opened as an opportunity, and
 sharpened by C28b on 2026-08-05.

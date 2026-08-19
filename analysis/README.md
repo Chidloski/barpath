@@ -2633,7 +2633,32 @@ still met, 36 of 36, and the cut is what meets it. See TASKS.md H24.
 
 ---
 
-*Numbering: 47 through 74 are taken. The next free number is 75 — H21
+## 75 — where the horizontal acceleration error comes from (H25, 2026-08-19)
+
+`75_horizontal_closure.py`. C11's closure identity — between two instants the
+bar is known to be still, the integral of its acceleration must be zero — run on
+the **horizontal** for the first time. Nothing tunable in it, and a video scale
+error cannot move a zero crossing, so the video says only WHEN the bar was still.
+
+* **A — the horizontal.** deadlift pull 0.144 m/s, deadlift with impact 0.256,
+  bench 0.031, squat 0.070. **The impact DOUBLES the error and does not create
+  it**, and a deadlift pull alone already carries 2-3x bench's.
+* **B — the same intervals, vertical.** C11's shape, on today's corpus: the
+  landing dominates at 2.7x the pulls. **C11's -0.589 was the v1 corpus, now
+  deleted; today it is -0.126.** The panel reproduces `metrics.momentum_closure`
+  exactly (n = 15 and 24), which is how the non-reproduction was caught.
+* **C — why it is fatal here and nowhere else.** The same errors as mean
+  acceleration, against the bar's real 0.13-0.21 m/s² horizontal, labelled with
+  the attitude tilt that would leak that much gravity: 0.13° on bench and squat
+  against **C6's independently measured 0.05-0.14°**.
+
+So the horizontal error is about half impact and about half gravity leaking
+through attitude, and the pause cannot remove either — two still instants give
+two numbers, and step 7's line already spends both. See TASKS.md H25.
+
+---
+
+*Numbering: 47 through 75 are taken. The next free number is 76 — H21
 (retiring `markers.py`) claimed nothing, because it moved no number and had
 nothing to draw. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this

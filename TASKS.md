@@ -16,6 +16,83 @@ Related, and deliberately not duplicated here:
 
 
 
+## H25 — where the horizontal acceleration error comes from (2026-08-19)
+
+Owner: *"i don't understand where the horizontal acceleration stems from, does
+the pause at the end not give a second answer to kill it or does it stem from
+impact?"* Two questions, and both have measurable answers. `analysis/75`.
+
+### 1. Does it stem from the impact? HALF of it does.
+
+C11's closure identity — between two instants the bar is known to be still, the
+integral of its acceleration must be zero — **had only ever been run on the
+vertical.** Run on the horizontal, with C11's own within-capture control (the
+dwell detector splits a deadlift rep at the lockout, so the pull and the
+descent-plus-landing are separate intervals of the same tape):
+
+    interval class                    n   |dv_h| med   mean |a_h| err   implied tilt
+    deadlift, PULL only              15     0.144 m/s     0.059 m/s^2      0.34 deg
+    deadlift, interval WITH impact   24     0.256         0.102            0.60
+    bench, lifting                   59     0.031         0.021            0.13
+    squat, lifting                   35     0.070         0.023            0.13
+
+**The impact roughly DOUBLES the horizontal error and does not create it.** On
+the vertical the same split gives the landing as the whole story; on the
+horizontal it is 1.8x, and a deadlift pull with no impact anywhere in it already
+carries 2-3x bench's error. **So "the deadlift horizontal is the impact" is
+wrong as stated** — it is about half the impact and about half something present
+throughout the pull.
+
+### 2. What the other half is: gravity leaking through attitude
+
+World horizontal acceleration is the body acceleration rotated out with gravity
+removed, so a tilt error of theta leaks `g*sin(theta)` into the HORIZONTAL
+against only `g*(1-cos theta)` into the vertical — 100x less at a degree. That
+asymmetry is why the same attitude error is fatal on one axis and invisible on
+the other, and it is already written in `orient.py`'s docstring; nobody had
+connected it to this measurement.
+
+**The implied tilts are the right size, and the corroboration is independent.**
+C6 measured attitude error at still holds as **0.05-0.14 deg on bench and
+squat**; this measurement, on a completely different quantity, asks for
+**0.13 deg** on those lifts. Deadlift's pull asks 0.34 and its landing 0.60.
+
+Why it dominates: **gravity is 9.81 m/s^2 and the bar's real horizontal
+acceleration is 0.13-0.21** (C30). A third of a degree of tilt is a third of the
+entire signal. The vertical never notices because there the same tilt is worth
+0.0005 m/s^2 against a real 0.86-1.27.
+
+### 3. Does the pause kill it? It already has — that is the point.
+
+The pause IS used: `segment.rest_instants` finds it, and C28b measured the
+reconstruction claiming 0.17-1.28 m/s of horizontal velocity at moments the bar
+is provably still. But **two still instants give exactly two numbers** — the
+velocity error at each end — and step 7's closure is the second of them. **A
+line has two parameters.** So the pause's information is precisely what the
+per-rep detrend already consumes, which is why H22 found that clamping velocity
+to zero inside a window is invisible to the metric.
+
+**What the pause CANNOT give is the SHAPE**: whether the error arrived as a
+steady tilt spread over the whole rep or as an impulse at the landing. Those two
+produce the SAME velocity at the pause and completely different position curves
+— a parabola versus a kink — and one number cannot distinguish them. That is the
+whole reason C29's window move works: it does not add information, it puts the
+impact INSIDE a window so the detrend can see a kink instead of a slope.
+
+### A partial NON-reproduction of C11, recorded
+
+C11 reported deadlift pulls at -0.010 m/s against -0.589 across a landing. Those
+were measured on the v1 corpus F1 deleted on 2026-08-14 and cannot be
+re-derived. Re-run today through the shipped `metrics.momentum_closure`, the
+**shape holds and the magnitude does not**: landings still lose vertical impulse,
+still consistently, still at a multiple of the pulls (2.7x) — but the deficit is
+**-0.126 m/s, not -0.589**, against pulls at -0.046 rather than -0.010. Do not
+quote C11's magnitudes against the live captures. *(The figure's vertical panel
+reproduces `momentum_closure` exactly, n = 15 and 24, which is how this was
+caught.)*
+
+---
+
 ## H24 — the owner's final cut: the first deadlift frame to cover every rep (2026-08-19)
 
 Owner, immediately after the H23 ruling: *"We know vertical displacement is
