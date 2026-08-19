@@ -1210,11 +1210,64 @@ def still_periods(result: dict, anchors: list[int], min_s: float = 0.10,
     return out
 
 
+def precut_period(result: dict, periods: list[tuple[int, int]],
+                  cut_s: float = 0.08) -> tuple[int, int] | None:
+    """A closing boundary for the LAST rep, cut just BEFORE its impact. H24.
+
+    The owner's proposal, and it dissolves the one hole H22 could not fill.
+    A rest-to-rest frame closes each window on a moment when the bar is at rest
+    AND the watch is still indexed to it. After the final rep the lifter lets
+    go, so no such moment exists and the last rep falls outside every window —
+    which H23 then ruled unacceptable, coverage being a product requirement.
+
+    **The last window does not need a REST. It needs a moment where the bar is
+    back at the height it started from**, because that is what step 7's closure
+    actually asserts. Just before the final impact the bar is at the floor,
+    within a plate radius of where the rep began, and the reconstruction has not
+    yet been handed the impact that corrupts it. So the cut supplies a closure
+    anchor without supplying a rest.
+
+    Two consequences, and the second is why this is not merely a patch:
+
+    * **the final impact ends up OUTSIDE every window.** `jump_period_windows`
+      only corrects an impact that falls INSIDE a window, so the last rep
+      correctly receives no impulse correction — there is no impulse in it. The
+      error this frame exists to remove is not present in that window.
+    * it is therefore not the trap of B7/B6/C19/C28b, which all tried to place
+      a correction AT a boundary. Here the corrupted samples are simply not
+      covered, rather than covered and then fought over.
+
+    Returns None when the last impact already has a still interval after it —
+    on this corpus that is the case for some captures and not others — so the
+    frame stays exactly as H22 left it wherever it already worked.
+
+    `cut_s` is how far before the impact index the closing boundary sits.
+    """
+    log = result["log"]
+    impacts = list(result.get("impacts") or [])
+    if not impacts or not periods:
+        return None
+    last = int(impacts[-1])
+    w = max(int(round(cut_s * log["fs"])), 2)
+    b = last - max(w // 4, 1)
+    a = b - w
+    # Room is measured against the last still interval BEFORE this impact, not
+    # against `periods[-1]`: where the final landing DOES have a rest after it,
+    # that rest is the last element and sits past the impact, so comparing with
+    # it rejects every cut. That bug made the first version of this function a
+    # no-op on exactly the captures it needed to act on.
+    prior = [q for q in periods if q[0] < last]
+    if not prior or a <= prior[-1][1]:
+        return None
+    return (int(a), int(b))
+
+
 def jump_period_windows(result: dict, width_s: float = 0.30,
                         axes: tuple = (0, 1, 2),
                         wrist_offset: np.ndarray | None = None,
                         boundary: str = "mid", dv_from: str = "period",
-                        anchors: list[int] | None = None) -> dict:
+                        anchors: list[int] | None = None,
+                        final_cut_s: float | None = None) -> dict:
     """C29 over rest PERIODS, with the pre-pull anchor. H22.
 
     Same machinery as `jump_rest_windows` — step 7's independent endpoint
@@ -1284,6 +1337,21 @@ def jump_period_windows(result: dict, width_s: float = 0.30,
     if anchors is None:
         anchors = rest_anchors(result)
     periods = still_periods(result, anchors)
+    if final_cut_s is not None:
+        # H24 — the owner's closing anchor for the last rep. Appended, so every
+        # window this frame already produced is untouched; see `precut_period`.
+        # UNCONDITIONAL, which is the owner's proposal as stated and is not
+        # what a first, over-cautious implementation did. Any still interval
+        # AFTER the last impact is dropped and replaced by the cut, because a
+        # window that reaches past the final landing to the rest beyond it runs
+        # off the end of the video: `metrics.vs_truth` then scores that rep
+        # `covered: False` and the rep is lost in the METRIC even though the
+        # frame produced a window for it. Cutting before the impact keeps the
+        # last window inside the footage.
+        extra = precut_period(result, periods, final_cut_s)
+        if extra is not None:
+            last_imp = int(result["impacts"][-1])
+            periods = [q for q in periods if q[0] < last_imp] + [extra]
     world = np.asarray(result["world_accel"], dtype=float).copy()
     vel = result["velocity"]
     ax = list(axes)

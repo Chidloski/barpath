@@ -2584,7 +2584,32 @@ accuracy, which is within noise. **Ship neither.** See TASKS.md H22 and
 
 ---
 
-*Numbering: 47 through 72 are taken. The next free number is 73 — H21
+## 73 — the owner's final cut: covering the last rep (H24, 2026-08-19)
+
+`73_final_cut.py`, `--cache` to re-render. H23 ruled that no correction may drop
+a rep, which closed C29's and H22's rest-to-rest frame. The owner's proposal
+dissolves it: use the rest boundaries for every rep but the last, and close the
+last window just BEFORE its impact.
+
+* **A — coverage**, the requirement H23 added, measured in reps SCORED.
+  Shipping 36/36, H22 31/36, **the cut 36/36**.
+* **B — per capture.** It also rescues the two captures H22 made worse
+  (155x5_1 4.73 -> 3.56, 160x4_2 4.16 -> 1.90), because the cut applies on every
+  set rather than only where a rest was missing.
+* **C — `cut_s` is a plateau**, flat from 0.02 to 0.30 s. The bar's fore-aft
+  barely moves in the last fraction of a second of descent, so where exactly the
+  cut falls does not matter. Not a tuned constant, and gated.
+* **D — the scoreboard.** 2.03 cm against shipping's 2.78, `beats_null` 0.77
+  against 0.68, better on 7 of 8, paired Wilcoxon p = 0.078, and **null vs
+  shipping 1.00** — like-for-like, where C29 and H22 both inflated it.
+
+**Still 0.77, so still worse than a flat vertical line, and p = 0.078 is not
+significance.** First frame to satisfy all three standing requirements at once;
+not an arrival, and nothing is proposed for the pipeline. See TASKS.md H24.
+
+---
+
+*Numbering: 47 through 73 are taken. The next free number is 74 — H21
 (retiring `markers.py`) claimed nothing, because it moved no number and had
 nothing to draw. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this

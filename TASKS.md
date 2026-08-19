@@ -16,6 +16,90 @@ Related, and deliberately not duplicated here:
 
 
 
+## H24 — the owner's final cut: the first deadlift frame to cover every rep (2026-08-19)
+
+Owner, immediately after the H23 ruling: *"We know vertical displacement is
+cancelled from the start to the end of the rep, and there is a brief pause
+before the next rep. Furthermore we know that most of the error comes at the
+impact with the floor. Thus consider using the rep boundaries for all but the
+last rep as for the last rep one could simply cut the rep right before the
+moment of impact."*
+
+**It works, and it is the best deadlift result in the project.** `analysis/73`,
+`oracle.precut_period`, `jump_period_windows(final_cut_s=)`. Additive to
+`src/oracle.py`, so no reconstruction module written and no branch.
+
+### Why it dissolves H23's blocker rather than working around it
+
+A rest-to-rest window closes on a moment when the bar is at rest AND the watch
+is still indexed to it. After the final rep the lifter lets go, so no such
+moment exists — H22 concluded the last rep was unrecoverable and H23 ruled that
+unacceptable.
+
+**The last window does not need a REST. It needs a moment where the bar is back
+at the height it started from**, because that is what step 7's closure actually
+asserts. Just before the final impact the bar is at the floor, within a plate
+radius of where the rep began, and the reconstruction has not yet been handed
+the impulse that corrupts it.
+
+**And the final impact then falls OUTSIDE every window.** `jump_period_windows`
+only corrects an impact inside a window, so the last rep correctly receives no
+impulse correction — there is no impulse in it. That is what makes this
+different in kind from B7, B6, C19 and C28b, all of which placed a correction AT
+a boundary and were annihilated by step 7. Here the corrupted samples are simply
+not covered, rather than covered and then fought over.
+
+### The numbers, on the 8 clean deadlifts
+
+    arm                    h rms   beats_null   reps SCORED   null vs ship
+    shipping                2.78      0.68         36/36          1.00
+    H22 period frame        2.09      0.84         31/36          0.97
+    H24 + final cut         2.03      0.77         36/36          1.00
+
+Better than shipping on **7 of 8**, paired Wilcoxon **p = 0.078**. On all ten
+captures including the two known-bad ones, for comparability with H19 and H22:
+2.17 against shipping's 3.10, **40 of 40 reps**.
+
+**It also RESCUES the two captures H22 made worse** — `155x5_1` 4.73 -> 3.56 and
+`160x4_2` 4.16 -> 1.90 — because the cut is applied on EVERY set, not only where
+a rest was missing, so the final impact leaves the last window everywhere.
+
+`cut_s` is **not a tuned constant**: the median is flat from 0.02 to 0.30 s,
+because the bar's fore-aft barely moves in the last fraction of a second of
+descent. Gated.
+
+### Read it honestly
+
+`null vs ship` is **1.00**, so unlike C29 and H22 this is like-for-like — H19's
+null-inflation confound is gone rather than inherited. But `beats_null` is
+**0.77**: still worse than drawing no fore-aft motion at all, and p = 0.078 is
+not significance. **This is the first frame to satisfy all three standing
+requirements simultaneously; it is not yet a working horizontal.** Not proposed
+for the pipeline.
+
+### Two bugs of mine, recorded because each made the idea look inert
+
+1. **Implemented conditionally when the owner said it unconditionally.** The
+   first version added the cut only where the final landing had no rest after
+   it. That left `150x4_1` and `160x6_2` still losing a rep, because their last
+   window ran PAST the final impact to the rest beyond it, off the end of the
+   video — `vs_truth` scored those reps `covered: False`. Cutting on every set
+   fixed both.
+2. **The room check compared against `periods[-1]`**, which on exactly those
+   captures is the still interval AFTER the impact, so every cut was rejected
+   and the unconditional change appeared to do nothing. Comparing against the
+   last period BEFORE the impact is the fix.
+
+### A measurement lesson worth more than either bug
+
+**Count reps SCORED (`n_compared`), not windows produced (`len(bounds)`).** A
+frame can produce a window for a rep and still fail to score it. H22 makes 33
+windows on this corpus and scores 31; reading the window count is how full
+coverage was briefly claimed here when it was 34/36. Both new coverage gates
+assert on `n_compared`.
+
+---
+
 ## H23 — the owner's ruling: a correction may not drop a rep (2026-08-19)
 
 Owner, on H22's recommendation: *"do not lose the last rep of every set, again

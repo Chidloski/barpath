@@ -2256,6 +2256,46 @@ detrend's BOUNDARIES sit and requirement 3 is about which samples are COVERED.
 Nothing says one implies the other — a detrend whose knots move off the impacts
 while every rep stays covered would satisfy both. See TASKS.md H23.
 
+**AND THE OWNER SUPPLIED EXACTLY THAT, THE SAME DAY (H24, 2026-08-19).** *"Use
+the rep boundaries for all but the last rep; for the last rep one could simply
+cut the rep right before the moment of impact."* **It is the first frame to
+satisfy all three requirements at once.**
+
+The insight is that the last window does not need a REST — it needs a moment
+where the bar is back at the height it started from, which is what step 7's
+closure asserts. Just before the final impact the bar is at the floor and the
+reconstruction has not yet been handed the impulse that corrupts it. **And the
+final impact then falls OUTSIDE every window**, so the last rep correctly gets
+no impulse correction — there is none in it. That is what makes it different in
+kind from B7, B6, C19 and C28b: the corrupted samples are not covered, rather
+than covered and fought over.
+
+    arm                    h rms   beats_null   reps SCORED   null vs ship
+    shipping                2.78      0.68         36/36          1.00
+    H22 period frame        2.09      0.84         31/36          0.97
+    H24 + final cut         2.03      0.77         36/36          1.00
+
+Eight clean deadlifts; better than shipping on 7 of 8, paired Wilcoxon
+p = 0.078. On all ten, 2.17 against 3.10 with 40 of 40 reps. It also rescues the
+two captures H22 made worse, because the cut applies on every set rather than
+only where a rest was missing. `cut_s` is a plateau from 0.02 to 0.30 s, not a
+tuned constant, and is gated.
+
+**Read it honestly and do not over-read it.** `null vs ship` is 1.00, so unlike
+C29 and H22 this is like-for-like and H19's confound is gone rather than
+inherited. But `beats_null` is **0.77** — still worse than drawing no fore-aft
+motion at all — and p = 0.078 is not significance. **Nothing is proposed for the
+pipeline.** What it changes is that the rest-to-rest family is no longer
+disqualified on coverage, which is the thing H23 closed it for.
+
+*And a measurement rule that came out of it, which generalises past this
+result:* **count reps SCORED (`n_compared`), not windows produced
+(`len(bounds)`)** — a frame can produce a window for a rep and still fail to
+score it. H22 makes 33 windows here and scores 31, and reading the window count
+briefly turned 34/36 into a claim of 36/36. This repo's oldest failure shape:
+an aggregate that passes while the thing fails.
+*Evidence:* `analysis/73`, TASKS.md H24, `oracle.precut_period`.
+
 *And one thing the failed first attempt taught:* a CONTINUOUS piecewise-linear
 detrend cost 8.21 -> 17.00 with ROM at 70-138 cm. Step 7 is load-bearing because
 of its per-rep INDEPENDENCE — two free parameters per rep, no continuity — not

@@ -724,3 +724,88 @@ def test_the_ringing_settles_except_where_the_lifter_lets_go(csv):
         assert dur < 1.2, (
             f"interior landing {j} at t={res['log']['t'][k]:.2f}s never settles "
             f"({dur:.2f} s) — it should not be interior")
+
+
+# --- H24: the owner's final cut -----------------------------------------
+# The last rep of a deadlift set has no rest after it — the lifter releases the
+# bar — so C29's and H22's rest-to-rest frame could never close a window on it,
+# and H23 ruled that unacceptable. Cutting the last window just BEFORE the final
+# impact supplies the closure anchor step 7 actually needs (the bar back at the
+# height it started from) without needing a rest.
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_the_final_cut_covers_every_rep(csv):
+    """Coverage is the requirement H23 added, measured in reps SCORED.
+
+    Count `n_compared`, not `len(bounds)` — a frame can produce a window for a
+    rep and still fail to score it. H22 makes 33 windows on this corpus and
+    scores 31, and reading the window count is how that was briefly mistaken
+    for full coverage.
+    """
+    from src import correct, metrics, pipeline
+    video = pipeline.find_video(csv)
+    if video is None:
+        pytest.skip("no paired video")
+    res = pipeline.run(csv, video=video)
+    if not res.get("impacts") or res.get("vs_truth") is None:
+        pytest.skip("no impacts, or not scoreable against video")
+    d = correct.WRIST_OFFSET_M["deadlift"]
+    cut = oracle.jump_period_windows(res, wrist_offset=d, final_cut_s=0.08)
+    got = metrics.vs_truth(cut, video)["n_compared"]
+    want = res["vs_truth"]["n_compared"]
+    assert got >= want, (
+        f"{csv.stem}: the final cut scores {got} reps where shipping scores "
+        f"{want} — the frame must not lose a rep (H23)")
+
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_the_final_impact_falls_outside_every_window(csv):
+    """The point of the cut, and what makes it not B7/B6/C19/C28b again.
+
+    Those four placed a correction AT a boundary and were annihilated by step 7.
+    Here the corrupted samples are simply not covered: the final impact must end
+    up outside the last window, so there is no impulse in it to fight over.
+    """
+    from src import correct, pipeline
+    res = pipeline.run(csv, wrist_offset=None)
+    if not res.get("impacts"):
+        pytest.skip("no floor impacts: not an impact lift")
+    cut = oracle.jump_period_windows(res, final_cut_s=0.08)
+    if not cut["bounds"]:
+        pytest.skip("no windows")
+    last_impact = int(res["impacts"][-1])
+    end = cut["bounds"][-1][1]
+    assert end <= last_impact, (
+        f"{csv.stem}: the last window ends at {end}, past the final impact at "
+        f"{last_impact} — the cut did not take effect")
+
+
+@_needs_deadlifts
+def test_the_cut_width_is_a_plateau_not_a_tuned_constant():
+    """`cut_s` must not matter, because the bar's fore-aft is flat there.
+
+    Guards against the constant quietly becoming load-bearing. The bar barely
+    moves fore-aft in the last fraction of a second of descent, so where exactly
+    the cut falls should not change the answer.
+    """
+    from src import correct, metrics, pipeline
+    picks = [c for c in _DL if "160x6_2_20260804" in c.stem]
+    if not picks:
+        pytest.skip("reference capture not in this corpus")
+    csv = picks[0]
+    video = pipeline.find_video(csv)
+    if video is None:
+        pytest.skip("no paired video")
+    res = pipeline.run(csv, video=video)
+    if res.get("vs_truth") is None:
+        pytest.skip("not scoreable")
+    d = correct.WRIST_OFFSET_M["deadlift"]
+    hs = [metrics.vs_truth(
+        oracle.jump_period_windows(res, wrist_offset=d, final_cut_s=c),
+        video)["pipeline_h_rms"] for c in (0.04, 0.08, 0.12, 0.20)]
+    assert max(hs) - min(hs) < 0.25, (
+        f"{csv.stem}: h rms moves {max(hs) - min(hs):.3f} cm across cut_s "
+        f"0.04-0.20 ({[round(h, 3) for h in hs]}) — the cut width has become a "
+        f"tuned constant")
