@@ -1435,3 +1435,254 @@ def ring_duration(log: dict, k: int, thresh: float = 4.0,
         if amag[j] < thresh and amag[j:min(j + w, stop)].max() < thresh:
             return float(t[j] - t[k]), int(j)
     return float(t[stop] - t[k]), int(stop)
+
+
+# ------------------------------------------------------------------- H27 -----
+#
+# H27 (2026-08-20) builds what H26's prior 1 measured: a per-SET standing
+# horizontal tilt, estimated from the impact-free PULL intervals.
+#
+# **IT LOSES, AND IT IS KEPT FOR THE MECHANISM.** Median horizontal rms against
+# the video goes 2.78 -> 5.01 cm and `beats_null` 0.68 -> 0.33, worse on 7 of 8
+# deadlifts, and every variant tried loses too: video-defined anchors 5.18,
+# per-REP 5.00, in-span-only 3.54. Read `pull_tilt_correction`'s docstring for
+# why the arithmetic predicts that in advance. Nothing here is proposed for the
+# pipeline; `analysis/77` and TASKS.md H27 carry the evidence.
+#
+# Why this is a different object from everything B7, B6, C19, C28b, C29, H22
+# and H24 tried. All seven sized ONE number per rest-to-rest interval, and a
+# rest-to-rest interval CONTAINS a landing — so the number they fitted was
+# absorbing the impact impulse and the standing tilt together. H26 measured the
+# two to be independent (Spearman +0.06, p = 0.83), which is why one parameter
+# could never carry both.
+#
+# It also satisfies all three of H23's requirements without effort, because it
+# is not a windowing scheme at all:
+#
+#   * LOCAL IN TIME — no. It is deliberately global, because the error it
+#     targets is global. The requirement exists to stop a smooth correction
+#     being spread over an impulse; there is no impulse here.
+#   * BOUNDARIES OFF THE IMPACTS — not applicable. Step 7's windows are
+#     untouched, so the detrend is exactly the shipping detrend.
+#   * COVERS EVERY REP — yes, by construction. A per-set constant applies to
+#     every sample, so `n_compared` is shipping's `n_compared`, and the ROM band
+#     comparison is like-for-like. That was the blocker H23 closed C29 for and
+#     the caveat H26 flagged against a per-rep version of this.
+#
+# And step 7 does NOT annihilate it, which C29 discovered the hard way. A
+# constant acceleration error is QUADRATIC in position; the per-rep detrend
+# removes a LINE. What survives each rep is a parabola of sagitta a*T^2/8 —
+# ~4 cm for the measured 0.04 m/s^2 over a 3 s rep, which is the size of the
+# error being chased.
+
+
+def _quiet_score(log: dict, window_s: float = 0.10) -> np.ndarray:
+    """Raw accel+gyro variance score. No attitude, no integration, no filter.
+
+    The same score `segment.rest_instants`, `segment.dwell_instants` and
+    `prepull_rest` each build inline, and it is duplicated here rather than
+    factored out of them: `segment.py` is a reconstruction module and tidying
+    code one merely had to read is out of scope for this task. If it is ever
+    hoisted, hoist all four together.
+    """
+    from . import segment
+    w = max(int(round(window_s * log["fs"])), 3)
+    av = segment._rolling_var(np.linalg.norm(log["accel"], axis=1), w)
+    gv = segment._rolling_var(np.linalg.norm(log["gyro"], axis=1), w)
+    return av / (np.median(av) + 1e-12) + gv / (np.median(gv) + 1e-12)
+
+
+def pull_intervals(result: dict, interior: float = 0.5,
+                   window_s: float = 0.10) -> list[tuple[int, int]]:
+    """(anchor -> lockout) spans with NO floor impact inside them. H27.
+
+    The second anchor per rep that H26 found and nothing in this project had
+    ever used. `segment.rest_instants` names the moment the bar comes to rest
+    after each landing; the LOCKOUT is the other moment in a deadlift rep when
+    the bar is nearly still, and between the two the reconstruction integrates a
+    pull with no impulse in it. Whatever velocity error accumulates there is a
+    clean read of the standing tilt.
+
+    Found from the raw signal only — `_quiet_score`, plus `rest_anchors` and
+    `segment.impact_anchors`, none of which touch the attitude or the
+    integration. That is not decoration: this exists to correct the drift, so it
+    must not be derived from anything carrying it. **H26's own pull intervals
+    were VIDEO-defined** (`metrics._video_zero_dwells`), so making this
+    video-free was the first of the three conditions H26 said had to hold before
+    the prior could be built.
+
+    It also finds MORE of them than the video does — 36 against 13 on the clean
+    eight — because `_video_zero_dwells` needs the bar genuinely still and a
+    touch-and-go lockout often is not, while the quiet score only needs it to be
+    the quietest moment in its own interval.
+
+    **AND MOST OF THE EXTRA ONES ARE NOT LOCKOUTS.** Checked against the video,
+    the ANCHOR end of each span is excellent — |v| = 0.001-0.016 m/s, the bar
+    really is on the floor — but the lockout end sits at **0.28-0.72 m/s** on
+    every span except the first of each set. The bar is moving fast there. A
+    deadlift lockout is a braced standing position with the bar hanging at
+    arm's length, and the WATCH is not still at it, so a raw quiet score cannot
+    find it. Only the span opened by H22's pre-pull anchor lands correctly
+    (|v| = 0.00-0.05), because that one is bounded by the set-up rather than by
+    a previous landing.
+
+    That is the honest read of "more intervals than the video": the video
+    detector was right to refuse them. Do not treat this function as a working
+    lockout finder — H27 measured the correction built on it, and on
+    video-VERIFIED anchors it fails just as badly (5.18 cm against 5.01), so
+    the anchor quality is not what sinks it. But it is not a lockout finder.
+
+    `interior` keeps the search off both ends of the span. Without it the argmin
+    returns the tail of the floor rest, which is quieter than the lockout and
+    would make the interval empty of pull. This is `dwell_instants`' trick and
+    it is here for the same reason.
+
+    Returns [] where there are no impacts, so bench and squat get no correction
+    at all and the caller may apply this unconditionally — the same
+    self-limiting shape `segment.rest_instants` has.
+    """
+    from . import segment
+    log = result["log"]
+    impacts = list(result.get("impacts") or [])
+    if not impacts:
+        return []
+    score = _quiet_score(log, window_s)
+    out = []
+    for a in rest_anchors(result, prepull=True):
+        later = [k for k in impacts if k > a]
+        if not later:
+            continue
+        b = later[0]
+        n = b - a
+        if n < 30:                       # shorter than ~0.3 s is not a pull
+            continue
+        margin = (1.0 - interior) / 2.0
+        lo, hi = a + int(margin * n), a + int((1.0 - margin) * n)
+        if hi <= lo:
+            continue
+        out.append((int(a), int(lo + int(np.argmin(score[lo:hi])))))
+    return out
+
+
+def pull_tilt(result: dict, interior: float = 0.5, min_pulls: int = 2,
+              pad_s: float = 0.05) -> tuple[np.ndarray, dict]:
+    """The per-SET standing world-horizontal acceleration error. H27.
+
+    At both ends of a `pull_intervals` span the bar is nearly still, so the
+    closure identity says the integral of its horizontal acceleration between
+    them is zero. Whatever the reconstruction integrates instead IS the error,
+    and dividing by the span turns it into a mean acceleration — which, if the
+    cause is a standing attitude tilt theta, is g*sin(theta).
+
+    Returned as a 2D WORLD-HORIZONTAL VECTOR rather than a fore-aft scalar. A
+    tilt leaks gravity in a fixed world direction, so the vector is the object;
+    projecting onto `project`'s display axis first would discard the component
+    the axis does not see and make the estimate depend on step 8.
+
+    **The estimator is a component-wise MEDIAN over the set's pulls**, not a
+    mean. Within-set spread is real — MAD 0.001-0.042 m/s^2 against medians of
+    0.018-0.084 — so one bad pull should not carry the set.
+
+    `min_pulls` is the self-limiting gate. Below it the estimate is zero and the
+    correction is exactly the identity, with no lift ever named — that is
+    `fit_drift_tilt`'s shape and it is deliberate.
+
+    **But the self-limiting is weaker than "bench and squat have no impacts",
+    and H27's control found the hole.** `squat_pause_140x4_2` has zero impacts
+    and needs no gate. `bench_92.5x6_1` has ONE — a re-rack that
+    `segment.impact_anchors` accepts — and therefore one pull interval, so what
+    makes it the identity is `min_pulls = 2` alone. A bench capture with two
+    spurious anchors would be corrected, on a lift with no floor landing in it.
+    Both come back bit-identical today; the guard is thinner than it reads.
+    """
+    log = result["log"]
+    t, fs = log["t"], log["fs"]
+    vel = result["velocity"]
+    spans = pull_intervals(result, interior)
+    w = max(int(round(pad_s * fs)), 2)
+    n = len(t)
+
+    def vbar(k):
+        a, b = max(int(k) - w, 0), min(int(k) + w, n - 1)
+        return vel[a:b + 1].mean(axis=0)
+
+    rows = []
+    for a, b in spans:
+        span = float(t[b] - t[a])
+        if span <= 0:
+            continue
+        rows.append((vbar(b)[:2] - vbar(a)[:2]) / span)
+
+    info = {"n_pulls": len(rows), "spans": spans, "fitted": False}
+    if len(rows) < min_pulls:
+        info["reason"] = f"only {len(rows)} pull intervals, need {min_pulls}"
+        return np.zeros(2), info
+
+    bias = np.median(np.asarray(rows, dtype=float), axis=0)
+    info["fitted"] = True
+    info["per_pull"] = [r.tolist() for r in rows]
+    info["mag"] = float(np.linalg.norm(bias))
+    info["tilt_deg"] = float(np.degrees(np.arcsin(min(info["mag"] / 9.81, 1.0))))
+    return bias, info
+
+
+def pull_tilt_correction(result: dict, interior: float = 0.5,
+                         min_pulls: int = 2, pad_s: float = 0.05,
+                         bias: np.ndarray | None = None) -> dict:
+    """Subtract the per-set tilt and re-run steps 4-7. H27.
+
+    **The rep windows are SHIPPING's**, untouched. That is the whole point and
+    it is what separates this from C29, H22 and H24: those three replaced
+    `bounds`, so their accuracy was entangled with a coverage change and their
+    null moved with it. Here `bounds`, `n_compared` and the null are shipping's
+    exactly, so the comparison is like-for-like with nothing to discount.
+
+    Step 6 is re-applied from `result["wrist_offset"]` because this re-integrates
+    `world_accel` from scratch and would otherwise silently drop it — the same
+    trap `jump_rest_windows` documents.
+
+    `bias` overrides the estimate, which is what the variant arms need.
+
+    **THE RESULT IS NEGATIVE AND THE ARITHMETIC PREDICTS IT.** Step 7 removes a
+    LINE per rep; a constant acceleration error is QUADRATIC in position, so
+    what survives each rep is a parabola of sagitta a*T^2/8. For the measured
+    tilt (median 0.049 m/s^2) over a deadlift rep (median T = 3.2 s) that is
+    **1.2-12.9 cm, median 8.0** — against a shipping horizontal error of
+    **2.78 cm total**. A uniform constant of the measured size therefore CANNOT
+    be present through the rep, or the reconstruction would already be missing
+    by ~8 cm. Subtracting it injects a parabola that was never there, and
+    2.78 -> 5.01 is that parabola arriving.
+
+    What the measurement really is: `dv/span` is a MEAN acceleration over an
+    interval, and a mean is not a shape. The same identity over the WHOLE rep
+    gives 0.199 m/s^2, 4.1x the pull's, and a uniform constant of THAT size
+    would leave ~30 cm. Neither is a constant — the error is concentrated in
+    time (H25's impact, C29's landing), and concentrated error has a large mean
+    and a small double integral.
+
+    So this is C28's "P3's error is not a constant in ANY frame" reached from a
+    new direction. H26 was right that the tilt is real, systematic and survives
+    step 5b; the inference that it could therefore be removed as a constant is
+    what fails. **A systematically-signed mean over an interval is not evidence
+    of a uniform error.**
+    """
+    log = result["log"]
+    t = log["t"]
+    if bias is None:
+        bias, info = pull_tilt(result, interior, min_pulls, pad_s)
+    else:
+        bias, info = np.asarray(bias, dtype=float), {"fitted": True,
+                                                     "reason": "supplied"}
+    world = np.asarray(result["world_accel"], dtype=float).copy()
+    world[:, :2] -= bias
+    _, position = integrate.integrate(world, log["dt"])
+    d = result.get("wrist_offset")
+    if d is not None:
+        position = correct.apply_offset(position, result["quat"], d)
+    out = dict(result)
+    out["bar_position"] = position
+    out["reps"] = correct.detrend_set(position, result["bounds"], t) \
+        if result["bounds"] else []
+    out["pull_tilt"] = bias
+    out["pull_tilt_info"] = info
+    return out

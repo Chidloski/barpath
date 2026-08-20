@@ -16,6 +16,117 @@ Related, and deliberately not duplicated here:
 
 
 
+## H27 — the per-set tilt correction from the pull anchors: BUILT, AND IT LOSES (2026-08-20)
+
+Owner: *"build the per-set tilt correction from the pull anchors."* Built —
+`oracle.pull_intervals`, `oracle.pull_tilt`, `oracle.pull_tilt_correction` —
+measured against the video on both axes, and it is **worse than shipping on 7 of
+8 deadlifts in every variant tried.** Nothing is proposed for the pipeline.
+`analysis/77`.
+
+    arm                                  median h   beats_null   better than ship
+    shipping                               2.78 cm      0.68             -
+    per-SET constant, IMU pull anchors     5.01         0.33          1 of 8
+    per-SET constant, VIDEO pull anchors   5.18         0.38          1 of 8
+    per-REP constant                       5.00         0.34          1 of 8
+    in-span only (correct where measured)  3.54         0.48          2 of 8
+
+### The loss is clean, which is what makes it worth recording
+
+Every previous deadlift arm — C29, H22, H24 — replaced `bounds`, so its accuracy
+moved together with its coverage and its flat-line null and every headline had
+to be discounted. This one keeps SHIPPING's windows:
+
+    quantity                       shipping     every H27 arm
+    reps scored (`n_compared`)      36 of 36      36 of 36
+    flat-line null                  unchanged     unchanged
+    vertical rms                    2.88 cm       2.88 cm
+    reps outside the 40-61 cm band  0 of 36       0 of 36
+
+So this is **not** H24b's failure shape. Nothing was traded away on an axis
+nobody was watching; the horizontal simply got worse. Only world columns 0 and 1
+are ever written, and `tests/test_oracle.py` gates the vertical as
+bit-identical.
+
+### All three of H26's conditions were met, and meeting them was not enough
+
+1. **Estimable without the video.** `pull_intervals` uses only the raw
+   accel+gyro quiet score, `segment.impact_anchors` and H22's pre-pull anchor,
+   and finds **36 intervals on the clean eight against the video's 13**, at
+   least one on every capture including both singles.
+2. **Covers every rep.** By construction — a per-set constant applies to every
+   sample. This is what H23 closed C29 for and H26 flagged against a per-rep
+   version.
+3. **Scored on both axes and the ROM band.** Table above.
+
+### Why it fails, and the arithmetic predicts it in advance
+
+Step 7 removes a **line** per rep. A constant acceleration error is
+**quadratic** in position, so what survives each rep is a parabola of sagitta
+`a·T²/8`. For the measured tilt (median 0.049 m/s²) over a deadlift rep (median
+T = 3.2 s) that is **1.2 to 12.9 cm, median 8.0**.
+
+**Shipping's entire horizontal error is 2.78 cm.** A uniform constant of the
+measured size therefore *cannot* be present through the rep — if it were, the
+reconstruction would already be missing by ~8 cm and it is not. Subtracting it
+injects a parabola that was never there, and 2.78 -> 5.01 is that parabola
+arriving. The in-span arm damaging least (3.54) fits the same account: it
+touches the fewest samples.
+
+**A MEAN IS NOT A SHAPE, and that is the durable sentence.** `dv/span` is a mean
+acceleration over an interval. The same closure identity over the WHOLE rep
+gives **0.199 m/s², 4.1x the pull's**, and a uniform constant of *that* size
+would leave ~30 cm. Neither number is a constant: the error is concentrated in
+time (H25's impact, C29's landing), and concentrated error has a large mean and
+a small double integral.
+
+### What this corrects in H26, and it is an inference rather than a measurement
+
+H26's measurements all stand — the pull-only error is negative on 9 of 9
+captures at p = 0.002, it survives step 5b at 55% of its raw size, and it is
+independent of the landing error. What does not stand is the step H26 took next:
+that a systematically-signed mean is therefore a uniform error you can subtract.
+**It is not.** This is C28's *"P3's error is not a constant in ANY frame"*
+reached from a new direction, and C28 is now confirmed by a method that does not
+fit anything against the video.
+
+*The tension H26 recorded between itself and C28 is therefore resolved in C28's
+favour, and H26's own hedge — that a per-capture tilt is "not the thing C28
+rejected" — was too generous to itself.*
+
+### Two things found in passing, recorded not fixed
+
+**The video-free lockout finder is not a lockout finder.** Checked against the
+video, the ANCHOR end of each pull span is excellent — |v| = 0.001-0.016 m/s,
+the bar really is on the floor — but the lockout end sits at **0.28-0.72 m/s** on
+every span except the first of each set. A deadlift lockout is a braced standing
+position with the bar hanging at arm's length and the WATCH is not still at it,
+so a raw quiet score cannot find it. Only the span opened by H22's pre-pull
+anchor lands correctly (|v| = 0.00-0.05). So "36 intervals against the video's
+13" is the video detector being right to refuse them, not this one doing better.
+**It is not what sinks the correction** — on video-VERIFIED anchors the arm
+fails just as badly, 5.18 against 5.01 — but nobody should reuse
+`pull_intervals` as a lockout detector.
+
+**The self-limiting guard is thinner than it reads.** `squat_pause_140x4_2` has
+zero impacts and needs no gate. `bench_92.5x6_1` has **one** spurious impact
+anchor — a re-rack that `segment.impact_anchors` accepts — and therefore one
+pull interval, so what makes the correction the identity on bench is
+`min_pulls = 2` alone. A bench capture with two spurious anchors would be
+corrected, on a lift with no floor landing in it. Both come back bit-identical
+today.
+
+### One dissent, recorded and not explained
+
+`deadlift_190x3_20260818` improves under **every** arm — 7.22 -> 1.84 cm and
+`beats_null` 0.43 -> **1.69** under the per-rep variant, the highest any deadlift
+has scored in this project. It is also the capture H20 measured as elevated and
+explicitly left open, whose video shows the bar really moving 8.7/10.2/4.9 cm of
+fore-aft against a corpus norm of 4.4-6.0. n = 1, on the one capture that was
+already anomalous. A lead, not a result — and the obvious thing to ask is
+whether that capture's error really *is* closer to uniform, which would make it
+a different failure from the other seven rather than the same one inverted.
+
 ## H26 — three priors on the remaining horizontal error, measured (2026-08-19)
 
 Owner, after H25: *"there is probably an element of both within, whatever bias

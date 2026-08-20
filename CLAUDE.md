@@ -2046,6 +2046,18 @@ rungs (11–25 cm). **Knowing the lever arm makes the failure less bad; it does
 not fix it. P3's error is not a constant in any frame, and that conclusion did
 not depend on `d` being unknown.**
 
+**RE-CONFIRMED 2026-08-20 (H27) BY A METHOD THAT FITS NOTHING AGAINST THE
+VIDEO.** C28 and C31 both reached this by fitting error models to the marker
+paths and watching them fail to transfer, so the conclusion rested on an
+optimiser. H27 comes at it from the opposite side: it MEASURES a constant
+world-horizontal tilt from the IMU's own closure identity at the pull anchors —
+no video, no fit, and H26 established that the tilt is real, systematic and
+survives step 5b — then subtracts it. The horizontal gets **worse on 7 of 8
+deadlifts, 2.78 -> 5.01 cm**. The arithmetic says why: step 7 removes a line, a
+constant acceleration leaves a parabola of sagitta `a*T^2/8` = 8 cm median, and
+the whole error being corrected is 2.78 cm. So the constant is not there to
+remove. See the H27 block under P6 and TASKS.md H27.
+
 **B2 is re-confirmed rather than corroborated.** Fitting `lever` ON TOP of the
 tape gives residuals of **47.9 / 17.7 / 2.4 cm** — totals 44.0 / 17.8 / 11.8 cm
 at **108 / 74 / 4 degrees** from the tape. Only one capture stays near it: B2's
@@ -2198,23 +2210,60 @@ specific-force deviation and peak gyro. Core Motion losing its gravity reference
 under load does not explain the pull-phase tilt. It correlates only on the
 LANDING, where the mechanism is P6's strap ringing and already known.
 
-**READ THIS AGAINST C28 BEFORE BUILDING ANYTHING, BECAUSE IT LOOKS LIKE A
-CONTRADICTION AND IS NOT.** P3 records that C28's ladder found P3's error "is
-not a constant in ANY frame", and a world-frame tilt was one of its rungs. The
-two coexist because C28's failure was **transfer**: a tilt fitted on some
-captures did not hold on a held-out one. H26 agrees — the magnitude ranges over
-10x (0.015 to 0.156 m/s^2) across captures, so no single constant would transfer
-either. What is new is the SIGN being universal and the tilt being estimable
-from an INTERNAL observable rather than from the video. A per-capture tilt is
-not the thing C28 rejected; a corpus-wide constant is, and it still is.
+**H26 ARGUED THIS WAS COMPATIBLE WITH C28. IT WAS BUILT, AND C28 WON (H27,
+2026-08-20).** The paragraph that stood here read: C28's ladder found P3's error
+"is not a constant in ANY frame" and a world-frame tilt was one of its rungs,
+but C28's failure was **transfer** — a tilt fitted on some captures did not hold
+on a held-out one — so a per-capture tilt estimated from an internal observable
+was "not the thing C28 rejected". **That hedge was too generous to itself.** H27
+built exactly that per-capture tilt and it loses on 7 of 8 deadlifts. C28 is now
+confirmed by a method that fits nothing against the video, and the sentence to
+keep is C28's: P3's error is not a constant in any frame.
 
-**Nothing is proposed for the pipeline and nothing was built.** Three things
-would have to hold first, none established: that the tilt is estimable without
-the video (these intervals are video-defined); that it survives `vs_truth` on
-BOTH axes and the ROM band (H24b's lesson); and that it covers every rep, which
-prior 1's own coverage caveat currently denies — only 15 of 39 intervals carry a
-lockout dwell, because a touch-and-go deadlift is not still enough at lockout on
-most reps.
+**Nothing was proposed for the pipeline here.** Three things had to hold
+first: that the tilt is estimable without the video (H26's intervals are
+video-defined); that it survives `vs_truth` on BOTH axes and the ROM band
+(H24b's lesson); and that it covers every rep, which H26's own coverage caveat
+denied — only 15 of 39 intervals carry a lockout dwell.
+
+**H27 (2026-08-20) MET ALL THREE AND THE CORRECTION STILL LOSES.** `analysis/77`,
+`oracle.pull_tilt_correction`. Median horizontal rms 2.78 -> 5.01 cm and
+`beats_null` 0.68 -> 0.33, worse on 7 of 8; and every variant loses too —
+video-defined anchors 5.18, per-REP 5.00, in-span-only 3.54.
+
+**The loss is CLEAN, which is what makes it worth keeping.** The arm holds
+shipping's `bounds`, so reps scored stays 36 of 36, the null does not move,
+vertical rms stays 2.88 cm and reps outside the 40-61 cm band stay 0 of 36.
+Nothing was traded on an unwatched axis — this is not H24b's shape.
+
+**And the arithmetic predicts the failure before you run it.** Step 7 removes a
+LINE per rep; a constant acceleration error is QUADRATIC in position, leaving a
+parabola of sagitta `a*T^2/8` — **1.2 to 12.9 cm, median 8.0** for the measured
+tilt. Shipping's entire horizontal error is 2.78 cm, so a uniform constant of
+that size cannot be present through the rep, and subtracting it injects a
+parabola that was never there.
+
+**A MEAN IS NOT A SHAPE.** `dv/span` is a mean acceleration over an interval.
+The same identity over the WHOLE rep gives 0.199 m/s^2, 4.1x the pull's, and a
+uniform constant of THAT size would leave ~30 cm. Neither is a constant: the
+error is concentrated in time (H25's impact, C29's landing), and concentrated
+error has a large mean and a small double integral. **A systematically-signed
+mean over an interval is not evidence of a uniform error** — H26's measurements
+all stand, and only that inference from them fails.
+
+*Two things H27 found in passing, recorded not fixed.* `oracle.pull_intervals`
+is NOT a lockout finder: against the video its anchor end is excellent
+(|v| = 0.001-0.016 m/s) but its lockout end sits at 0.28-0.72 m/s on every span
+but the first of each set, because a deadlift lockout is a braced stand and the
+watch is not still at it. And the self-limiting guard is thinner than it reads —
+`bench_92.5x6_1` has one spurious impact anchor, so what makes the correction
+the identity on bench is `min_pulls = 2` rather than the absence of impacts.
+
+*One dissent, unexplained:* `deadlift_190x3_20260818` improves under every arm,
+reaching `beats_null` 1.69 — the highest any deadlift has scored here — and it
+is the capture H20 already left open as elevated. n = 1, on the one capture that
+was already anomalous.
+*Evidence:* `analysis/77`, TASKS.md H27.
 *Evidence:* `analysis/76`, TASKS.md H26.
 
 **P6 — The floor impact is trustworthy, INFORMATIVE, and misspent by every

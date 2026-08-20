@@ -2697,9 +2697,38 @@ error. **The coverage caveat is what stops it being buildable today** — only 1
 of 39 intervals carry a lockout dwell, so H23's cover-every-rep requirement is
 not met per rep. See TASKS.md H26.
 
+## 77 — the per-set tilt correction, built and measured (H27, 2026-08-20)
+
+`77_pull_tilt.png`. The owner asked for H26's prior 1 to be BUILT. It is
+(`oracle.pull_intervals`, `pull_tilt`, `pull_tilt_correction`) and **it loses on
+7 of 8 deadlifts in every variant.** Kept for the mechanism.
+
+* **A — every variant loses.** Median horizontal rms: shipping 2.78 cm; per-SET
+  constant from IMU anchors 5.01; per-SET from VIDEO anchors 5.18; per-REP 5.00;
+  in-span-only 3.54. Better than shipping on 1, 1, 1 and 2 of 8 respectively.
+* **B — `beats_null` 0.68 -> 0.33**, paired Wilcoxon p = 0.078. The null is
+  UNCHANGED because the arm keeps shipping's windows, so unlike C29 and H22 this
+  is like-for-like with nothing to discount. Reps scored is 36 of 36 in every
+  arm, vertical rms 2.88 cm in every arm, reps outside the 40-61 cm ROM band
+  0 of 36 in every arm. **Not H24b's failure shape** — nothing was traded.
+* **C — why, and the arithmetic says so in advance.** Step 7 removes a LINE per
+  rep; a constant acceleration error is QUADRATIC in position, leaving a
+  parabola of sagitta `a·T²/8` — **1.2 to 12.9 cm, median 8.0** for the measured
+  tilt. Shipping's whole horizontal error is 2.78 cm, so the error is not that
+  constant, and subtracting it injects a parabola that was never there.
+* **D — a MEAN is not a SHAPE.** The same closure identity over the WHOLE rep
+  gives 0.199 m/s², **4.1x the pull's**, and a uniform constant of that size
+  would leave ~30 cm. Neither is a constant: the error is concentrated in time
+  (H25's impact), which has a large mean and a small double integral.
+
+So this is C28's *"not a constant in ANY frame"* reached from a new direction,
+without fitting anything against the video. H26's measurements stand; the
+inference that a systematically-signed mean is a uniform error does not.
+See TASKS.md H27.
+
 ---
 
-*Numbering: 47 through 76 are taken. The next free number is 77 — H21
+*Numbering: 47 through 77 are taken. The next free number is 78 — H21
 (retiring `markers.py`) claimed nothing, because it moved no number and had
 nothing to draw. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this

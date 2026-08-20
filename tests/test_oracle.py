@@ -809,3 +809,102 @@ def test_the_cut_width_is_a_plateau_not_a_tuned_constant():
         f"{csv.stem}: h rms moves {max(hs) - min(hs):.3f} cm across cut_s "
         f"0.04-0.20 ({[round(h, 3) for h in hs]}) — the cut width has become a "
         f"tuned constant")
+
+
+# ------------------------------------------------------------------- H27 -----
+
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_the_pull_tilt_leaves_coverage_and_the_VERTICAL_untouched(csv):
+    """H27's one structural virtue, and the reason its loss is believable.
+
+    C29, H22 and H24 all replaced `bounds`, so their accuracy moved together
+    with their coverage and their flat-line null, and every headline had to be
+    discounted for it. This arm keeps SHIPPING's windows and touches only world
+    columns 0 and 1, so:
+
+      * the rep windows are identical, hence `n_compared` and the null are;
+      * the VERTICAL path is bit-identical, hence so is per-rep vertical ROM.
+
+    That is what makes H27 a clean negative result rather than a trade. If this
+    ever fails, the arm has started moving something it does not claim to and
+    the horizontal comparison stops being like-for-like.
+    """
+    from src import pipeline
+
+    res = pipeline.run(csv, wrist_offset=None)
+    if not res.get("bounds"):
+        pytest.skip("no rep bounds")
+    arm = oracle.pull_tilt_correction(res)
+
+    assert arm["bounds"] == res["bounds"], "the rep windows moved"
+    assert len(arm["reps"]) == len(res["reps"]), "the rep COUNT moved"
+    for i, (a, b) in enumerate(zip(res["reps"], arm["reps"])):
+        av, bv = np.asarray(a, float), np.asarray(b, float)
+        assert av.shape == bv.shape
+        np.testing.assert_allclose(
+            bv[:, 2], av[:, 2], atol=1e-12,
+            err_msg=f"rep {i}: the VERTICAL moved, but only columns 0 and 1 "
+                    "are ever written")
+
+
+@_needs_deadlifts
+def test_the_pull_tilt_is_the_IDENTITY_without_enough_pull_intervals():
+    """The self-limiting gate, and it is `min_pulls` rather than the lift.
+
+    H27's control found the hole this guards: `squat_pause_140x4_2` has no
+    impacts and so no pull intervals, but `bench_92.5x6_1` has ONE spurious
+    impact anchor (a re-rack) and therefore one interval. What makes the
+    correction the identity on bench is `min_pulls = 2` alone.
+
+    Gated on the mechanism rather than on a lift name, so it keeps meaning the
+    same thing if `segment.impact_anchors` ever gets stricter or looser.
+    """
+    from src import pipeline
+
+    res = pipeline.run(_DL[0], wrist_offset=None)
+    bias, info = oracle.pull_tilt(res, min_pulls=10 ** 6)
+    assert not info["fitted"], "an unreachable min_pulls still fitted"
+    np.testing.assert_array_equal(bias, np.zeros(2))
+
+    arm = oracle.pull_tilt_correction(res, min_pulls=10 ** 6)
+    for i, (a, b) in enumerate(zip(res["reps"], arm["reps"])):
+        np.testing.assert_allclose(
+            np.asarray(b, float), np.asarray(a, float), atol=1e-12,
+            err_msg=f"rep {i}: a refused estimate still moved the path")
+
+
+@_needs_deadlifts
+@pytest.mark.parametrize("csv", _DL, ids=lambda p: p.stem.split("_2026")[0])
+def test_a_uniform_constant_of_the_MEASURED_size_is_too_big_to_be_real(csv):
+    """H27's mechanism, gated as arithmetic rather than as a score.
+
+    Step 7 removes a line per rep, so a constant acceleration error `a` leaves a
+    parabola of sagitta `a*T^2/8`. For the tilt this estimates, that sagitta is
+    1.2-12.9 cm — where the pipeline's ENTIRE horizontal error against the video
+    is ~2.78 cm. A uniform constant of the measured size therefore cannot be
+    present through the rep, which is why subtracting it makes things worse.
+
+    The gate is deliberately loose (sagitta exceeds 1 cm, the horizontal spec)
+    because the point is the order of magnitude, not a threshold. If a future
+    change ever brings the estimate down to where its own parabola is inside
+    spec, this fails and H27's conclusion genuinely needs re-measuring — which
+    is exactly when somebody should look again.
+    """
+    from src import pipeline
+
+    res = pipeline.run(csv, wrist_offset=None)
+    if not res.get("bounds"):
+        pytest.skip("no rep bounds")
+    bias, info = oracle.pull_tilt(res)
+    if not info["fitted"]:
+        pytest.skip("not enough pull intervals on this capture")
+
+    t = res["log"]["t"]
+    T = float(np.median([t[b - 1] - t[a] for a, b in res["bounds"]]))
+    sagitta_cm = float(np.linalg.norm(bias)) * T * T / 8 * 100
+    assert sagitta_cm > 1.0, (
+        f"{csv.stem}: the estimated tilt would leave only {sagitta_cm:.2f} cm "
+        "after step 7 — inside the 1 cm horizontal spec, so H27's arithmetic "
+        "no longer explains its own negative result and it needs re-measuring")
