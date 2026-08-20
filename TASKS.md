@@ -16,6 +16,174 @@ Related, and deliberately not duplicated here:
 
 
 
+## H28 — is the oracle worth it, a tidy for a readthrough, and every set drawn (2026-08-20)
+
+Owner: *"evaluate whether the oracle is worth it. Then clean up the codebase
+ready for a manual review and readthrough. Then create an analysis plot that
+shows the barpath for each set."* Three tasks, and the first two turned out to
+be the same task: auditing what has a caller is what found the rot.
+
+### 1. The oracle is WORTH IT, and the weakness is a missing driver
+
+**Verdict: keep it.** The cost is not the 1700 lines, because the two things
+that make a module expensive are both near zero here.
+
+    what                                  measured
+    imports of `oracle` from src/         0        - it cannot reach the bar path
+    tests/test_oracle.py runtime          15.3 s   - of a 54-minute suite (0.5%)
+    functions with a test or a driver     30 of 34
+    CLAUDE.md claims citing it by name    10
+
+Nothing here has ever shipped and nothing should — every correction in this
+module was built to be rejected. So "unused" is its normal state and is not
+evidence against it. What it buys is that ten of `CLAUDE.md`'s claims are
+**re-runnable** instead of merely written down, which is the exact property
+`NON_GOALS.md` lost on 2026-07-28 when its rejections outlived their evidence.
+
+**The real finding is the four functions with NO driver, and it is a live risk
+rather than dead weight.** `fit`, `objective` and `figure` are C28's ladder —
+the module's original purpose and the source of "P3's error is not a constant in
+ANY frame" — and they had **no `run.py` flag, no analysis script and no test**.
+Un-driven numerical code behind a headline the project still quotes.
+
+Checked by hand rather than assumed, and it still works: on `deadlift_185x3` the
+baseline is **11.62 cm**, one `bias` rung (three parameters) collapses it to
+**2.24**, `+tilt` buys nothing beyond, and every rung still loses to a 1.65 cm
+null. That is C28's shape intact. `test_the_C28_ladder_still_runs` now pins it
+in 1.4 s, because "somebody checked once" is not a gate.
+
+`jump_then_knots` is the fourth and it is kept for a sharper reason: it is the
+only way to re-derive that **step 7 is load-bearing because of its per-rep
+INDEPENDENCE and not its closure** (the continuous piecewise-linear arm cost
+8.21 -> 17.00 cm, ROM 70-138). Delete it and that rule becomes prose. A function
+with no callers can still be the only evidence for a rule the project relies on
+— which is the durable lesson, and the opposite of what a dead-code sweep
+assumes.
+
+The navigation map is now at the top of `src/oracle.py`, so the next reader
+meets it before the code.
+
+### 2. The cleanup found the docs telling you to run things that do not exist
+
+Zero behaviour change anywhere; no reconstruction module's logic was touched.
+What it turned up:
+
+* **Four commands cited 14 times across `CLAUDE.md`, `TASKS.md` and
+  `analysis/README.md` do not exist**: `--b3oracle` (3 citations), `--dlconic`
+  (6), `--splice` (3), `--stages` (2). They were removed with the v1 corpus
+  (F1) and with `markers.py` (H21). **`run.py` ignored unknown flags**, so
+  typing one ran the whole 36-capture corpus and printed no figure — it looked
+  like it had worked. `run.py` now has a `FLAGS` table and a `RETIRED` table
+  and refuses both cases by name.
+* **`run.py --overview` had raised `NameError` since 2026-08-14**, because
+  `OVERVIEW_CAPTURES` named v1 captures and went with them. Nothing calls it
+  under test. Retired rather than repaired: both referees it was built to
+  compare are deleted.
+* **`capture.probe` and `capture.frames` could never have run** — they use
+  `subprocess` and `json` and this module has never imported either, so both
+  raise `NameError` on the first line of their body. Dead since the template
+  tracker went, and `src/vtrack/detect.py` carries a working `probe`. Deleted
+  with `ncc_map` and `_parabolic`, 60 lines. **This is a deletion where the rest
+  of `capture.py`'s orphans are a record**: `find_plate` and the plate diameters
+  are kept because they document what a referee measured, and a broken ffmpeg
+  wrapper documents nothing.
+* 16 unused imports and one redefinition, via `ruff --select F401,F811,F541`.
+  `analysis/tracking/v2_rebuild/code/` was reverted and left alone — CLAUDE.md
+  calls it a FROZEN copy of the tracker code, and a lint fix would unfreeze it.
+
+*Not fixed, recorded:* 7 unused locals remain (`ruff --select F841`), all in
+test and analysis files where the assignment documents the shape of what is
+being ignored. And the discarded `.claude/c34-tidy-discarded.patch` can no
+longer apply — it patches `tests/test_markers.py` and `src/truth.py`, both
+deleted since.
+
+### 3. `analysis/78` — every set, reconstruction against video
+
+One row per set: the leftmost panel is the set AVERAGE, the panels right of it
+are its individual reps, same comparison throughout. One figure per lift.
+**32 of 36 sets, 124 reps.** Reading the average beside the reps is the point —
+a tidy average over four scattered reps and a tidy average over four tight ones
+look identical on the left and mean entirely different things.
+
+Two decisions taken from H13 rather than by preference: the average is aligned
+by **turnaround** (H13 measured that this is where the whole averaging gain
+lives, vertical 8.30 -> 3.00 cm), and the anomalous rep is **labelled, never
+dropped** (excluding it makes the average worse, 1.52 -> 1.70).
+
+It uses `shortset.run` rather than `pipeline.run`, which is what lets the
+singles in: on three reps or more it IS `pipeline.run`, and on a one-rep set it
+supplies the clock G3 built. Through the plain pipeline every single in the
+corpus refuses, and coverage was 27 sets instead of 32.
+
+**13 of the 32 lose to the flat-line null** — every deadlift bar
+`deadlift_200x1`, plus `bench_spoto_95x5_2_20260806` and
+`squat_145x4_2_20260817`. That is H17's scorecard restated, now drawn.
+
+### Verification, and an attribution that had to be measured
+
+Full suite: **45 failed, 741 passed, 35 skipped in 52:34**, against the H27
+baseline's **32 failed, 682 passed**. Thirteen more failures — and **none of
+them are this work**. The corpus grew from 31 to 36 captures *mid-session*, so
+the two runs are not comparable, and 59 more tests ran.
+
+That is a claim that had to be tested rather than asserted, since "my change is
+harmless" is exactly what an aggregate hides. The code changes were backed up,
+reverted with `git checkout --` on the five files, and the surprising failures
+re-run against the committed state:
+
+    test_display, 4 aggregates      IDENTICAL - assert 23 == 13, 0.8996 > 0.9,
+                                    0.8996 > 0.95, assert 4 == 6
+    test_segmentation, 3 aggregates IDENTICAL - "tol=1.46 gives 31/36",
+                                    "reaches only 31/36", same fallback list
+
+Same failures, same digits, with every one of this session's code changes
+reverted. Restored afterwards and confirmed by md5. The remaining new failures
+each name a 2026-08-20 capture directly. `git stash` was not used and must not
+be — it would have destroyed every live claim on the board.
+
+*Note the aggregates are now reading `/36` and `23 == 13`: several of them pin a
+CORPUS COUNT, so they go red every time captures arrive and say nothing about
+the code. That is worth a decision at some point — a gate that fires on new data
+trains people to ignore it — but re-pinning them is not this task's to do.*
+
+`tests/test_oracle.py` on its own: **130 passed, 3 failed, 12 skipped in 15.2 s**,
+the three being the documented D1 parabola reds. The new ladder gate passes.
+`ruff --select F,E9` over `src`, `tests` and `run.py` is down to 4 unused
+locals, and **F821 undefined-name is at zero**, from four.
+
+### What was found on the way and NOT acted on
+
+* **The corpus is 36 captures.** Five arrived on 2026-08-20 —
+  `bench_spoto_80x5_1/2`, `squat_170x1`, `squat_180x1`,
+  `squat_pause_140x4_1` — and all five track at **100% coverage with rep counts
+  matching their labels**. Two are immediately among the best in the corpus:
+  `squat_pause_140x4_1_20260820` scores **h 1.15 cm, beats_null 4.44** and
+  `bench_spoto_80x5_1_20260820` **h 1.14 cm, beats_null 3.71**. Nothing else in
+  the docs has been re-measured on 36.
+* **Six `.mov` files are no longer on disk** — `bench_92.5x6_1_20260808`,
+  `bench_spoto_95x5_1_20260813`, `deadlift_160x6_1_20260804`,
+  `deadlift_170x4_3_20260808`, `deadlift_185x3_20260804`,
+  `squat_170x1_20260806`. **Every one has a committed tracked path**, so all six
+  still score and the suite never noticed; `data_v2/video/` is gitignored, so
+  the clips themselves are not recoverable from git. No code in this repo
+  deletes video. This is the cache doing exactly what C31 built it for, and it
+  is also why `analysis/78` pairs a capture to its clip through
+  `data_v2/tracked/` rather than through `pipeline.find_video`, which requires
+  the file to exist.
+* **`capture.fore_aft_flags` has no caller anywhere** — not in `src/`, not in
+  `run.py`, not in a test. So `FORE_AFT_ACCEL_MAX`, which `capture.py` spends
+  thirty lines deriving and which `CLAUDE.md` lists as *"the only external
+  bounds bench and squat have"*, is **never evaluated against anything**. The
+  function is sound; it is simply not wired up. A bound nothing checks is not a
+  gate, and this is the same shape as F1's unrun suite. Recorded, not fixed:
+  wiring it in would start flagging reps and that is a decision.
+* `squat_pause_140x4_1_20260820` scores **3 reps against a labelled 4**, and
+  `squat_170x1_20260820` is refused by the short sync. Both are new captures and
+  neither is diagnosed. P1's shape again; not chased.
+* `deadlift_210x1_20260815` still scores **2 reps for a labelled single** at
+  h 20.64 / v 37.74 cm — H15's known miscount, now visible in `analysis/78`
+  rather than only in a table.
+
 ## H27 — the per-set tilt correction from the pull anchors: BUILT, AND IT LOSES (2026-08-20)
 
 Owner: *"build the per-set tilt correction from the pull anchors."* Built —

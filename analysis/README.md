@@ -2728,7 +2728,53 @@ See TASKS.md H27.
 
 ---
 
-*Numbering: 47 through 77 are taken. The next free number is 78 — H21
+## `78_set_paths_<lift>.png` — every set, reconstruction against video (H28, 2026-08-20)
+
+`python analysis/78_set_paths.py`. Three figures, one per lift. One ROW per
+set: the leftmost panel is the set's AVERAGE rep, reconstruction against video,
+and the panels to its right are its individual reps, same comparison. Black is
+the bar as `vtrack` saw it, blue is the pipeline, ORANGE is the rep the display
+would flag as the odd one.
+
+**32 of the 36 captures, 124 reps.** It uses `shortset.run` rather than
+`pipeline.run` — identical on three reps or more, and the only way the singles
+score at all (G3). Through the plain pipeline coverage is 27 sets.
+
+Nothing here is a new measurement: every curve is `metrics.vs_truth`'s own
+`curve_video` / `curve_pipeline`, already paired and aligned by the scoring
+path. Two choices are taken from H13 rather than by preference — the average is
+aligned by **turnaround** (that alignment is where the whole averaging gain
+lives, vertical 8.30 -> 3.00 cm) and the odd rep is **labelled, not excluded**
+(excluding it makes the average worse, 1.52 -> 1.70).
+
+**Why both halves are on the same row.** A tidy average over four scattered reps
+and a tidy average over four tight ones are indistinguishable in the left-hand
+panel. The product would draw only that panel; the reps beside it are what it
+is hiding.
+
+What it shows at a glance:
+
+* **13 of 32 sets lose to the flat-line null**, drawn rather than tabulated —
+  every deadlift except `deadlift_200x1`, plus `bench_spoto_95x5_2_20260806` and
+  `squat_145x4_2_20260817`. H17's scorecard, visible.
+* **The strapped capture is unmistakable.** `deadlift_160x6_1_20260818` sweeps
+  ~20 cm of fore-aft on every rep against a video path that is nearly flat —
+  H20's finding as a picture. It is drawn and labelled rather than dropped,
+  because hiding it would misrepresent the corpus and dropping it silently would
+  misrepresent the median.
+* **`deadlift_210x1_20260815` gives two reps for a labelled single** at
+  h 20.64 / v 37.74 cm — H15's open miscount, now visible as a shape.
+* The five captures of 2026-08-20 are the corpus's best-conditioned:
+  `squat_pause_140x4_1` at h 1.15 cm / `beats_null` 4.44 and
+  `bench_spoto_80x5_1` at 1.14 cm / 3.71.
+
+Six captures no longer have a `.mov` on disk; all six have a committed tracked
+path, so the script pairs a capture to its clip through `data_v2/tracked/`
+rather than through `pipeline.find_video`, which requires the file to exist.
+
+---
+
+*Numbering: 47 through 78 are taken. The next free number is 79 — H21
 (retiring `markers.py`) claimed nothing, because it moved no number and had
 nothing to draw. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this

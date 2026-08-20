@@ -5,19 +5,15 @@
     python run.py data_v2/raw/foo.csv     # one
     python run.py --plot               # also write diagnostics to analysis/
     python run.py --truth              # also measure against the video (A3)
-    python run.py --stages             # draw the pipeline stage by stage
     python run.py --rom                # per-rep vertical ROM against the bounds
     python run.py --v2rom              # C24: per-rep ROM on the paired benches
     python run.py --dlparabola         # D1: where the deadlift fore-aft is generated
     python run.py --anchors            # C6: attitude before and after a set
     python run.py --bias               # B6: constant-bias corrections vs the video
     python run.py --closure            # C11: vertical momentum, bench vs deadlift
-    python run.py --splice             # B6: the impact splice, measured and rejected
-    python run.py --b3oracle           # B3: what is left in the per-rep detrend
     python run.py --vstruth            # the reconstruction drawn on top of the video
     python run.py --scorecard          # how well the pipeline performs, per lift
     python run.py --paths              # step 9: the bar path itself
-    python run.py --overview           # stages, bar path and video, in one
     python run.py --smoothing          # H13: smoothing methods and levels
     python run.py --averages           # H13: the average rep, and the odd one
     python run.py --productview        # H13: what the app would draw
@@ -26,14 +22,18 @@
 since C8 on the bench captures whose sync is identified (3 of 7). Squat and the
 remaining benches report why instead.
 
---overview writes analysis/40_overview.png: one capture per column, the
-pipeline stages down to the bar path, and underneath it the bar path drawn on
-the video's. Slow: it decodes three clips. (It was written to put two referees
-side by side on the same lift; both of those referees have since been deleted —
-the plate template with the v1 corpus on 2026-08-14, markers.py on 2026-08-19 —
-and `src/vtrack/` scores every capture it draws now.)
+--overview is RETIRED and `analysis/40_overview.png` cannot be regenerated
+(H28, 2026-08-20). It drew three named captures, and `OVERVIEW_CAPTURES` named
+v1 ones, so the function had raised `NameError` since F1 deleted that corpus on
+2026-08-14 — silently, because nothing calls it under test. It was written to
+put two referees side by side on the same lift and both of those referees have
+since been deleted as well (the plate template with v1, `markers.py` on
+2026-08-19), so there is nothing left to restore it to. `RETIRED` below carries
+the same note for the three other commands the docs still cite.
 
---stages writes analysis/21_pipeline_stages.png: one column per lift, one row
+--stages is RETIRED (H28) — it needed the v1 corpus, deleted 2026-08-14 (F1),
+and `analysis/21_pipeline_stages.png` cannot be regenerated. It wrote one
+column per lift, one row
 per stage, from raw acceleration to the bar path. It ignores any paths given
 on the command line and uses one representative capture per lift, because the
 point of it is the comparison.
@@ -71,13 +71,17 @@ closes at the sensor's noise floor and deadlift does not, and the difference is
 the floor impact. Slow — it decodes every bench and deadlift clip. Squat is
 excluded because its footage does not track.
 
---splice writes analysis/32_b6_splice_rejected.png: B6's impact splice, measured
+--splice is RETIRED (H28) — it needed the v1 corpus, deleted 2026-08-14 (F1),
+and `analysis/32_b6_splice_rejected.png` cannot be regenerated. It was B6's
+impact splice, measured
 and rejected. It removes the vertical momentum deficit completely and still
 loses on horizontal, which is the axis the spec is about. The splice lives here
 and in the test that pins the result, deliberately not in `correct.py` — it was
 rejected, and B7's precedent is to delete rather than leave a flag behind.
 
---b3oracle writes analysis/38_b3_detrend_oracle.png: B3, and what bounds it. An
+--b3oracle is RETIRED (H28) — it needed the v1 corpus, deleted 2026-08-14 (F1),
+and `analysis/38_b3_detrend_oracle.png` cannot be regenerated. It was B3, and
+what bounds it: an
 ORACLE over the per-rep detrend basis — the best line and the best
 line-plus-quadratic fitted AGAINST the video, so it caps every estimator rather
 than being one. It found ~1.7 cm of real headroom in the linear family and that
@@ -97,40 +101,14 @@ sys.path.insert(0, str(ROOT))
 from src import pipeline  # noqa: E402
 
 
+# Read by `draw_scorecard` only, since `--stages` was retired (H28). Two of
+# the three name v1 captures that F1 deleted on 2026-08-14, so the scorecard
+# prints "not in data_v2/raw/ — skipping" for them and quietly draws fewer
+# panels than it was designed to. Recorded, not fixed: choosing replacements
+# changes a published figure and is a decision, not a tidy.
 STAGE_CAPTURES = [("squat", "squat_130x5"),
                   ("bench", "bench_90x4_1"),
                   ("deadlift", "deadlift_155x6_1")]
-
-
-def draw_overview() -> int:
-    """Stages, bar path and video truth for three captures, in one figure."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import warnings
-    from src import plot
-
-    results = {}
-    for label, folder, stem in OVERVIEW_CAPTURES:
-        path = next((ROOT / folder).glob(f"{stem}*.csv"), None)
-        if path is None:
-            print(f"{stem} not in {folder}/ — skipping")
-            continue
-        video = pipeline.find_video(path)
-        if video is None:
-            print(f"{stem} has no video — skipping")
-            continue
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            results[label] = pipeline.run(path, video=video)
-
-    if not results:
-        print("no captures found for the overview")
-        return 1
-
-    out = ROOT / "analysis" / "40_overview.png"
-    plot.plot_overview(results).savefig(out, dpi=105)
-    print(f"wrote {out.relative_to(ROOT)}")
-    return 0
 
 
 def draw_paths() -> int:
@@ -409,7 +387,7 @@ def draw_vs_truth() -> int:
     """Every capture with video: the reconstruction drawn on top of the capture."""
     import matplotlib
     matplotlib.use("Agg")
-    from src import metrics, plot, capture
+    from src import plot, capture
 
     raw, vid = ROOT / "data_v2" / "raw", ROOT / "data_v2" / "video"
     results = {}
@@ -967,7 +945,7 @@ def draw_pipeline_now() -> int:
     import matplotlib
     matplotlib.use("Agg")
     import numpy as np
-    from src import metrics, pipeline, plot, capture
+    from src import metrics, pipeline, plot
 
     picks = [
         ("data_v2", "deadlift_160x6_1"), ("data", "deadlift_155x6_1"),
@@ -1007,7 +985,7 @@ def draw_pipeline_now() -> int:
         panels.append({"stem": stem, "paths": paths, "video": video,
                        "caption": cap})
         print(f"  {stem}: {len(res['reps'])}/{exp} reps"
-              + ("" if video is None else f", scored"))
+              + ("" if video is None else ", scored"))
 
     if not panels:
         print("nothing to draw")
@@ -1967,13 +1945,53 @@ def textwrap_short(text: str, width: int = 46) -> str:
     return text if len(text) <= width else text[:width].rsplit(" ", 1)[0] + "…"
 
 
+# Every flag `main` understands. `--plot`, `--truth` and `--force` are
+# MODIFIERS of the default run; the rest each select one figure and return.
+#
+# This table exists because the fall-through used to be silent: an unrecognised
+# `--flag` dropped past every branch and ran the whole corpus instead, so
+# `run.py --b3oracle` printed 36 capture summaries and no figure, and looked
+# like it had worked. Four commands cited in CLAUDE.md and TASKS.md — including
+# that one — had been removed with the v1 corpus and `markers.py`, and nothing
+# said so at the point of use. See H28.
+FLAGS = (
+    "--plot", "--truth", "--force",
+    "--paths", "--rom", "--v2rom", "--anchors", "--bias", "--closure",
+    "--vstruth", "--scorecard", "--pausedsquat", "--dpaths", "--pauseattitude",
+    "--pipelinenow", "--jumpd", "--track", "--dlparabola", "--segfixes",
+    "--vstracked", "--shortsets", "--squatsync", "--smoothing", "--averages",
+    "--productview",
+)
+
+# Removed rather than repaired, with what they depended on. Named so that the
+# guard can say "it is gone" instead of "unknown", because every one of these
+# is still cited somewhere in the docs as a reproduction command.
+RETIRED = {
+    "--b3oracle": "B3's detrend oracle — needed the v1 corpus, deleted 2026-08-14 (F1)",
+    "--splice":   "B6's impact splice — needed the v1 corpus, deleted 2026-08-14 (F1)",
+    "--stages":   "the stage-by-stage figure — needed the v1 corpus, deleted 2026-08-14 (F1)",
+    "--dlconic":  "the conic deadlift path — called markers.bar_path, deleted 2026-08-19 (H21)",
+    "--overview": "the three-capture overview — its OVERVIEW_CAPTURES were v1, deleted 2026-08-14 (F1)",
+}
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
+
+    for flag in [a for a in argv if a.startswith("--")]:
+        if flag in RETIRED:
+            print(f"{flag} no longer exists: {RETIRED[flag]}.")
+            print("The figure it made is still in analysis/ and is described in "
+                  "analysis/README.md; it cannot be regenerated.")
+            return 2
+        if flag not in FLAGS:
+            print(f"unknown flag {flag}. Known flags:")
+            print("  " + "  ".join(sorted(FLAGS)))
+            return 2
+
     want_plot = "--plot" in argv
     want_truth = "--truth" in argv
 
-    if "--overview" in argv:
-        return draw_overview()
     if "--paths" in argv:
         return draw_paths()
     if "--rom" in argv:

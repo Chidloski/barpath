@@ -250,7 +250,6 @@ def test_jump_correction_reduces_to_impact_correction_at_full_width():
     world = np.zeros((n, 3))
     world[:, 0] = 0.2
     vel, _ = integrate.integrate(world, dt)
-    import pytest as _pt
     saved = segment.rest_instants
     segment.rest_instants = lambda log, imp=None: [50, 400]
     try:
@@ -274,7 +273,6 @@ def test_lever0_and_a_fitted_lever_ADD_rather_than_replace():
     every plausibility line in the pinned ladder would be measuring the wrong
     quantity.
     """
-    from src import correct
 
     n = 300
     dt = np.full(n, 0.01)
@@ -500,6 +498,15 @@ def test_the_deadlift_fore_aft_path_IS_one_parabola(csv):
     2026-08-08 captures, so D1's headline holds on the captures it was derived
     from and does not generalise to the newest ones. Left failing rather than
     re-pinned — it is a finding, not a stale gate. See TASKS.md G1.*
+
+    **It is 3 red of 12 as of 2026-08-20 (H28), not 2 of 6**, and the corpus
+    grew rather than the finding changing: `deadlift_150x4_1` (0.27) and
+    `deadlift_170x4_3` (0.47) are G1's two, and `deadlift_200x1` (0.43) joins
+    them. That third is a SINGLE, so its median is one rep and the statistic
+    D1 is about — how well ONE constant describes the fore-aft of a set — is
+    barely defined on it. Recorded rather than skipped: the parametrisation is
+    over every deadlift in the corpus by design, and carving out singles here
+    would be re-pinning the gate to make it green.
     """
     from src import pipeline, project
 
@@ -768,7 +775,7 @@ def test_the_final_impact_falls_outside_every_window(csv):
     Here the corrupted samples are simply not covered: the final impact must end
     up outside the last window, so there is no impulse in it to fight over.
     """
-    from src import correct, pipeline
+    from src import pipeline
     res = pipeline.run(csv, wrist_offset=None)
     if not res.get("impacts"):
         pytest.skip("no floor impacts: not an impact lift")
@@ -908,3 +915,64 @@ def test_a_uniform_constant_of_the_MEASURED_size_is_too_big_to_be_real(csv):
         f"{csv.stem}: the estimated tilt would leave only {sagitta_cm:.2f} cm "
         "after step 7 — inside the 1 cm horizontal spec, so H27's arithmetic "
         "no longer explains its own negative result and it needs re-measuring")
+
+
+# ------------------------------------------------------------------- H28 -----
+@_needs_deadlifts
+def test_the_C28_ladder_still_runs():
+    """C28's ladder has no runner, so nothing would notice if it stopped working.
+
+    Added 2026-08-20 (H28) after an audit of what in `oracle.py` has a caller.
+    `fit`, `objective` and `figure` are the module's ORIGINAL purpose — the
+    constant-error-model ceiling that decided nobody should build an estimator
+    for a constant in any frame — and between C31 (2026-08-06) and that audit
+    there was no `run.py` flag, no analysis script and no test that called any
+    of them. Two weeks of unexercised numerical code behind a headline this
+    project still quotes.
+
+    It DID still work, which is the good news and also exactly why this test
+    exists: "somebody checked by hand once" is not a gate, and the next agent to
+    touch `calibrate`, `integrate` or `rebuild` deserves to be told immediately
+    rather than to discover it while trying to reproduce C28.
+
+    The assertions are C28's SHAPE, not its digits, because the shape is the
+    finding and the digits move with the corpus and with step 5b:
+
+      * the unfitted baseline is far outside spec;
+      * one `bias` rung — three parameters — collapses it by an order of
+        magnitude, which is the "flexible enough basis" warning in the module
+        docstring made concrete;
+      * and it STILL loses to the flat-line null, which is C28's conclusion.
+
+    Scored with `wrist_offset=None` and the video the cache already holds, so
+    it costs about two seconds and decodes nothing.
+    """
+    from src import metrics, pipeline
+
+    csv = next((c for c in _DL if "deadlift_185x3" in c.stem), None)
+    if csv is None:
+        pytest.skip("deadlift_185x3 not present")
+    video = _ROOT / "data_v2" / "video" / "deadlift_185x3_20260804.mov"
+    if not (_ROOT / "data_v2" / "tracked" / "deadlift_185x3_20260804.csv").exists():
+        pytest.skip("no cached video path for deadlift_185x3")
+
+    base = pipeline.run(csv, video=video)
+    truth = metrics.resolve_path(video)
+
+    flat = oracle.fit(base, truth, (), restarts=1)
+    bias = oracle.fit(base, truth, ("bias",), restarts=1)
+
+    assert flat["h_rms"] > 5.0, (
+        f"the unfitted baseline is {flat['h_rms']:.2f} cm — C28 ran on a "
+        "baseline an order of magnitude outside spec, and if that is no longer "
+        "true the ladder is measuring a different pipeline")
+    assert bias["h_rms"] < flat["h_rms"] / 3.0, (
+        f"three fitted parameters took {flat['h_rms']:.2f} -> "
+        f"{bias['h_rms']:.2f} cm; C28's point is that they buy a great deal "
+        "and mean nothing, so a rung that no longer bites means `fit` is not "
+        "fitting")
+    assert bias["beats_null"] < 1.0, (
+        f"the `bias` rung now BEATS the flat-line null at "
+        f"{bias['beats_null']:.2f}. That is C28's conclusion overturned — a "
+        "constant error model reaching past the null — and it needs a proper "
+        "re-measurement, not a relaxed bound here")

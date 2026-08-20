@@ -515,6 +515,18 @@ contradicted on bench. B2 stands: `d` still cannot be FITTED from video, and
 anyone tempted to refine it on bench should read B2 first. *Evidence:*
 `correct.WRIST_OFFSET_M`, TASKS.md C31, `analysis/48`.
 
+**FOUR `run.py` COMMANDS CITED IN THIS FILE NO LONGER EXIST, AND UNTIL
+2026-08-20 TYPING ONE RAN THE WHOLE CORPUS INSTEAD OF SAYING SO (H28).**
+`--b3oracle`, `--splice` and `--stages` went with the v1 corpus (F1) and
+`--dlconic` with `markers.py` (H21); `--overview` had raised `NameError` since
+F1 deleted the captures its `OVERVIEW_CAPTURES` named. `run.py` ignored
+unrecognised flags, so the fall-through printed 36 capture summaries and no
+figure and looked like it had worked. It now carries a `FLAGS` table and a
+`RETIRED` table and refuses both cases by name, naming what the command needed
+and when it went. The figures those commands made are still in `analysis/` and
+still captioned in `analysis/README.md`; they cannot be regenerated. **Check a
+command exists before quoting it as reproduction.**
+
 `metrics.py` is not one of the steps. It judges them: `dispersion` for
 rep-to-rep spread, `vs_truth` for absolute error against the video. Read its
 module docstring before quoting a number from it — `dispersion` needs no truth
@@ -939,6 +951,20 @@ The learning goal survives the lockout that used to enforce it, and it changes
 - Prefer deleting code to adding it. That still holds, but it is no longer a
   licence to keep rejections alive past their evidence: `NON_GOALS.md` lost its
   Estimation and Sensing tables on 2026-07-28 for exactly that reason.
+- **"No caller" is not the same as "dead", and `src/oracle.py` is the standing
+  counter-example (H28, 2026-08-20).** The owner asked whether it earns its
+  1700 lines. It does: `src/` imports it NOWHERE, so nothing in it can reach the
+  bar path, and its whole test file runs in 15 s of a 54-minute suite — while
+  ten claims in this file cite it by name and are therefore **re-runnable**
+  rather than merely written down, which is the property `NON_GOALS.md` lost.
+  Everything in that module was built to be rejected, so unused is its normal
+  state. The sharpest case is `oracle.jump_then_knots`: no caller, no test, no
+  citation, and it is the only way to re-derive that step 7 is load-bearing
+  because of its per-rep INDEPENDENCE rather than its closure. **Before deleting
+  something with no callers, ask which rule stops being reproducible.** What the
+  audit did find was a real risk of the opposite kind — C28's ladder had no
+  driver at all and could have rotted unnoticed — and the answer to that is a
+  gate, `test_the_C28_ladder_still_runs`, not a deletion.
 - When a concept or bug is hard to see in numbers, **plot the data**. A graph
   of the intermediate signal — per-rep overlays, drift vs signal, before/after
   a stage — routinely makes clear in seconds what a table of numbers hides. The
@@ -972,8 +998,14 @@ why is the record this project runs on — but **none of them can be re-derived*
 and a number you cannot re-derive cannot be used to referee a change.
 
 **`truth.py` is gone; `src/capture.py` holds what survived it** — `lift_of`, the
-plate diameters, `VERTICAL_ROM_M`/`rom_flags`, `FORE_AFT_ACCEL_MAX`, the decode
-helpers, `find_plate` as a rim detector only — **which has had no caller at all
+plate diameters, `VERTICAL_ROM_M`/`rom_flags`, `FORE_AFT_ACCEL_MAX`, ~~the
+decode helpers~~ (**`probe`, `frames`, `ncc_map` and `_parabolic` were DELETED
+on 2026-08-20 — H28. `probe` and `frames` used `subprocess` and `json` and this
+module has never imported either, so both raised `NameError` on the first line
+of their body and no test reached them. `src/vtrack/detect.py` carries a working
+`probe`. That is a deletion where the orphans below are a RECORD: they document
+what a referee measured, and a broken ffmpeg wrapper documents nothing**),
+`find_plate` as a rim detector only — **which has had no caller at all
 since `markers.py` was deleted on 2026-08-19, along with `sticker_plate_diameter`
 and `STICKER_PLATE_DIAMETER_M`; recorded as orphaned rather than removed, since
 nothing can score with them** — and `landings`/`sync`/
@@ -1031,7 +1063,32 @@ video and log, four gitignored files, unrecoverable — because that plate's
 stickers are placed too unevenly to referee (C23). They had supplied a rep
 count of 9 of 10 and squat's first replication of the attitude bound; both are
 gone with them, and C22's fatigue finding is measured on data that no longer
-exists. **THE CORPUS IS 31 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-18).**
+exists. **THE CORPUS IS 36 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-20).** Five
+arrived on 2026-08-20 — `bench_spoto_80x5_1`, `bench_spoto_80x5_2`,
+`squat_170x1`, `squat_180x1` and `squat_pause_140x4_1` — and **all five track at
+100% coverage with rep counts matching their labels**, which no previous batch
+managed. Two are immediately among the best-conditioned captures in the project:
+`squat_pause_140x4_1_20260820` scores **h 1.15 cm with `beats_null` 4.44** and
+`bench_spoto_80x5_1_20260820` **h 1.14 cm, 3.71**. **Nothing in this file has
+been re-measured on 36** — every corpus-wide median below, H17's scorecard
+included, is the 29-capture figure. Two of the five are not clean:
+`squat_pause_140x4_1_20260820` scores 3 reps against a labelled 4, and
+`squat_170x1_20260820` is refused by the short sync. Neither is diagnosed. See
+TASKS.md H28 and `analysis/78`.
+
+**AND SIX `.mov` FILES ARE NO LONGER ON DISK (noticed 2026-08-20, H28):**
+`bench_92.5x6_1_20260808`, `bench_spoto_95x5_1_20260813`,
+`deadlift_160x6_1_20260804`, `deadlift_170x4_3_20260808`,
+`deadlift_185x3_20260804` and `squat_170x1_20260806`. **Every one has a
+committed tracked path in `data_v2/tracked/`, so all six still score and the
+suite never noticed** — which is the cache doing exactly what C31 built it for.
+`data_v2/video/` is gitignored, so the clips themselves are not recoverable from
+git, and nothing in this repo deletes video. The practical consequence:
+`pipeline.find_video` returns `None` for all six because it requires the file to
+exist, so anything iterating the corpus should pair through `data_v2/tracked/`
+instead — `analysis/78_set_paths.py` shows the pattern.
+
+*The 31-capture statement it replaces:* **THE CORPUS IS 31 LABELLED CAPTURES IN `data_v2/raw/` (2026-08-18).**
 Two deadlifts arrived on 2026-08-18 — `deadlift_160x6_1_20260818` and
 `deadlift_190x3_20260818` — both tracking cleanly (99.8% / 99.7% coverage, rep
 counts matching their filenames) and both already cached in `data_v2/tracked/`.
@@ -1798,7 +1855,7 @@ reconstruction. A ratio of ~0.92 would close it exactly and must not be adopted
 by fitting it; the sticker-circle diameter with a tape settles it, into
 `bar_path(sticker_diameter_m=)`. `beats_null` barely moves under it, so the
 horizontal verdict does not depend on the open question. *Evidence:*
-`analysis/42`, `python run.py --dlconic`, TASKS.md C27.
+`analysis/42`, ~~`python run.py --dlconic`~~ (**retired — it called `markers.bar_path`, deleted 2026-08-19, H21**), TASKS.md C27.
 
 **CLOSED 2026-08-17 (H14), BY THE TAPE, AND THE PREDICTION HELD.** See the
 banner at the top of this file. The correction on deadlift is **+6.07%**, inside
@@ -2136,7 +2193,7 @@ not the best line.
 against nulls of 3.55 / 3.23 / 1.96 — **no per-rep line, however estimated,
 beats a flat vertical line on any deadlift** — and the best quadratic only just
 does. Per-rep polynomial detrending cannot bring deadlift near spec, whoever
-writes the estimator. *Evidence:* `analysis/38`, `python run.py --b3oracle`,
+writes the estimator. *Evidence:* `analysis/38`, ~~`python run.py --b3oracle`~~ (**retired — it needed the v1 corpus, deleted 2026-08-14, F1**),
 TASKS.md B3, `tests/test_real_data.py`.
 
 **P6 IS HALF THE HORIZONTAL STORY, NOT ALL OF IT (H25, 2026-08-19).** C11's
@@ -2510,7 +2567,7 @@ quadratic detrend this asked for and the splice got WORSE under it, not better
 (ROM 78.1 / 70.4 / 116.4 cm). Raising the order does not help, because a
 quadratic spreads a landing-localised error just as a constant does. B6 needs a
 correction **local in time**, not a higher-order detrend to clean up after a
-global one. See P3. *Evidence:* `analysis/32`, `38`, `python run.py --splice`,
+global one. See P3. *Evidence:* `analysis/32`, `38`, ~~`python run.py --splice`~~ (**retired — it needed the v1 corpus, deleted 2026-08-14, F1**),
 `tests/test_real_data.py`.
 
 One capture dissents. `deadlift_180x3` over-reads its impact step by 58–72%,

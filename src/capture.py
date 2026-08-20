@@ -1,4 +1,4 @@
-"""Capture metadata, video decoding, and the video-to-IMU clock.
+"""Capture metadata, plate geometry, rep bounds, and the video-to-IMU clock.
 
 **What this is, and what it is NOT.** This was `truth.py`, whose centrepiece was
 a matched-filter tracker that followed the plate as a dark disc — the referee
@@ -9,13 +9,21 @@ tracker was sitting on top of and which the rest of the project still needs:
   * which lift a capture is of, and how big the plate in it is;
   * what a plausible rep looks like vertically (`VERTICAL_ROM_M`) and fore-aft
     (`FORE_AFT_ACCEL_MAX`) — the only external bounds bench and squat have;
-  * decoding a clip to greyscale frames;
+  * ~~decoding a clip to greyscale frames~~ — **deleted 2026-08-20 (H28)**.
+    `probe` and `frames` had used `subprocess` and `json` without importing
+    either, so both raised `NameError` if called, and nothing had called them
+    since the template tracker went. `src/vtrack/detect.py` decodes now. The
+    NCC matcher `ncc_map` went with them for the same reason;
   * `find_plate`, a single-frame rim detector, which `markers.py` used as an
     independent cross-check on its own scale — NOT because anything tracks with
     it. **`markers.py` was deleted on 2026-08-19 (H21), so `find_plate` now has
     NO CALLER**, and neither do `sticker_plate_diameter`,
     `STICKER_PLATE_DIAMETER_M` and `MIN_TRAVEL_M` (that last one already had
-    none). They are recorded as orphaned rather than deleted in the same pass:
+    none). **`fore_aft_flags` has none either** — an audit on 2026-08-20 (H28)
+    found it uncalled from anywhere, including its own tests, so nothing checks
+    the `FORE_AFT_ACCEL_MAX` bound that the block above spends thirty lines
+    deriving. Unlike the decode helpers it is sound code and it is kept, but a
+    bound nothing evaluates is not a gate. They are recorded as orphaned rather than deleted in the same pass:
     removing them is a separate judgement about what this module is for, and
     H21 was scoped to retiring a REFEREE. Nothing can score with any of them —
     a single-frame rim detector is not a tracker — so leaving them costs
@@ -42,7 +50,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from scipy.ndimage import uniform_filter
 from scipy.signal import fftconvolve
 
 # Measured 2026-07-30, with a tape, on the actual plates. Replaces a single
@@ -345,82 +352,22 @@ def fore_aft_flags(lift: str, coeffs) -> list[str]:
             for i, c in enumerate(coeffs, start=1) if abs(c) > hi]
 
 
-# ----------------------------------------------------------------- decode --
-def probe(path: str | Path) -> tuple[int, int, float]:
-    """(width, height, fps) without decoding anything."""
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0",
-         "-show_entries", "stream=width,height,r_frame_rate",
-         "-of", "json", str(path)],
-        capture_output=True, text=True, check=True).stdout
-    s = json.loads(out)["streams"][0]
-    num, den = s["r_frame_rate"].split("/")
-    return int(s["width"]), int(s["height"]), float(num) / float(den)
-
-
-def frames(path: str | Path, scale: float = 0.5) -> tuple[np.ndarray, float, float]:
-    """Decode the whole clip to greyscale (N, H, W) floats in [0, 1].
-
-    Half scale is plenty: the plate is ~250 px across at full resolution, and
-    halving it makes a 36 s clip decode in under a second while leaving the
-    template far larger than the sub-pixel refinement needs.
-    """
-    w, h, fps = probe(path)
-    W, H = int(w * scale) // 2 * 2, int(h * scale) // 2 * 2
-    raw = subprocess.run(
-        ["ffmpeg", "-loglevel", "error", "-i", str(path),
-         "-vf", f"scale={W}:{H}", "-pix_fmt", "gray", "-f", "rawvideo", "-"],
-        capture_output=True, check=True).stdout
-    n = len(raw) // (W * H)
-    stack = np.frombuffer(raw[:n * W * H], dtype=np.uint8).reshape(n, H, W)
-    return stack.astype(np.float32) / 255.0, fps, W / w
-
-
-# --------------------------------------------------------------- matching --
-def ncc_map(img: np.ndarray, tpl: np.ndarray) -> np.ndarray:
-    """Normalised cross-correlation of `tpl` over `img`, same shape as `img`.
-
-    Two guards, both learned the hard way on this footage:
-
-    Flat regions are masked. The ceiling and the bare floor are nearly uniform,
-    so their local variance approaches zero and the ratio explodes — scores
-    above 1.0 in empty sky, which is where the tracker went.
-
-    The border is masked. NCC is only defined where the template lies fully
-    inside the image, and `uniform_filter` replicates edge pixels, which made
-    the local statistics wrong within half a template of the edge and put a
-    1.12 peak in the corner.
-    """
-    t = tpl - tpl.mean()
-    tn = np.linalg.norm(t)
-    n = t.size
-
-    num = fftconvolve(img, t[::-1, ::-1], mode="same")
-    mu = uniform_filter(img, tpl.shape, mode="nearest")
-    mu2 = uniform_filter(img * img, tpl.shape, mode="nearest")
-    var = np.maximum(mu2 - mu * mu, 0.0)
-
-    textured = np.sqrt(var) > 0.1 * (tn / np.sqrt(n))
-    my, mx = tpl.shape[0] // 2, tpl.shape[1] // 2
-    inside = np.zeros_like(textured)
-    inside[my:img.shape[0] - my, mx:img.shape[1] - mx] = True
-
-    den = np.sqrt(var * n) * tn
-    return np.where(textured & inside, num / np.where(den > 0, den, 1.0), 0.0)
-
-
-def _parabolic(c: np.ndarray, y: int, x: int) -> tuple[float, float]:
-    """Sub-pixel offset of a correlation peak by parabolic interpolation."""
-    dy = dx = 0.0
-    if 0 < y < c.shape[0] - 1:
-        a, b, d = c[y - 1, x], c[y, x], c[y + 1, x]
-        if a - 2 * b + d != 0:
-            dy = 0.5 * (a - d) / (a - 2 * b + d)
-    if 0 < x < c.shape[1] - 1:
-        a, b, d = c[y, x - 1], c[y, x], c[y, x + 1]
-        if a - 2 * b + d != 0:
-            dx = 0.5 * (a - d) / (a - 2 * b + d)
-    return dy, dx
+# THE DECODE AND TEMPLATE-MATCHING BLOCK WAS DELETED HERE ON 2026-08-20 (H28).
+# `probe`, `frames`, `ncc_map` and `_parabolic` — the ffmpeg wrappers and the
+# NCC matcher that fed `truth.py`'s plate template. Nothing had called any of
+# them since that tracker went on 2026-08-14, and TWO OF THEM COULD NOT HAVE
+# RUN: `probe` and `frames` use `subprocess` and `json`, and neither has ever
+# been imported by this module, so either one raises `NameError` on the first
+# line of its body. No test caught it because no test reaches them.
+#
+# `src/vtrack/detect.py` carries its own working `probe`, which is what the
+# live referee decodes with, so nothing was lost. Recover them with
+# `git show 0e87f28:src/capture.py`.
+#
+# This is a DELETION where the rest of this module's orphans are a RECORD:
+# `find_plate`, `sticker_plate_diameter` and `plate_diameter` are kept because
+# they document what a referee measured, and a broken ffmpeg wrapper documents
+# nothing. See CLAUDE.md's note on what survived `truth.py`.
 
 
 def _disc(r: int) -> np.ndarray:

@@ -64,11 +64,47 @@ Segmentation is frozen from the unperturbed run. The optimiser is not allowed
 to move rep boundaries: that would let it improve the score by re-cutting the
 comparison rather than by fixing the acceleration, and the two are not the same
 finding.
+
+What has no caller, and why none of it is dead (H28, 2026-08-20)
+----------------------------------------------------------------
+The owner asked whether this module earns its 1700 lines. The answer is yes,
+and the reasoning is worth having at the top because **nothing in this file has
+ever shipped and nothing ever should** — every correction here was built to be
+rejected, so "unused" is its normal state and is not evidence against it.
+
+What it costs is not the line count. `src/` does not import `oracle` ANYWHERE,
+so no defect in here can reach the bar path; and `tests/test_oracle.py` runs in
+**15 s of a 54-minute suite**. What it buys is ten citations in `CLAUDE.md` that
+are re-runnable rather than merely written down — which is exactly the property
+`NON_GOALS.md` lost in 2026-07-28, when rejections outlived the evidence for
+them and had to be deleted wholesale.
+
+Thirty of the thirty-four functions here are driven by a test or an
+`analysis/` script. **Four are not**, and a reader should know which, because
+un-driven code rots silently and two of these are load-bearing:
+
+* `fit`, `objective`, `figure` — **C28's ladder, the module's original
+  purpose, and it has no runner at all**: no `run.py` flag, no analysis script,
+  no test. H28 checked it by hand rather than assuming, and it still runs and
+  still reproduces C31's shape on `deadlift_185x3` — baseline 11.62 cm, one
+  `bias` rung collapsing it to 2.24, `+tilt` buying nothing beyond, every rung
+  losing to a 1.65 cm null. That is C28's finding intact. `test_the_C28_ladder_
+  still_runs` now pins it, because "I checked by hand once" is not a gate.
+* `jump_then_knots` — C29's CONTINUOUS piecewise-linear detrend, the arm that
+  cost 8.21 -> 17.00 cm with ROM at 70-138 cm. It has no caller and it is the
+  only way to re-derive one of this project's load-bearing structural claims:
+  that what makes step 7 work is its per-rep INDEPENDENCE, two free parameters
+  per rep with no continuity, and NOT the closure. Delete it and that rule
+  becomes prose. See TASKS.md C29 and `CLAUDE.md`'s P6.
+
+The rest of the un-called names — `body_frame_bias`, `split_bias`,
+`rest_knots`, `detrend_knots`, `still_periods`, `precut_period` — are internal
+helpers of the above and are only un-prefixed because they were useful to call
+by hand while the result was being argued about.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import numpy as np
 from scipy.optimize import minimize
@@ -1331,7 +1367,7 @@ def jump_period_windows(result: dict, width_s: float = 0.30,
     lines that disagree there, and C29 established that step 7's power is
     exactly its per-window independence.
     """
-    from . import correct, segment
+    from . import correct
     log = result["log"]
     t = log["t"]
     if anchors is None:
@@ -1541,7 +1577,6 @@ def pull_intervals(result: dict, interior: float = 0.5,
     at all and the caller may apply this unconditionally — the same
     self-limiting shape `segment.rest_instants` has.
     """
-    from . import segment
     log = result["log"]
     impacts = list(result.get("impacts") or [])
     if not impacts:

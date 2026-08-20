@@ -20,12 +20,11 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pytest
 from scipy.spatial.transform import Rotation
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src import calibrate, correct, integrate, io, orient, project, segment, synth  # noqa: E402
+from src import calibrate, correct, integrate, io, orient, project, synth  # noqa: E402
 from src.synth import DEG, G, SensorConfig, SetConfig  # noqa: E402
 
 CLEAN = SensorConfig(gyro_bias=(0, 0, 0), accel_bias=(0, 0, 0),
@@ -366,7 +365,6 @@ def test_synth_emits_a_closing_stillness_hold():
     tail = log["t"] > log["t"][-1] - 2.0
     assert np.linalg.norm(log["gyro"][tail], axis=1).mean() < 0.05
 
-    from src.synth import SetConfig
     none = as_log(synth.generate(set_cfg=SetConfig(settle_pause=0.0)))
     assert any("closing stillness" in w for w in io.check_log(none))
 
