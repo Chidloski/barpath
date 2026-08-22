@@ -2888,9 +2888,101 @@ times `path.MAX_TOP_RESIDUAL_CM`.
 
 ---
 
-*Numbering: 47 through 80 are taken. The next free number is 81 — H21
-(retiring `markers.py`) claimed nothing, because it moved no number and had
-nothing to draw. **52
+## 81 — the rep gallery (H33, 2026-08-23)
+
+### `rep_gallery.html`
+
+The owner: *"keep live graphs of each set and rep for both video and data ran
+through the most recent pipeline and video tracking so I can sanity check."*
+A self-contained page — one card per capture, the whole set overlaid, then every
+rep as a small multiple with the video and the reconstruction on a shared axis
+and a shared sign. **Regenerate it after any pipeline or tracker change**; it
+reads the live `pipeline.run` and the committed tracked CSVs, so it is only as
+current as its last run. 34 captures, 117 refereed reps, ~450 kB.
+
+Not another PNG because `78_set_paths_*.png` already draws every set, and what
+it cannot do is take you from "this set looks wrong" to "this rep" without
+opening a second file. Every panel is scaled to fit, so panels are not
+comparable by eye — the numbers under them are, and the caption on the page says
+so.
+
+## 82 — why five captures miscount (H33, 2026-08-23)
+
+### `82_segmentation_deepdive.png`
+
+Two mechanisms, and **neither is the one `TASKS.md` recorded**.
+
+**The cluster discards reps it has already identified.** On the three squats
+that undercount, all four reps are present as concentric lobes and the upright
+ratio separates them from everything else by ten times — 9.5–16.8 against
+0.7–1.3. `_upright` drops none of them; `peak_ratio` is never reached, since
+peak speed declines only 1.36× across a set against a 2.5× limit.
+`_similar_cluster` is what excludes them.
+
+**The "long cadence gap" explanation is falsified.** Last gap over first:
+
+    PASSES  squat_155x4_3 1.68   squat_pause_140x4_3 1.59   squat_pause_140x4_2 1.53
+    FAILS   squat_140x4_1 1.54   squat_140x4_2 1.42   squat_pause_140x4_1 1.27
+
+The most irregular set counts correctly and the worst failure is the least
+irregular of the six.
+
+**A spurious pair outvotes a real single.** Both 2-for-1 captures pick a
+mutually-similar pair from the setup over a real rep that is a cluster of one —
+`squat_170x1_20260820` at 4.40 s + 8.71 s over the rep at 33.69 s, and
+`deadlift_210x1` at 13.22 + 20.38 over a pull at 24.80 s with the largest area
+and peak velocity in the capture. `_similar_cluster`'s singleton rule was
+written for exactly this and never fires: it guards a winning cluster of size 1,
+and the winner here has size 2.
+
+**A lead, not a fix.** Cutting the sorted upright ratios at their largest
+multiplicative gap — an argmax, not a threshold — gives bench 9/9 and squat
+12/13 on the velocity path against shipping's 9/9 and 9/13, and costs
+`deadlift_200x1`. Nothing is proposed for `src/`.
+
+## 83 — reps do not close, and correcting that is worth nothing (H33, 2026-08-23)
+
+### `83_nonclosure.png`
+
+The owner: *"the assumption that reps start and end in the same place is
+disproven by the video tracking."* Confirmed, and then followed through.
+
+**The premise holds and is stronger than B3 recorded.** Median horizontal
+non-closure over 111 refereed reps is **1.61 cm** against a ~1 cm spec; only 33%
+of reps close inside spec; the miss is 19–28% of the rep's own fore-aft
+excursion. Forcing it shut injects ~0.9 cm rms, roughly half the typical 2.4 cm
+error.
+
+**But the detrend is not mainly destroying it.** Per-rep net displacement,
+median absolute: the reconstruction carries 50 cm (bench) to 454 cm (deadlift)
+of it against 1.4–1.8 cm of real motion, so **97–100% of what step 7 removes is
+integration drift**. And the two do not correlate (r = −0.13 to +0.08), so no
+estimator of the true non-closure can be built from the reconstruction's own.
+
+**The result that decides it — the oracle gains nothing.** Re-detrend each rep
+to close on the video's true net displacement instead of zero:
+
+    lift       shipped   closed   ORACLE    gain
+    bench        2.08     2.08     1.93    +0.15
+    deadlift     3.11     3.11     2.78    +0.33
+    squat        2.58     2.58     3.19    -0.61
+    ALL          2.40     2.40     2.58    -0.18
+
+Better on 50% of 111 reps. (`closed` re-derives the shipped figure as a control
+and matches it exactly.) The endpoint is not where the error lives — P3 puts it
+at rep frequency, distributed through the rep, and correcting one endpoint
+pivots the curve about its start.
+
+**One thing worth carrying:** the non-closure is a different animal per lift.
+Sign-consistency within a set, against the ~1/√n of a coin flip — **deadlift
+0.20 against chance 0.49**, below chance, the misses actively cancel and the set
+total is +0.44 cm at p = 0.65. A deadlift set closes even though its reps do
+not. Bench (0.54) and squat (0.73) walk, both the same direction, −3 to −5 cm
+per set at p = 0.05–0.10. n = 7–9 sets, so suggestive only.
+
+---
+
+*Numbering: 47 through 83 are taken. The next free number is 84. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

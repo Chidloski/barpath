@@ -28,15 +28,22 @@ mark is how the previous ones stayed invisible.
 
 | capture | windows | labelled | shape |
 |---|---|---|---|
-| `deadlift_210x1_20260815` | 2 | 1 | the `squat_160x1` / `bench_117.5x1` single |
-| `squat_170x1_20260820` | 2 | 1 | same, and **not previously recorded as a miscount** — H28 logged this capture only as "refused by the short sync" |
-| `squat_140x4_1_20260813` | 3 | 4 | dropped rep across a long cadence gap |
-| `squat_140x4_2_20260813` | 2 | 4 | same, with a 9.5 s hole mid-set |
-| `squat_pause_140x4_1_20260820` | 3 | 4 | same; new capture, undiagnosed |
+| `deadlift_210x1_20260815` | 2 | 1 | a spurious PAIR outvotes the real single |
+| `squat_170x1_20260820` | 2 | 1 | same — and its real rep scores upright 0.63 against 8.3–23.4 corpus-wide, which has no explanation |
+| `squat_140x4_1_20260813` | 3 | 4 | `_similar_cluster` discards a rep it identified |
+| `squat_140x4_2_20260813` | 2 | 4 | same, two of them |
+| `squat_pause_140x4_1_20260820` | 3 | 4 | same |
 
 The video counts the 2026-08-13 and 2026-08-15 cases correctly, so the labels
-are right and the segmenter is wrong. The two squats are C31a's mechanism in the
-opposite direction from the paused-squat fix. See P1.
+are right and the segmenter is wrong.
+
+**The "long cadence gap" shape in the table above is FALSIFIED (2026-08-23).**
+The most irregular cadence in the corpus belongs to a capture that counts
+correctly, and every failure is *less* irregular than something that passes. The
+real mechanisms are two, both in `_similar_cluster`: it discards reps its own
+fourth discriminator separates by 10×, and on a single a spurious mutually-
+similar PAIR outvotes the real rep before the singleton rule is consulted. See
+`FINDINGS.md` P1 and `analysis/82`.
 
 **`deadlift_170x4_3_20260808` rep 4 spans 67.5 cm against a 40–61 band** while
 counting 4/4 — extent wrong without a miscount. It is a reconstruction defect
@@ -102,14 +109,16 @@ the last entry in `KNOWN_ROM_FAILURES`.
 
 Stated in full, with their evidence, in `FINDINGS.md`. What is *open* about each:
 
-- **B3 — a per-rep detrend with a principled non-closure estimate.** The
-  closure over-corrects: the bar really misses closing horizontally by
-  1.9–4.3 cm and step 7 forces that to zero. Leaving a global fraction in is a
-  fudge tuned on the validation set (the optimum is sharp and inconsistent). The
-  real B3 estimates the true non-closure per rep, from a source other than the
-  video being validated against. `axes` is already a parameter on
-  `detrend_rep`/`detrend_set` so the next candidate can be measured against the
-  same numbers.
+- **B3 — CLOSED BY MEASUREMENT, 2026-08-23, and not in the direction expected.**
+  The premise is confirmed and stronger than recorded: over 111 refereed reps
+  the bar misses closing horizontally by a median of **1.61 cm**, only 33% of
+  reps close inside the 1 cm spec, and forcing them shut injects ~0.9 cm rms.
+  But an **oracle given the true non-closure gains nothing** — +0.15 cm bench,
+  +0.33 deadlift, −0.61 squat, −0.18 corpus-wide, better on 50% of reps. There
+  is no estimator worth building behind a ceiling of zero. See `FINDINGS.md`
+  and `analysis/83`. What is left open is not B3 but the question underneath it:
+  the error is distributed through the rep, so a correction has to act there,
+  not at the endpoints.
 - **B6 / P3 / P6 — a deadlift correction that meets all three requirements at
   once.** Local in time (B7, B6, C19 and C28b each failed this); boundaries not
   on the impacts, or step 7 annihilates it (C29); and it must cover every rep

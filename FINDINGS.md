@@ -142,6 +142,15 @@ changes by a median of −0.004 cm, so the measurement did not move.
 **The display layer's averaging.** 1.95 → 1.52 cm, and the whole of it is the
 ALIGNMENT, not the averaging.
 
+**Knowing which lift's non-closure is a walk.** Sign-consistency of the
+per-rep non-closure within a set, |Σ|/Σ|·|, against the ~1/√n a coin flip gives:
+**deadlift 0.20 against a chance 0.49** — below chance, the misses actively
+cancel, and the set total is +0.44 cm at p = 0.65. The bar is set down in the
+same place each rep, so a deadlift SET closes even though its reps do not. Bench
+(0.54) and squat (0.73) walk instead, both in the same direction, −3 to −5 cm
+per set at p = 0.05–0.10. n = 7–9 sets per lift, so suggestive rather than
+established — but it says any future closure model must be per-lift.
+
 **Validating on deadlift first.** Not because the pipeline differs by lift — it
 does not — but because deadlift has the most external ground truth: the bar
 starts at the bumper's radius, 22.25 cm to bar centre, and ends at a
@@ -211,6 +220,21 @@ cos θ, which at the 1–3° a barbell tilts is 0.01–0.11 px on an 85 px radiu
 Second order in the angle. Only the parallax, which is first order, carries
 signal.
 
+**Correcting the per-rep non-closure (B3).** Reps genuinely do NOT start and
+end in the same place — median horizontal miss **1.61 cm over 111 refereed
+reps**, only 33% inside the 1 cm spec, 19–28% of the rep's own fore-aft
+excursion. Step 7 forces that to zero, and the forced ramp injects ~0.9 cm rms,
+about half the typical 2.4 cm error. All of which sounds like a fix waiting to
+happen, and it is not: **an oracle told the true non-closure exactly gains
++0.15 cm on bench, +0.33 on deadlift and LOSES 0.61 on squat — −0.18 cm
+corpus-wide, better on exactly 50% of reps.** The endpoint is not where the
+error lives; correcting it pivots the curve about its start and leaves the
+middle, which is where P3 puts the error, untouched. Two further facts close the
+route: 97–100% of what step 7 removes is integration drift (median 50–454 cm of
+it against 1.4–1.8 cm of real motion), so the detrend must stay; and the
+reconstruction's own non-closure carries no information about the true one
+(r = −0.13 to +0.08), so no estimator can be built from it. `analysis/83`.
+
 **Smoothing, as a way to improve accuracy.** 2.07 cm median horizontal error
 against the video, unmoved by any method at any level. This is P3 restated from
 the display side: the error is at rep frequency, so there is no high-frequency
@@ -235,12 +259,31 @@ than no schedule.
 
 ## The open problems
 
-**P1 — counting, extent and phase. REOPENED.** Three captures miscount:
-`deadlift_210x1_20260815` gives 2 windows for a labelled single,
-`squat_140x4_1_20260813` gives 3 of 4, `squat_140x4_2_20260813` gives 2 of 4
-with a 9.5 s hole mid-set. **The video counts all three correctly**, so the
-labels are right and the segmenter is wrong. Left red in the suite rather than
-xfailed.
+**P1 — counting. REOPENED, and the mechanism is now known.** Five captures
+miscount, in two distinct ways, and neither is the "long cadence gap" this used
+to record — that hypothesis is **falsified**: the most irregular set in the
+corpus (`squat_155x4_3`, last gap 1.68× the first) counts correctly, and every
+failure is less irregular than a capture that passes.
+
+  * **The cluster discards reps it has already identified.**
+    `squat_140x4_1`, `squat_140x4_2` and `squat_pause_140x4_1` count 3, 2 and 3
+    against 4. All four reps are present as lobes in each, and the upright
+    ratio separates them from everything else by **ten times** (9.5–16.8 against
+    0.7–1.3). `_upright` drops none of them and `peak_ratio` is not reached —
+    `_similar_cluster` is what excludes them.
+  * **A spurious PAIR outvotes a real single.** `squat_170x1_20260820` and
+    `deadlift_210x1_20260815` give 2 windows for a labelled 1: the winning
+    cluster is a mutually-similar pair from the setup, and the real rep is a
+    cluster of one. `_similar_cluster`'s singleton rule exists for exactly this
+    and never engages, because it guards a winning cluster of SIZE 1 and the
+    winner here has size 2. `squat_170x1_20260820` fails twice over — its real
+    rep scores an upright ratio of 0.63 against 8.3–23.4 for every other squat
+    rep in the corpus, and that has no explanation.
+
+Cutting the sorted upright ratios at their largest multiplicative gap — an
+argmax, not a threshold — gives bench 9/9 and squat 12/13 on the velocity path
+against shipping's 9/9 and 9/13, and costs `deadlift_200x1`. A lead, not a fix.
+`analysis/82`. Left red in the suite rather than xfailed.
 
 **P2 — the horizontal error against video. OPEN, and it is the project.**
 Deadlift sits at `beats_null` 0.14–0.38 and a better referee did not rescue it,
