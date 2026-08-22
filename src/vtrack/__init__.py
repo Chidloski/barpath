@@ -4,11 +4,13 @@ Read `path.py`'s docstring first — it says what this is, why `markers.py` was
 not enough on this footage, and what was measured. The layout mirrors the
 pipeline's own habit of one concern per module:
 
-    detect.py   bright compact blobs, on whiteness rather than brightness
-    geom.py     circle/lattice geometry, and the 8-fold symmetry score
-    seed.py     which constellation in the clip is the plate — by trial-track
-    track.py    follow it frame to frame, re-acquire when the lock is lost
-    path.py     `bar_path`, plus the referee's own top-of-travel fit check
+    detect.py     bright compact blobs, on whiteness rather than brightness
+    geom.py       circle/lattice geometry, and the 8-fold symmetry score
+    seed.py       which constellation in the clip is the plate — by trial-track
+    track.py      follow it frame to frame, re-acquire when the lock is lost
+    path.py       `bar_path`, plus the referee's own top-of-travel fit check
+    condition.py  reject impossible frames, then smooth (H30) — ON by default
+    geometry.py   where along the BAR the tracked point is, and what tilt costs
 
 **`markers.py` was DELETED on 2026-08-19 (H21) and this is now the only tracker
 in the repo.** It had been the referee for `data_v2/` until F1's rebuild landed
@@ -27,10 +29,13 @@ it could not measure) and D2/C31 (`static_points` suppressing the bar's own
 stickers, the failure this package exists to fix). See `TASKS.md` and
 `CLAUDE.md`.
 """
+from . import condition, geometry
+from .condition import anomalies, CONDEMN_FRAC, V_MAX_MS
 from .path import (bar_path, track_clip, validate, top_of_travel_residual,
                    ROM, PLATE_M, STICKER_CIRCLE_M, STICKER_RATIO,
                    MAX_TOP_RESIDUAL_CM, TOP_FRAC)
 
 __all__ = ["bar_path", "track_clip", "validate", "top_of_travel_residual",
            "ROM", "PLATE_M", "STICKER_CIRCLE_M", "STICKER_RATIO",
-           "MAX_TOP_RESIDUAL_CM", "TOP_FRAC"]
+           "MAX_TOP_RESIDUAL_CM", "TOP_FRAC",
+           "condition", "geometry", "anomalies", "CONDEMN_FRAC", "V_MAX_MS"]

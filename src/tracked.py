@@ -99,11 +99,19 @@ def camera_side(name: str | Path) -> str:
 # scalar or a diagnostic and goes in the header, except the (N, 2) arrays which
 # are dropped — they are reconstructible and would double the file.
 FRAME_COLUMNS = ("t", "x", "height", "score", "n_markers", "residual_px",
-                 "m_per_px_t", "circumradius_px", "axis_ratio", "angle")
+                 "m_per_px_t", "circumradius_px", "axis_ratio", "angle",
+                 # H30 (2026-08-22). `x`/`height` are the CONDITIONED path;
+                 # these keep the tracker's raw output and the mask saying which
+                 # samples were dropped, so the conditioning is reversible from
+                 # the CSV alone and the review figure can draw what it removed.
+                 "x_raw", "height_raw", "rejected")
 
 # Scalars worth keeping. `calibration` is a nested dict and is flattened out.
 SCALAR_KEYS = ("fps", "m_per_px", "travel_m", "plate_radius_px", "seed_frame",
-               "perspective_shift_cm", "n_rim", "sticker_radius_m")
+               "perspective_shift_cm", "n_rim", "sticker_radius_m",
+               # H30. Self-describing, so a cached read knows the path has
+               # already been conditioned and does not smooth it a second time.
+               "conditioned", "condemned", "n_rejected")
 
 
 def _dataset(video: str | Path) -> Path:

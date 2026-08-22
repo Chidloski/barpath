@@ -707,6 +707,12 @@ one, none flagged implausible, 16 of 16 rep counts match the label. Per-rep
 video fore-aft is **4.4-6.0 cm on all six deadlifts** against C27's independent
 4.3-6.2, three of them captures C27 never saw.
 
+**That paragraph is F1's, measured on the 16 clips held in 2026-08-14, and the
+corpus is 36.** Two of the 36 do not track — the 2026-08-13 spoto benches, H16 —
+and H30 adds that two more contain a single impossible frame each. Nothing here
+has been re-measured on 36; see `condition.py` below for what is known corpus
+wide.
+
 ## The three things to know before quoting a number
 
   * **The absolute scale is MEASURED as of 2026-08-17 (H14), and every metre
@@ -729,6 +735,66 @@ video fore-aft is **4.4-6.0 cm on all six deadlifts** against C27's independent
     one scale for the clip, because its centre comes from a lattice fit at a
     held radius on most frames, so a per-frame apparent size is not
     independently measured.
+  * **The path is CONDITIONED as of 2026-08-22 (H30)** — impossible frames
+    rejected, short gaps bridged, a light order-2 Savitzky-Golay applied. Pass
+    `bar_path(..., condition=False)` to reproduce anything measured before that
+    date. It moves no vertical figure (travel changes by a median of -0.004 cm,
+    at most 0.27) and it changes four captures that contained motion no barbell
+    performs. See `condition.py` below.
+
+## `condition.py` — rejecting the frames the tracker got wrong (H30, 2026-08-22)
+
+The owner asked for smoothing; the anomalies were the problem. **Four of the 36
+committed tracks contain frames implying motion faster than free fall, and only
+two of them were flagged by anything.** The travel gate above tests the WHOLE
+CLIP against the lift's range of motion, so it catches a track that is rigid and
+wrong — the failure `vtrack` exists for — and is blind to a track that is right
+for 1600 frames and jumps 33 cm in one.
+
+`squat_pause_140x4_3_20260806` has a frame reading 0.399 m between two
+neighbours at 0.663, inside a clip whose 71.6 cm travel passes the 61-68 cm band
+comfortably. `deadlift_150x4_1_20260808` peaks at 6.99 m/s downward against free
+fall's 5.05 — and is the capture `TASKS.md` already records for segmenting 5
+reps against a labelled and video-confirmed 4, which nobody had connected to its
+referee containing an impossible frame.
+
+Two tests, deliberately independent: **speed**, which is physics and needs no
+reference to the tracker's opinion of itself, and **residual**, the tracker's
+self-report, cut at an absolute 2.0 cm of implied position error (four times
+`MAX_TOP_RESIDUAL_CM`). A robust per-clip MAD cut was tried first and condemned
+18 of 36 captures, because the residual distribution is heavy-tailed by nature.
+
+**Condemnation reads the SPEED fraction alone, and it does not repair.** Past
+`CONDEMN_FRAC` the verdict flips from "these frames are bad" to "this track is
+bad" and the path is passed through untouched — smoothing a path that jumps
+20 m/s produces a smooth path that is still not the bar, and destroys the one
+signal that made the failure findable. The two 2026-08-13 benches come out still
+obviously broken, and `tests/test_vtrack.py` gates exactly that.
+
+`x_raw`, `height_raw` and `rejected` are kept, and written to the CSV, so the
+conditioning is reversible from the cache alone and the review figure can draw
+what it removed. The header carries `conditioned`, so a cached read is not
+smoothed a second time. Evidence: `analysis/80_video_conditioning.png`.
+
+## `geometry.py` — where along the bar the referee is looking (H30, 2026-08-22)
+
+Bar dimensions, the plate-stack model, and the conversion from the sticker plane
+to the bar CENTRE. **The conversion is one term.** The sticker circle and the bar
+centre are separated purely along the bar, and both reported quantities are
+perpendicular to it, so a level bar needs no conversion at all — the whole
+difference is `L * sin(theta)` and the whole difficulty is `theta`.
+
+`marker_plane_m(lift, kg)` gives `L`, 0.725-0.915 m over the corpus, from the
+owner's plate thicknesses and "loaded optimally, markers on the outermost 20 kg
+plate". `lever_ratio` gives `L/a` against the endcap baseline, 1.93-4.95 — the
+factor by which any endcap position error is magnified at the bar centre, and
+the number that decides feasibility.
+
+**Nothing in `src/` calls `bar_centre_path`, deliberately.** No estimator of
+`theta` on this footage is good enough: `analysis/79_endcap_parallax.py` bounds
+bar tilt at 1.1-1.7 cm at the bar centre against a ~1 cm spec, and cannot
+separate it from the perspective model's own error. The plate thicknesses are
+the owner's word and marked approximate pending a tape.
 
 ## Usage
 

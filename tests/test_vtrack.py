@@ -262,3 +262,175 @@ def test_exactly_the_two_known_broken_clips_are_flagged():
                        "bench_spoto_95x5_2_20260813"], (
         f"flagged {flagged} — the two 2026-08-13 spoto benches are the only "
         f"clips in this corpus known not to track")
+
+
+# --------------------------------------------------------- H30: conditioning --
+# These run off the COMMITTED CSVs rather than the footage, so they are fast and
+# they gate the thing a consumer actually reads.
+
+TRACKED = Path(__file__).resolve().parents[1] / "data_v2" / "tracked"
+CSVS = sorted(TRACKED.glob("*.csv")) if TRACKED.is_dir() else []
+
+
+def _raw(csv):
+    """The path as the tracker left it, whatever the cache has since become.
+
+    **`travel_m` is recomputed, not read.** The cached header now carries the
+    CONDITIONED travel, so restoring the raw columns while keeping the header
+    scalar compares a path against itself — the vertical-measurement gate below
+    would then read a change of exactly zero and pass no matter how badly the
+    filter behaved. It is the same trap `analysis/80` fell into first.
+    """
+    from src import tracked
+
+    d = tracked.read(None, src=csv)
+    if "x_raw" in d and np.isfinite(d["x_raw"]).any():
+        d = dict(d, x=d["x_raw"], height=d["height_raw"])
+    d.pop("conditioned", None)
+    h = np.asarray(d["height"], float)
+    fin = np.isfinite(h)
+    if fin.sum() > 2:
+        lo, hi = np.nanpercentile(h[fin], [1, 99])
+        d["travel_m"] = float(hi - lo)
+    return d
+
+
+@pytest.mark.skipif(not CSVS, reason="no tracked CSVs")
+def test_the_vertical_gate_can_actually_fail():
+    """A mutation test on the gate above, because it silently could not fail.
+
+    Over-smoothing at a 2 s window must trip `test_conditioning_does_not_move_
+    the_vertical_measurement`'s 0.75 cm threshold. If this passes quietly then
+    the gate is comparing a path against itself again and is worth nothing.
+    """
+    from src.vtrack import condition as C
+
+    d = _raw(TRACKED / "squat_pause_140x4_2_20260806.csv")
+    over = C.condition(d, window_s=2.0)
+    moved = abs(over["travel_m"] - d["travel_m"]) * 100
+    assert moved > 0.75, (
+        f"a 2 s smoothing window moved travel by only {moved:.3f} cm, so the "
+        f"vertical gate cannot detect over-smoothing and is not a gate")
+
+
+@pytest.mark.skipif(not CSVS, reason="no tracked CSVs")
+def test_conditioning_removes_every_impossible_frame():
+    """Nothing survives that implies the bar beat free fall.
+
+    This is the gate the whole module exists for. `V_MAX_MS` is derived from
+    physics rather than fitted, so a capture still over it after conditioning
+    means the rejection did not do its job — not that the constant needs
+    raising.
+    """
+    from src.vtrack import condition as C
+
+    still_bad = {}
+    for csv in CSVS:
+        c = C.condition(_raw(csv), name=csv.stem)
+        if c["condemned"]:
+            continue
+        n = C.anomalies(c)["n_speed"]
+        if n:
+            still_bad[csv.stem] = n
+    assert not still_bad, f"over-speed frames survived conditioning: {still_bad}"
+
+
+@pytest.mark.skipif(not CSVS, reason="no tracked CSVs")
+def test_conditioning_does_not_move_the_vertical_measurement():
+    """Smoothing must not shrink the range of motion it is smoothing.
+
+    The failure mode a filter invites is quietly clipping the turnarounds,
+    which would rescale every vertical figure in the repo without anything
+    complaining. Order 2 reproduces a parabola exactly and a turnaround is
+    locally parabolic, so the effect should be far inside the +-2-3 cm vertical
+    spec. Measured 2026-08-22: median -0.002 cm, worst 0.27 cm over 33 captures.
+    """
+    from src.vtrack import condition as C
+
+    worst, where = 0.0, None
+    for csv in CSVS:
+        d = _raw(csv)
+        c = C.condition(d, name=csv.stem)
+        if c["condemned"]:
+            continue
+        delta = abs(c["travel_m"] - d["travel_m"]) * 100
+        if delta > worst:
+            worst, where = delta, csv.stem
+    assert worst < 0.75, (
+        f"conditioning moved travel by {worst:.2f} cm on {where}; the filter is "
+        f"eating the turnaround, which is what order 2 is chosen to prevent")
+
+
+@pytest.mark.skipif(not CSVS, reason="no tracked CSVs")
+def test_a_broken_track_is_condemned_and_NOT_repaired():
+    """The two 2026-08-13 benches must come out still obviously broken.
+
+    Repairing them would be the worst possible outcome: a smooth, plausible
+    path that is not the bar, with the visible wrongness that makes the failure
+    findable filtered away. `condemned` clips are passed through untouched.
+    """
+    from src.vtrack import condition as C
+
+    condemned = []
+    for csv in CSVS:
+        d = _raw(csv)
+        with pytest.warns(UserWarning) if False else _noop():
+            c = C.condition(d, name=csv.stem)
+        if c["condemned"]:
+            condemned.append(csv.stem)
+            assert not c["conditioned"]
+            assert np.allclose(c["x"], d["x"], equal_nan=True)
+            assert np.allclose(c["height"], d["height"], equal_nan=True)
+    for known in ("bench_spoto_95x5_1_20260813", "bench_spoto_95x5_2_20260813"):
+        assert known in condemned, f"{known} is known broken and was not condemned"
+
+
+class _noop:
+    def __enter__(self):
+        import warnings
+        self._c = warnings.catch_warnings()
+        self._c.__enter__()
+        warnings.simplefilter("ignore")
+        return self
+
+    def __exit__(self, *a):
+        return self._c.__exit__(*a)
+
+
+@pytest.mark.skipif(not CSVS, reason="no tracked CSVs")
+def test_conditioning_is_idempotent():
+    """A cached conditioned path must not be smoothed a second time.
+
+    The CSV header carries `conditioned`, and `condition` returns early on it.
+    Without that guard a read-then-condition round trip compounds the window
+    silently, which is the kind of drift that only shows up as a number nobody
+    can reproduce.
+    """
+    from src.vtrack import condition as C
+
+    csv = TRACKED / "squat_pause_140x4_3_20260806.csv"
+    once = C.condition(_raw(csv), name=csv.stem)
+    twice = C.condition(once, name=csv.stem)
+    assert np.allclose(once["height"], twice["height"], equal_nan=True)
+    assert np.allclose(once["x"], twice["x"], equal_nan=True)
+
+
+@pytest.mark.skipif(not CSVS, reason="no tracked CSVs")
+def test_the_speed_gate_catches_what_the_travel_gate_cannot():
+    """`squat_pause_140x4_3` is the case that justifies the module.
+
+    It passes `IMPLAUSIBLE_FRAC`/`IMPLAUSIBLE_MULT` — 71.6 cm on a 61-68 cm
+    band — while containing a single frame that reads 0.399 m between two
+    neighbours at 0.663, a 26 cm round trip in 33 ms. Whole-clip travel cannot
+    see it; physics can.
+    """
+    from src.vtrack import condition as C
+
+    d = _raw(TRACKED / "squat_pause_140x4_3_20260806.csv")
+    a = C.anomalies(d)
+    assert a["n_speed"] >= 1, "the known teleport was not caught"
+    c = C.condition(d)
+    assert not c["condemned"], "one bad frame must not condemn a good clip"
+    dt = np.diff(c["t"])
+    vz = np.abs(np.diff(c["height"])) / dt
+    assert np.nanmax(vz) < C.V_MAX_MS

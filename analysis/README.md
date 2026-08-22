@@ -11,7 +11,7 @@ session scratchpad (not the repo). Data in `data/raw/`.
 > reconstructed **watch** path, not the bar path the pipeline now produces, and
 > every horizontal and vertical figure in them changes under `d`. Regenerating
 > one without passing `wrist_offset=None` will not reproduce its caption. Figure
-> 48 is the first that shows both arms. See CLAUDE.md's step-6 banner.
+> 48 is the first that shows both arms. See `CLAUDE.md`, *Reading a number*.
 
 ## Room mimics (2026-07-26, no barbell)
 - `01_room_captures_accel_vel_pos.png` — vertical accel / velocity / position for
@@ -1813,7 +1813,7 @@ wins would be the exact failure this project keeps repeating.
 
 **What it does not show.** Why the two referees disagree about `d` — it helps
 uniformly under `truth.py`'s template and is mixed under `markers.py` — which is
-the highest-value open question in the project. See CLAUDE.md P2.
+the highest-value open question in the project. See `FINDINGS.md` P2.
 
 ## 49 — does a PAUSE let Core Motion re-reference gravity mid-rep?
 
@@ -2366,7 +2366,7 @@ footage does not track. The script caches its sweep to
 beats the flat-line null on 6 of 7, squat on 9 of 10, deadlift on **1 of 10**.
 The one deadlift that wins is `deadlift_200x1`, a single — every multi-rep
 deadlift in the corpus loses. That is P2 restated on the whole corpus at once,
-and it is better than the 0.14–0.38 CLAUDE.md records for deadlift (now
+and it is better than the 0.14–0.38 `FINDINGS.md` records for deadlift (now
 0.19–0.93) because `d`, H14's scale and B4's sign have all landed since.
 
 **Panel B is new, and the reason to care about it is that no video enters it.**
@@ -2427,7 +2427,7 @@ original measurement was sound and the pipeline moved under it; the statistic
 stopped separating because the defect was fixed, not because it was noise. The
 smooth rows do not reproduce either way, so corpus turnover is the right
 explanation only for those. Full argument and the circularity caveat in
-TASKS.md H18 and CLAUDE.md's IMPACT/SMOOTH section.
+`FINDINGS.md` H18 and its Part 5, IMPACT/SMOOTH.
 
 ## 69 — fixes for the deadlift horizontal, explored (H19, 2026-08-18)
 
@@ -2774,7 +2774,108 @@ rather than through `pipeline.find_video`, which requires the file to exist.
 
 ---
 
-*Numbering: 47 through 78 are taken. The next free number is 79 — H21
+## 79 — the endcap as a tilt sensor, and the bar centre (H30, 2026-08-22)
+
+### `79_endcap_parallax.png`
+
+The owner's task: *"You currently have 8 markers on the plate along with 1 on
+the endcap, from this we can remove tilt to find the barpath of the centre of
+the bar by looking at the orientation and parallax between the end cap and the
+8 point conic."* Measured, not built. `src/vtrack/geometry.py` holds the
+conversion the answer would feed; nothing in `src/` applies it.
+
+**The conversion is one term, and the geometry is the easy half.** The sticker
+circle and the bar centre are separated purely ALONG the bar, and both reported
+quantities are perpendicular to it, so a level bar needs no conversion at all.
+The whole difference is `L * sin(theta)` and the whole difficulty is `theta`.
+
+**Of the owner's two cues, one is unusable in principle.** A circle tilted by
+theta projects to an ellipse of aspect cos(theta), which at the 1-3 degrees a
+barbell tilts is 0.01-0.11 px on an 85 px radius. The conic's orientation is
+second order in the angle and no footage fixes that. Only the endcap parallax,
+which is first order, carries signal.
+
+**The endcap offset is real and large — and it is 81-96% perspective.** The
+endcap sits nearer the camera than the sticker plane, so it projects displaced
+from the principal point in proportion to where the bar is in frame, and the bar
+crosses most of the frame every rep. The top row of the figure is that
+correlation, and it is visibly CURVED, which is the point of the middle row.
+
+    capture                        offset sd   after plane   after quadratic
+    deadlift_160x6_2_20260804        10.20        3.07            2.00
+    squat_pause_140x4_2_20260806     11.64        3.22            2.74
+    bench_spoto_95x5_1_20260806      12.86        3.89            2.44
+
+px. **The residual is still shrinking as the perspective model improves**, and
+the deadlift's lag-1 autocorrelation fell 0.51 -> 0.32 as it did — so what the
+plane left behind was substantially the plane's own rep-periodic error, which
+is precisely the error class the spec says does not cancel rep-to-rep.
+
+So the result is a BOUND and not a measurement. `geometry.lever_ratio` magnifies
+an endcap error by 2.0-3.7 on its way to the bar centre, giving **1.1-1.7 cm
+against a ~1 cm spec**. Bar tilt contributes at most that and possibly far less.
+That is worth having on its own — `src/tracked.py` has named bar tilt as an
+error source since C31 without anyone sizing it — but a correction fitted to a
+residual that shrinks every time the model improves would be putting the
+model's own error into the bar path.
+
+**What would change it**, cheapest first: the footage is 360x640, so 1080p cuts
+every figure by ~3x and puts the bound at 0.4-0.6 cm; marking the FAR plate,
+currently bare, turns a 0.185-0.375 m tilt baseline into 1.73 m and makes the
+lever ratio less than one; a checkerboard calibration replaces the fitted
+polynomial with the real projection.
+
+## 80 — conditioning the video referee (H30, 2026-08-22)
+
+### `80_video_conditioning.png`
+
+The owner's task: *"Video path should be smoothed slightly rather than being so
+jagged, furthermore any anomalous data entries should be removed."* Built as
+`src/vtrack/condition.py` and ON by default in `vtrack.bar_path`.
+
+**Smoothing was the ask; the anomalies were the problem.** Four of the 36
+committed tracks contain frames implying motion faster than free fall, and only
+two of them were flagged by anything. `IMPLAUSIBLE_FRAC`/`IMPLAUSIBLE_MULT` test
+whole-clip travel, which cannot see one bad frame inside a sound track:
+
+    squat_pause_140x4_3_20260806   frame 128 reads 0.399 m between neighbours
+                                   at 0.663 — 26 cm out and back in 33 ms —
+                                   inside a clip whose 71.6 cm travel passes
+                                   the 61-68 cm band comfortably
+    deadlift_150x4_1_20260808      peaks at 6.99 m/s downward against free
+                                   fall's 5.05, and is the capture TASKS.md
+                                   already records for segmenting 5 reps
+                                   against a labelled and confirmed 4
+
+Both are repaired and keep their clip. The two 2026-08-13 benches fail 2.2% and
+10.0% of frames on speed and are **condemned rather than repaired** — a smooth
+path that is not the bar is worse than a visibly broken one, because the visible
+wrongness is what makes the failure findable.
+
+**The gate is that the measurement did not move.** Smoothing invites one silent
+failure: clipping the turnarounds, which shrinks range of motion and rescales
+every vertical figure in the repo with nothing complaining. Savitzky-Golay at
+order 2 reproduces a parabola exactly and a turnaround is locally parabolic, so
+it should not, and over the 34 non-condemned captures travel changes by a median
+of **-0.004 cm and at most 0.27 cm** against a +-2-3 cm spec. 121 frames of
+39,988 are rejected, 0.30%.
+
+**`V_MAX_MS = 5.0` is derived rather than tuned** — free fall from a 1.3 m
+lockout is 5.05 m/s. The clean captures peak at 2.68 vertical / 4.02 horizontal
+and the suspects at 6.99, 7.94, 12.98 and 20.61, so the cut sits 24% above the
+worst clean figure and 28% below the worst suspect. The top-right panel is that
+separation on log axes.
+
+A robust per-clip cut on the fit residual was tried first and **was wrong**: at
+6 MADs it rejected 92 frames of `squat_140x4_1` and condemned 18 of 36
+captures, because the residual distribution is heavy-tailed by nature — the
+marker subtends fewer pixels at lockout, which `path.top_of_travel_residual`
+documents. The shipped cut is absolute, 2.0 cm of implied position error, four
+times `path.MAX_TOP_RESIDUAL_CM`.
+
+---
+
+*Numbering: 47 through 80 are taken. The next free number is 81 — H21
 (retiring `markers.py`) claimed nothing, because it moved no number and had
 nothing to draw. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this

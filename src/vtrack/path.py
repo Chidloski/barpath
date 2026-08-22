@@ -65,6 +65,7 @@ from .detect import detect_clip
 from .seed import candidates, choose, prefer_sticker_ring, score_track
 from .track import summarise
 from .track import track_clip as _follow
+from .condition import condition as _condition
 
 # Per-rep vertical range of motion used to RANK candidate constellations.
 #
@@ -270,7 +271,8 @@ def track_clip(video, cache_dir=None, verbose=False, reacquire=True,
             "runner_up": scored[1][0] if len(scored) > 1 else None}
 
 
-def bar_path(video, cache_dir=None, check: bool = True) -> dict:
+def bar_path(video, cache_dir=None, check: bool = True,
+             condition: bool = True) -> dict:
     """Tracked bar path, in `markers.bar_path`'s key set.
 
     Key-compatible by design, so `metrics.vs_truth`, `capture.landings`,
@@ -282,6 +284,14 @@ def bar_path(video, cache_dir=None, check: bool = True) -> dict:
 
     `x` is fore-aft in metres about the clip median; `height` is metres above
     the lowest tracked point, both on the clip's own clock in `t`.
+
+    **`condition=True` is the default as of 2026-08-22 (H30)** — impossible
+    frames are rejected and the path is lightly smoothed, per `condition.py`,
+    which also adds `x_raw`, `height_raw`, `rejected` and `condemned`. Pass
+    `condition=False` to reproduce a figure measured before that date. It
+    changes `travel_m` by a median of -0.002 cm and at most 0.27 cm over the 33
+    captures it does not condemn, so no vertical number moves; what it moves is
+    the four captures that contained motion no barbell performs.
     """
     res = track_clip(video, cache_dir=cache_dir)
     sm, trk = res["summary"], res["trk"]
@@ -319,6 +329,8 @@ def bar_path(video, cache_dir=None, check: bool = True) -> dict:
         "layout": res["layout"],
         "implausible": bool(res["implausible"]),
     }
+    if condition:
+        path = _condition(path, name=Path(video).name)
     if check:
         validate(path, video)
     return path
