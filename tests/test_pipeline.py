@@ -247,7 +247,7 @@ def test_accel_bias_removal_helps_on_every_seed():
 #
 # Recover them with `git show 17d5eee:tests/test_pipeline.py` if a synthetic
 # version is ever wanted for a specific mechanism — but do not restore them as
-# gates. See CLAUDE.md, "Open problems".
+# gates. See `FINDINGS.md`, Part 2.
 
 
 def test_principal_axis_finds_the_sagittal_plane():

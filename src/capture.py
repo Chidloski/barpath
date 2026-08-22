@@ -41,7 +41,7 @@ history and in `TASKS.md`; it is not reproducible now, because the footage it
 ran on is gone.
 
 **Findings measured against the deleted v1 corpus are history, not live gates.**
-`CLAUDE.md` marks them. Do not treat a number in this file's constants as
+`FINDINGS.md` marks them. Do not treat a number in this file's constants as
 re-derivable: `VERTICAL_ROM_M` and `FORE_AFT_ACCEL_MAX` were measured partly on
 captures that no longer exist.
 """
@@ -215,7 +215,7 @@ VERTICAL_ROM_M = {"bench": (0.20, 0.35), "squat": (0.45, 0.76), "deadlift": (0.4
 # demonstrably does not.** Bench clears the bound with 1.8x of margin. It also
 # separates the lifts WITHOUT A SYNC — `c` is a per-rep shape coefficient, not a
 # point-by-point comparison, so a whole-rep timing error cannot move it. That
-# matters because CLAUDE.md warns that `vs_truth`'s horizontal rms is nearly
+# matters because `FINDINGS.md` P2 warns that `vs_truth`'s horizontal rms is nearly
 # blind to gross misalignment.
 #
 # FIVE LIMITS. The first four are the ones `VERTICAL_ROM_M` carries.
@@ -367,7 +367,7 @@ def fore_aft_flags(lift: str, coeffs) -> list[str]:
 # This is a DELETION where the rest of this module's orphans are a RECORD:
 # `find_plate`, `sticker_plate_diameter` and `plate_diameter` are kept because
 # they document what a referee measured, and a broken ffmpeg wrapper documents
-# nothing. See CLAUDE.md's note on what survived `truth.py`.
+# nothing. See `FINDINGS.md`, "Reading a number here", on `truth.py`.
 
 
 def _disc(r: int) -> np.ndarray:

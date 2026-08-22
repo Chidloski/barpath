@@ -137,10 +137,10 @@ spec, while on deadlift the best LINE (3.64 / 3.78 / 4.89) loses to the null
 deadlift near spec, whoever writes the estimator.** A detrend improvement is a
 bench result. `python run.py --b3oracle`, `analysis/38`, TASKS.md B3.
 
-Kalman filters, factor graphs, batch smoothers and spline fits were previously
-rejected here by reference to NON_GOALS.md. That table was deleted on
-2026-07-28 because its evidence was synthetic. Nothing in this file forbids a
-solver any more — but see TASKS.md B6 before building one: an oracle fitting
+Kalman filters, factor graphs, batch smoothers and spline fits were once
+rejected here by reference to a non-goals table whose evidence was synthetic;
+that table was deleted on 2026-07-28 and the file holding it on 2026-08-23.
+Nothing in this file forbids a solver any more — but see TASKS.md B6 before building one: an oracle fitting
 constant gyro AND accel bias directly against the measured error recovers only
 ~30% of it, so constant-bias estimation of any kind is capped well short of
 1 cm.
@@ -235,7 +235,7 @@ from scipy.spatial.transform import Rotation
 #
 # What it is good for, measured rather than argued:
 #   * bench VERTICAL rms improves on 6 of 6, by ~20-25%
-#   * `bench_92.5x4_1` — the one capture CLAUDE.md records as losing to the
+#   * `bench_92.5x4_1` — the one capture `FINDINGS.md` records as losing to the
 #     flat-line null — crosses it, `beats_null` 0.71 -> 1.78
 #   * the ACCELERATION correlation against the video improves on 6 of 6 benches
 #     and on 3 of 3 deadlifts, deadlift going 0.12-0.23 to 0.43-0.64

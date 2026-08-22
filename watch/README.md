@@ -6,7 +6,7 @@ pipeline reads directly — same format as `synth.py`, defined once in
 
 (This was "Milestone 7" under a schedule that no longer exists. Milestones 1–6
 all passed while the pipeline failed in the gym, so the table was replaced by
-the open problems in `CLAUDE.md` and the work list in `TASKS.md`. The logger
+the open problems in `FINDINGS.md` and the work list in `TASKS.md`. The logger
 itself is one of the few parts that plainly works.)
 
 ## What it captures
@@ -41,7 +41,7 @@ thing to try with a capture that has a real closing anchor.
 
 An earlier build logged raw `CMGyroData` in four extra columns
 (`rgt rgx rgy rgz`) so that its difference from the bias-corrected
-`rotationRate` would expose Core Motion's internal estimate (`CLAUDE.md` P5).
+`rotationRate` would expose Core Motion's internal estimate (`FINDINGS.md` P5).
 **`CMMotionManager.isGyroAvailable` returns false on watchOS.** The raw gyro
 service simply is not offered — tried on one motion manager and on two, and the
 badge reported no hardware. There is no public-API route to it.
@@ -107,8 +107,8 @@ effort rating were all deleted.
 
 C7 wrote down its own falsifier: *"the app being genuinely REPLACED mid-capture
 — the watch face returning, or another app opened — for longer than the ~6.5 s
-the first drop test covered."* It went on the shot list in `TASKS.md` and
-`HANDOFF.md` as never collected. **It has now been collected, by accident, in a
+the first drop test covered."* It went on the shot list in `TASKS.md` (and in a
+handoff file since deleted) as never collected. **It has now been collected, by accident, in a
 real gym session**, and it came back the other way:
 
 - captures stopped surviving the wrist going down, and
@@ -221,7 +221,7 @@ refuses to apply it by default: doing so was worse than doing nothing on 13 of
 13 captures. Two anchors ~40 s apart measure **drift over a long baseline**
 instead, where the lifter's own slow wrist rotation largely cancels and a genuine
 bias does not. That is the one available change that could get under this noise
-floor. See `CLAUDE.md` P4.
+floor. See `FINDINGS.md` P4.
 
 Zero of the first thirteen captures had any end-of-record stillness, so this has
 never been possible. `io.check_log` now warns when it is missing.

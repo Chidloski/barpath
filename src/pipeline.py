@@ -190,7 +190,7 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     for it.
 
     **Every number recorded in the docs before 2026-08-06 was measured with
-    this OFF.** When comparing against CLAUDE.md or TASKS.md, pass
+    this OFF.** When comparing against `FINDINGS.md`, pass
     `wrist_offset=None` or you are comparing two different quantities.
 
     `video` turns on A3's metrics. Both are computed outside the nine steps

@@ -37,7 +37,9 @@ Measured over all sixteen `data_v2` clips: **16 of 16 track**, coverage
 implausible, and **16 of 16 rep counts match the label**. Per-rep video fore-aft
 comes out 4.4-6.0 cm on all six deadlifts, against C27's independently measured
 4.3-6.2 on three of them — a replication on three captures C27 never saw.
-Evidence and the full comparison: `analysis/tracking/v2_rebuild/REPORT.md`.
+Evidence: `FINDINGS.md`, and this package's own docstrings — the derivations
+live beside the code they justify. The rebuild's dated report and its frozen
+copy of this tracker were deleted on 2026-08-23; `git show fa7588d` has them.
 
 **`markers.py` is untouched and still reachable.** It remains the referee for
 anything scored with `tracker="markers"`, and its `calibration_report`,

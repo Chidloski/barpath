@@ -143,9 +143,13 @@ def csv_path(video: str | Path) -> Path:
 # directory `data_v2/` maps to — and the figures were NOT moved: they are the
 # per-capture review gallery for the live corpus, keyed by dataset, and
 # renaming them would break every path recorded in `TASKS.md` and on the board
-# to fix a caption. `analysis/tracking/v2_rebuild/` is a different thing and
-# stays where it is: F1's dated report on the rebuild, with its own frozen copy
-# of the tracker code, not an output directory anything writes to now.
+# to fix a caption.
+#
+# **The figures are no longer COMMITTED, as of 2026-08-23.** `analysis/tracking/`
+# is gitignored: a review figure regenerates from the cached CSV in seconds and
+# nothing reads it back, so committing them cost forty PNGs of churn on every
+# tracker change for no recoverable information. The protocol above is
+# unchanged and still binding — render it, and LOOK at it.
 #
 # The mapping is kept rather than collapsed to the identity because
 # `figure_path` falls back to the dataset's own directory name, so a third

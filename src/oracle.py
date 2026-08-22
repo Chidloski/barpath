@@ -74,9 +74,9 @@ rejected, so "unused" is its normal state and is not evidence against it.
 
 What it costs is not the line count. `src/` does not import `oracle` ANYWHERE,
 so no defect in here can reach the bar path; and `tests/test_oracle.py` runs in
-**15 s of a 54-minute suite**. What it buys is ten citations in `CLAUDE.md` that
+**15 s of a 54-minute suite**. What it buys is a dozen citations in `FINDINGS.md` that
 are re-runnable rather than merely written down — which is exactly the property
-`NON_GOALS.md` lost in 2026-07-28, when rejections outlived the evidence for
+the deleted non-goals table lost in 2026-07-28, when rejections outlived the evidence for
 them and had to be deleted wholesale.
 
 Thirty of the thirty-four functions here are driven by a test or an
@@ -95,7 +95,7 @@ un-driven code rots silently and two of these are load-bearing:
   only way to re-derive one of this project's load-bearing structural claims:
   that what makes step 7 work is its per-rep INDEPENDENCE, two free parameters
   per rep with no continuity, and NOT the closure. Delete it and that rule
-  becomes prose. See TASKS.md C29 and `CLAUDE.md`'s P6.
+  becomes prose. See `FINDINGS.md` C29 and its P6.
 
 The rest of the un-called names — `body_frame_bias`, `split_bias`,
 `rest_knots`, `detrend_knots`, `still_periods`, `precut_period` — are internal

@@ -191,7 +191,7 @@ def accel_bias(world_accel: np.ndarray, log: dict,
     is fixed in the body frame and the forearm rotates through the rep, so in
     the world frame it varies with the motion rather than appearing as the
     removable ramp a per-rep line can subtract. That is P3, and this docstring
-    is what CLAUDE.md cites for it.
+    is what `FINDINGS.md` cites for it.
 
     What subtracting this constant buys is far less than was once claimed. The
     previous claim — that it "brings the horizontal within spec", ~1.3 cm of

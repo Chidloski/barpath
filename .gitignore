@@ -48,3 +48,11 @@ analysis/run_*.png
 watch/**/xcuserdata/
 watch/**/*.xcworkspace/xcuserdata/
 build/
+
+# Per-capture review figures from `python run.py --track`. Regenerated from the
+# committed CSVs in seconds and never read by anything, so committing them cost
+# 40 PNGs of churn on every tracker change for no recoverable information. The
+# PROTOCOL is unchanged and still binding — track, cache, render, and LOOK at
+# the figure before trusting a number — only the storage changed. Dropped
+# 2026-08-23 (H32) on the owner's instruction.
+analysis/tracking/

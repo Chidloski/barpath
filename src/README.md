@@ -675,6 +675,23 @@ summary statistic said fine.** `squat_170x1` and `squat_pause_140x4_3` reported
 gym furniture (C31, D2). Coverage and residual cannot see that. Travel against
 the lift's own range of motion can, which is why it is the gate.
 
+## The layout
+
+One concern per module, mirroring the pipeline's own habit. **The derivation of
+each mechanism is in the docstring of the function that implements it** — that
+is where a reader who needs it will look, and it is what made deleting the
+rebuild's separate report safe.
+
+| module | holds |
+|---|---|
+| `detect.py` | bright compact blobs, scored on *whiteness* rather than brightness, plus a blur-tolerant second block |
+| `geom.py` | circle and lattice geometry, and the 8-fold symmetry score |
+| `seed.py` | which constellation in the clip is the plate — decided by trial-tracking, never by a per-frame score. `prefer_sticker_ring` is here |
+| `track.py` | follow it frame to frame, re-acquire when the lock is lost |
+| `path.py` | `bar_path`, and the referee's own top-of-travel fit check |
+| `condition.py` | reject impossible frames, then smooth. ON by default |
+| `geometry.py` | where along the BAR the tracked point sits, and what bar tilt costs |
+
 ## What is actually different
 
 **The owner's prior — eight stickers on a circle at even spacing — is used in
@@ -824,9 +841,11 @@ NOT warn on it, where `markers.validate` did — carrying that over would have
 been a behaviour change and H21 was gated on moving no number. Gated by
 `tests/test_vtrack.py`.
 
-Evidence, figures and the full comparison against the IMU pipeline:
-`analysis/tracking/v2_rebuild/REPORT.md`. **Its `code/` — the frozen prototype —
-was deleted on 2026-08-22 (H31) after being verified byte-identical to this
-package on the tracking path; the report itself stayed, because it carries the
-derivation of `seed.prefer_sticker_ring` and three other findings that live
-nowhere else.**
+Evidence: `FINDINGS.md` for the verdicts, and this package's own docstrings for
+the derivations — `seed.prefer_sticker_ring` carries the concentric-ring
+tie-break with its measurements, `track._fit_centre_lattice` the half-out-of-
+frame conditioning, `detect.detect_frame` the whiteness and blur-tolerance
+arguments. The rebuild's dated report and its frozen copy of this tracker were
+deleted on 2026-08-23; every finding in them that justified shipped code was
+already in these docstrings, which is what made the deletion safe.
+`git show fa7588d` recovers the report.

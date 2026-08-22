@@ -1119,7 +1119,7 @@ def quality_flags(log: dict, bounds: list[tuple[int, int]]) -> list[dict]:
     rep 0.4-1.5 m/s short of closing, and that is where the deadlift's error
     enters. But a broadband transient is not a detectable resonance, and
     throwing away the rep was never the right response to it — the fix belongs
-    in the reconstruction. See CLAUDE.md P6 and `analysis/25`.
+    in the reconstruction. See `FINDINGS.md` P6 and `analysis/25`.
     """
     out = []
     for a, b in bounds:

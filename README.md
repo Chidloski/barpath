@@ -28,9 +28,10 @@ enough axis confidence to be drawn stretched. It is being rebuilt after the
 original version passed every synthetic gate and failed in the gym by two
 orders of magnitude, and a completing pipeline is not a working one.
 
-`TASKS.md` is the working list — what is done, what is not, and the measurement
-behind each. `CLAUDE.md` holds the open problems. `analysis/README.md` holds the
-plots and numbers.
+`CLAUDE.md` holds the working protocols. `FINDINGS.md` holds what works and
+what does not — one entry per mechanism, with the number that decided it, and
+the open problems P1–P6. `TASKS.md` holds what is open right now.
+`analysis/README.md` holds the plots and numbers.
 
 One thing works well and is verified against video: the IMU and the video agree
 on floor-impact **timing** to 11–16 ms. The same cross-modal agreement is what
@@ -50,7 +51,7 @@ duration and amplitude, so do not read 72/72 as more than it says.
 The same 2026-07-30 session showed the video ground truth is trustworthy on
 timing and horizontal but **not on vertical scale**: per-rep ROM across three
 deadlifts by one lifter spreads 47.6–66.8 cm against a measured 61 cm ceiling.
-See `CLAUDE.md` P1 and P2.
+See `FINDINGS.md` P1 and P2.
 
 The sensor is not the problem, which took until 2026-07-30 to establish. On a
 watch lying on a table, Core Motion's residual gyro bias is **0.002 °/s**, its
@@ -67,7 +68,7 @@ after** 40–55 s of lifting.
 
 What is left, per rep: bench and squat leave 0.003 g of residual acceleration —
 the sensor's own noise floor — and deadlift leaves 0.010–0.030 g, three quarters
-of it injected in the 200 ms around each floor impact. See `CLAUDE.md` P4, P5
+of it injected in the 200 ms around each floor impact. See `FINDINGS.md` P4, P5
 and P6.
 
 Since A3 the failure has a measurement rather than an adjective. Against the

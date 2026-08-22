@@ -730,7 +730,7 @@ def plot_scorecard(results: dict, truths: dict, roms: dict):
         # plausible bar path and nothing can check it, while deadlift draws an
         # obvious mess and has truth to be measured against. Plausibility is not
         # evidence, and it is exactly how a broken pipeline convinces somebody
-        # it works (CLAUDE.md, the deadlift-first rule). Since C8 the unchecked
+        # it works (`FINDINGS.md`, the deadlift-first rule). Since C8 the unchecked
         # set is squat plus the four bench captures whose sync does not resolve,
         # rather than bench-and-squat wholesale — `truths` decides, so this
         # follows automatically.

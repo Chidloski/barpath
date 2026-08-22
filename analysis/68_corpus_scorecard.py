@@ -25,7 +25,7 @@ POSITION, and is not the sensor, the attitude or the vertical integration —
 which is what P6 and C11 concluded from the momentum side, reached here from a
 direction that never touches the video.
 
-Panel C is the same IMPACT/SMOOTH split CLAUDE.md draws from invented fore-aft,
+Panel C is the same IMPACT/SMOOTH split `FINDINGS.md` draws from invented fore-aft,
 measured instead on a real quantity: deadlift MCV barely decays within a set
 (median -2.4%) where bench sheds -26%. That is also WHY panel B's deadlift fit
 needed no fatigue control while bench's improved from -0.77 to -0.92 under one.
