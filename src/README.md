@@ -707,11 +707,13 @@ one, none flagged implausible, 16 of 16 rep counts match the label. Per-rep
 video fore-aft is **4.4-6.0 cm on all six deadlifts** against C27's independent
 4.3-6.2, three of them captures C27 never saw.
 
-**That paragraph is F1's, measured on the 16 clips held in 2026-08-14, and the
-corpus is 36.** Two of the 36 do not track — the 2026-08-13 spoto benches, H16 —
-and H30 adds that two more contain a single impossible frame each. Nothing here
-has been re-measured on 36; see `condition.py` below for what is known corpus
-wide.
+**That paragraph is F1's, measured on the 16 clips held in 2026-08-14. The
+corpus is 34 as of 2026-08-22** — it was 36 until the owner deleted the two
+2026-08-13 spoto benches, the only clips that did not track (H16, and H30
+measured them at 13-21 m/s of apparent bar speed). **Nothing in the corpus is
+mis-tracked any more**, which is a better state and also means no gate can be
+pinned to a live example of the failure; see `condition.py`. Nothing here has
+been re-measured on 34.
 
 ## The three things to know before quoting a number
 
@@ -745,8 +747,8 @@ wide.
 ## `condition.py` — rejecting the frames the tracker got wrong (H30, 2026-08-22)
 
 The owner asked for smoothing; the anomalies were the problem. **Four of the 36
-committed tracks contain frames implying motion faster than free fall, and only
-two of them were flagged by anything.** The travel gate above tests the WHOLE
+committed tracks held on 2026-08-22 contained frames implying motion faster than
+free fall, and only two of them were flagged by anything.** The travel gate above tests the WHOLE
 CLIP against the lift's range of motion, so it catches a track that is rigid and
 wrong — the failure `vtrack` exists for — and is blind to a track that is right
 for 1600 frames and jumps 33 cm in one.
@@ -762,14 +764,20 @@ Two tests, deliberately independent: **speed**, which is physics and needs no
 reference to the tracker's opinion of itself, and **residual**, the tracker's
 self-report, cut at an absolute 2.0 cm of implied position error (four times
 `MAX_TOP_RESIDUAL_CM`). A robust per-clip MAD cut was tried first and condemned
-18 of 36 captures, because the residual distribution is heavy-tailed by nature.
+18 of the 36, because the residual distribution is heavy-tailed by nature.
 
 **Condemnation reads the SPEED fraction alone, and it does not repair.** Past
 `CONDEMN_FRAC` the verdict flips from "these frames are bad" to "this track is
 bad" and the path is passed through untouched — smoothing a path that jumps
 20 m/s produces a smooth path that is still not the bar, and destroys the one
-signal that made the failure findable. The two 2026-08-13 benches come out still
-obviously broken, and `tests/test_vtrack.py` gates exactly that.
+signal that made the failure findable.
+
+**The two benches that demonstrated this have since been deleted by the owner
+(H31, 2026-08-22), so the corpus now contains nothing condemned.** `tests/test_vtrack.py` therefore
+gates the condemnation path on a broken track it BUILDS rather than one it
+names — a gate that depends on the corpus containing a defect stops testing
+anything the day the defect is removed, silently, and this file has now been
+bitten by that twice (see `tests/test_tracked.py`'s module docstring).
 
 `x_raw`, `height_raw` and `rejected` are kept, and written to the CSV, so the
 conditioning is reversible from the cache alone and the review figure can draw
@@ -817,4 +825,8 @@ been a behaviour change and H21 was gated on moving no number. Gated by
 `tests/test_vtrack.py`.
 
 Evidence, figures and the full comparison against the IMU pipeline:
-`analysis/tracking/v2_rebuild/REPORT.md`.
+`analysis/tracking/v2_rebuild/REPORT.md`. **Its `code/` — the frozen prototype —
+was deleted on 2026-08-22 (H31) after being verified byte-identical to this
+package on the tracking path; the report itself stayed, because it carries the
+derivation of `seed.prefer_sticker_ring` and three other findings that live
+nowhere else.**

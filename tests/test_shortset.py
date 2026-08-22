@@ -237,7 +237,19 @@ def test_truncated_sets_recover_the_known_offset(tmp_path, keep):
                                   short["bounds"], short["impacts"])
         errors[csv.name] = abs(fit["offset"] - ref["offset"])
 
-    assert len(errors) >= 8, f"too few usable truncations: {len(errors)}"
+    # A fraction of what was ATTEMPTED, not an absolute count, since 2026-08-22
+    # (H31). The loop above skips a capture for four unrelated reasons, so the
+    # denominator moves with the corpus and an absolute floor silently becomes
+    # either unfalsifiable or permanently red. This asks the question the test
+    # exists to ask: did truncation work on most of the captures it could be
+    # tried on?
+    attempted = sum(1 for csv in _multi()
+                    if pipeline.find_video(csv) is not None
+                    and BAD_REFERENCE not in csv.name)
+    assert attempted, "no multi-rep capture is usable for truncation at all"
+    assert len(errors) >= 0.5 * attempted, (
+        f"only {len(errors)} of {attempted} candidate captures produced a "
+        f"usable truncation; too few to say anything about short-set sync")
     worst = max(errors.values())
     # 250 ms. Generous against the 1.6-104 ms measured, because the reference
     # itself carries 8-10 ms and the assumed slope contributes ~0.1 s over a

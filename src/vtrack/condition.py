@@ -11,20 +11,25 @@ right for 1600 frames and jumps 33 cm in one. Measured over the 36 committed
 CSVs on 2026-08-22, as peak apparent bar speed:
 
     capture                          max vz    max vx   travel gate
-    bench_spoto_95x5_1_20260813       20.61     25.23   FLAGGED
-    bench_spoto_95x5_2_20260813       12.98     12.48   FLAGGED
+    bench_spoto_95x5_1_20260813       20.61     25.23   FLAGGED   [deleted]
+    bench_spoto_95x5_2_20260813       12.98     12.48   FLAGGED   [deleted]
     squat_pause_140x4_3_20260806       7.94      9.93   passes
     deadlift_150x4_1_20260808          6.99      2.06   passes
     ---- every other capture ----     <=2.68    <=4.02   passes
 
-m/s. The two flagged benches are H16's, already known bad and already caught.
+m/s. **The corpus is 34 as of 2026-08-22: the owner deleted the two flagged
+benches, agreeing with the condemnation below, and the table is kept as measured
+because it is what the constants were derived from.** Those two were H16's,
+already known bad and already caught.
+
 **The next two are the point of this module**: both pass every check the repo
 has, and both contain motion no barbell performs. A squat bar does not move
 horizontally at 9.93 m/s, and 6.99 m/s downward beats free fall from a 1.3 m
 lockout, which is 5.05 m/s — so it is not a fast drop, it is a wrong frame.
 `deadlift_150x4_1` is separately recorded in `TASKS.md` for segmenting 5 reps
 against a labelled and video-confirmed 4 at 30.11 cm vertical rms; nobody had
-connected that to its referee containing an impossible frame.
+connected that to its referee containing an impossible frame. Both are repaired
+and both are still in the corpus.
 
 **And it is jagged at a scale that matters.** Frame-to-frame |dx| runs a median
 of 0.05 cm against a horizontal spec of ~1 cm, so the per-frame noise is small,
@@ -38,8 +43,9 @@ WHAT THIS DOES NOT DO, AND THE DISTINCTION IS THE WHOLE DESIGN
 the one signal — visible wrongness — that made the failure findable at all.
 So rejection is capped: past `CONDEMN_FRAC` of the clip the verdict flips from
 "these frames are bad" to "this track is bad", `condemned` is set, and nothing
-is interpolated. The two 2026-08-13 benches must come out of here still
-obviously broken, and `tests/test_vtrack.py` gates exactly that.
+is interpolated. `tests/test_vtrack.py` gates exactly that, on a broken track it
+builds rather than one it names — the two captures that used to serve as the
+live example have been deleted from the corpus.
 
 Nothing here re-tracks, re-seeds or changes which constellation was chosen. It
 reads a finished path and marks or filters its samples.
@@ -113,13 +119,19 @@ SMOOTH_ORDER = 2
 # Exceed this fraction of frames failing the SPEED test and the CLIP is
 # condemned rather than repaired.
 #
-# Over the 36 committed CSVs the speed fraction is 0.00-0.14% on every capture
-# that tracks, and 2.2% and 10.0% on the two 2026-08-13 benches that do not.
-# The gap spans two orders of magnitude and 2% sits inside it; nothing about
-# the constant is delicate. What it buys is the distinction the module exists
-# for — `deadlift_150x4_1` and `squat_pause_140x4_3` each contain exactly ONE
-# impossible frame in a sound track and are repaired, while a path that is
-# wrong throughout is left visibly wrong. See the module docstring.
+# Over the 36 CSVs held on 2026-08-22 the speed fraction was 0.00-0.14% on every
+# capture that tracks, and 2.2% and 10.0% on the two 2026-08-13 benches that did
+# not. The gap spans two orders of magnitude and 2% sits inside it; nothing
+# about the constant is delicate. What it buys is the distinction the module
+# exists for — `deadlift_150x4_1` and `squat_pause_140x4_3` each contain exactly
+# ONE impossible frame in a sound track and are repaired, while a path that is
+# wrong throughout is left visibly wrong.
+#
+# **The two benches have since been deleted from the corpus, so nothing in it is
+# condemned any more and this constant has no live example.** That is why
+# `tests/test_vtrack.py` builds a broken track rather than naming one: a gate
+# that depends on the corpus containing a defect stops testing anything the day
+# the defect is fixed, silently. See the module docstring.
 CONDEMN_FRAC = 0.02
 
 

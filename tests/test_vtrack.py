@@ -248,20 +248,19 @@ def test_the_implausible_flag_has_a_CEILING_not_only_a_floor():
     assert 1.195 < vtrack.path.IMPLAUSIBLE_MULT < 2.328
 
 
-@pytest.mark.skipif(not CLIPS, reason="data_v2 footage not present")
-def test_exactly_the_two_known_broken_clips_are_flagged():
-    """The ceiling on the real corpus: it must catch two and condemn nobody else.
-
-    Runs off the CACHED tracks through `tracked.review`, which is the copy of
-    this rule that the review figure and a human actually see.
-    """
-    from src import tracked
-
-    flagged = sorted(c.stem for c in CLIPS if tracked.review(c)["implausible"])
-    assert flagged == ["bench_spoto_95x5_1_20260813",
-                       "bench_spoto_95x5_2_20260813"], (
-        f"flagged {flagged} — the two 2026-08-13 spoto benches are the only "
-        f"clips in this corpus known not to track")
+# **`test_exactly_the_two_known_broken_clips_are_flagged` LIVED HERE UNTIL
+# 2026-08-22 (H31), and it is deleted rather than repaired.** It asserted the
+# exact list `["bench_spoto_95x5_1_20260813", "bench_spoto_95x5_2_20260813"]`;
+# the owner has since deleted both captures, having agreed with H30's
+# condemnation, so the list is empty and the assertion is a statement about a
+# corpus that no longer exists.
+#
+# Rewriting it as the invariant — "nothing in the corpus is implausible" — was
+# the obvious move and would have DUPLICATED
+# `tests/test_tracked.py::test_every_cached_clip_is_plausible_now`, which
+# already asserts exactly that, over the same cached tracks, and predates this.
+# One gate, in the file whose subject it is. Recover the original with
+# `git show 62f2c38:tests/test_vtrack.py`.
 
 
 # --------------------------------------------------------- H30: conditioning --
@@ -361,40 +360,66 @@ def test_conditioning_does_not_move_the_vertical_measurement():
         f"eating the turnaround, which is what order 2 is chosen to prevent")
 
 
-@pytest.mark.skipif(not CSVS, reason="no tracked CSVs")
 def test_a_broken_track_is_condemned_and_NOT_repaired():
-    """The two 2026-08-13 benches must come out still obviously broken.
+    """Condemnation must fire, and must leave the path alone when it does.
 
-    Repairing them would be the worst possible outcome: a smooth, plausible
-    path that is not the bar, with the visible wrongness that makes the failure
-    findable filtered away. `condemned` clips are passed through untouched.
+    **This ran off the two 2026-08-13 spoto benches until 2026-08-22 (H31), and
+    it cannot any more: the owner deleted them, having agreed with H30's
+    condemnation.** That is the right outcome for the corpus and it left this
+    gate with nothing to fire on — the corpus now contains no broken track, so
+    a corpus-driven test of the condemnation path would silently assert nothing.
+
+    So the broken track is BUILT here instead, out of a real one. That is
+    strictly better than what it replaced: it does not depend on the corpus
+    containing a defect, it cannot rot when captures come and go, and it states
+    the property directly. Repairing a track that jumps 20 m/s would produce a
+    smooth path that is still not the bar and destroy the visible wrongness that
+    makes such a failure findable at all.
     """
     from src.vtrack import condition as C
 
+    d = _raw(sorted(CSVS)[0]) if CSVS else None
+    if d is None:
+        pytest.skip("no tracked CSVs")
+
+    # Scatter impossible frames through a sound path, past CONDEMN_FRAC.
+    n = len(d["t"])
+    bad = np.linspace(10, n - 10, int(np.ceil(n * C.CONDEMN_FRAC * 3))).astype(int)
+    h = np.asarray(d["height"], float).copy()
+    h[bad] += 2.0                              # 2 m in one frame: ~60 m/s
+    broken = dict(d, height=h)
+
+    with pytest.warns(UserWarning, match="BROKEN TRACK"):
+        out = C.condition(broken, name="synthetic")
+
+    assert out["condemned"]
+    assert not out["conditioned"]
+    assert np.allclose(out["height"], h, equal_nan=True), (
+        "a condemned path was modified; it must be passed through untouched")
+    assert np.allclose(out["x"], broken["x"], equal_nan=True)
+
+
+@pytest.mark.skipif(not CSVS, reason="no tracked CSVs")
+def test_nothing_in_the_corpus_is_condemned():
+    """The other half: on the real corpus, condemnation must stay silent.
+
+    Paired with the test above, this is what the deleted hardcoded list used to
+    buy. A capture that trips this is a capture to LOOK at, not a threshold to
+    raise.
+    """
+    import warnings
+
+    from src.vtrack import condition as C
+
     condemned = []
-    for csv in CSVS:
-        d = _raw(csv)
-        with pytest.warns(UserWarning) if False else _noop():
-            c = C.condition(d, name=csv.stem)
-        if c["condemned"]:
-            condemned.append(csv.stem)
-            assert not c["conditioned"]
-            assert np.allclose(c["x"], d["x"], equal_nan=True)
-            assert np.allclose(c["height"], d["height"], equal_nan=True)
-    for known in ("bench_spoto_95x5_1_20260813", "bench_spoto_95x5_2_20260813"):
-        assert known in condemned, f"{known} is known broken and was not condemned"
-
-
-class _noop:
-    def __enter__(self):
-        import warnings
-        self._c = warnings.catch_warnings()
-        self._c.__enter__()
+    with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return self
-
-    def __exit__(self, *a):
-        return self._c.__exit__(*a)
+        for csv in CSVS:
+            if C.condition(_raw(csv), name=csv.stem)["condemned"]:
+                condemned.append(csv.stem)
+    assert not condemned, (
+        f"condemned {condemned} — these tracks contain motion no barbell "
+        f"performs. LOOK at analysis/tracking/v2/<stem>.png.")
 
 
 @pytest.mark.skipif(not CSVS, reason="no tracked CSVs")

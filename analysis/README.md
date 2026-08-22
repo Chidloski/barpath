@@ -2834,8 +2834,8 @@ jagged, furthermore any anomalous data entries should be removed."* Built as
 `src/vtrack/condition.py` and ON by default in `vtrack.bar_path`.
 
 **Smoothing was the ask; the anomalies were the problem.** Four of the 36
-committed tracks contain frames implying motion faster than free fall, and only
-two of them were flagged by anything. `IMPLAUSIBLE_FRAC`/`IMPLAUSIBLE_MULT` test
+committed tracks held on 2026-08-22 contained frames implying motion faster than
+free fall, and only two of them were flagged by anything. `IMPLAUSIBLE_FRAC`/`IMPLAUSIBLE_MULT` test
 whole-clip travel, which cannot see one bad frame inside a sound track:
 
     squat_pause_140x4_3_20260806   frame 128 reads 0.399 m between neighbours
@@ -2852,6 +2852,12 @@ Both are repaired and keep their clip. The two 2026-08-13 benches fail 2.2% and
 path that is not the bar is worse than a visibly broken one, because the visible
 wrongness is what makes the failure findable.
 
+**The owner then deleted those two captures, agreeing with the condemnation
+(H31, 2026-08-22), so the corpus is 34 and nothing in it is condemned.** The
+table above is kept as measured, because it is what `V_MAX_MS` was derived from.
+Its live consequence is that no gate can be pinned to a real broken track any
+more, which is why `tests/test_vtrack.py` builds one.
+
 **The gate is that the measurement did not move.** Smoothing invites one silent
 failure: clipping the turnarounds, which shrinks range of motion and rescales
 every vertical figure in the repo with nothing complaining. Savitzky-Golay at
@@ -2859,6 +2865,13 @@ order 2 reproduces a parabola exactly and a turnaround is locally parabolic, so
 it should not, and over the 34 non-condemned captures travel changes by a median
 of **-0.004 cm and at most 0.27 cm** against a +-2-3 cm spec. 121 frames of
 39,988 are rejected, 0.30%.
+
+**The two condemned captures were deleted by the owner the same day (H31) and
+the figure still shows them**, as hollow crosses carried in the script's
+`DELETED` table with their measured peaks. Freezing the PNG would have made it
+un-reproducible from its own script, and re-rendering without them would leave
+`V_MAX_MS` looking arbitrary — the whole case for the cut is that it sits in a
+gap those two define. The counts in the lower-right panel are the live 34.
 
 **`V_MAX_MS = 5.0` is derived rather than tuned** — free fall from a 1.3 m
 lockout is 5.05 m/s. The clean captures peak at 2.68 vertical / 4.02 horizontal

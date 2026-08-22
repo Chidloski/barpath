@@ -39,6 +39,20 @@ the 34 captures that are not condemned: **travel changes by a median of -0.004
 cm and at most 0.27 cm**, against a +-2-3 cm vertical spec. `tests/test_vtrack.py`
 gates it at 0.75 cm.
 
+THE TWO DELETED CAPTURES, AND WHY THEY ARE STILL PLOTTED
+--------------------------------------------------------
+The owner deleted the two condemned benches on 2026-08-22 (H31), agreeing with
+the condemnation, so the live corpus is 34 and **the entire empirical case for
+`V_MAX_MS` sitting in a real gap is no longer in the data**. Two options were
+open and both are bad on their own: freeze the committed PNG, which makes it
+un-reproducible from this script and is exactly the drift this directory's
+figures exist not to have; or re-render it, which drops the broken captures and
+leaves the constant looking arbitrary.
+
+So their measured peaks are carried here as `DELETED`, drawn as hollow crosses
+and labelled as history. The figure stays reproducible AND keeps the evidence.
+If a future capture tracks that badly it appears as a filled cross beside them.
+
     python3 analysis/80_video_conditioning.py
 """
 from __future__ import annotations
@@ -57,6 +71,16 @@ from src.vtrack import condition as C          # noqa: E402
 
 TRACKED = ROOT / "data_v2" / "tracked"
 OUT = ROOT / "analysis" / "80_video_conditioning.png"
+
+# The two captures `V_MAX_MS` was derived against, deleted from the corpus by
+# the owner on 2026-08-22 (H31). (peak vertical, peak horizontal) in m/s,
+# measured from their committed CSVs on 2026-08-22 before deletion. Recover the
+# tracks themselves with
+# `git show 62f2c38:data_v2/tracked/bench_spoto_95x5_1_20260813.csv`.
+DELETED = {
+    "bench_spoto_95x5_1_20260813": (20.61, 25.23),
+    "bench_spoto_95x5_2_20260813": (12.98, 12.48),
+}
 
 
 def raw(csv):
@@ -157,8 +181,12 @@ def _figure(rows):
     cond = [r for r in rows if r["cond"]]
     ax.scatter([r["vz0"] for r in keep], [r["vx0"] for r in keep], s=26,
                color="#2b6cb0", label=f"tracks ({len(keep)})")
-    ax.scatter([r["vz0"] for r in cond], [r["vx0"] for r in cond], s=70,
-               marker="X", color="#c53030", label=f"condemned ({len(cond)})")
+    if cond:
+        ax.scatter([r["vz0"] for r in cond], [r["vx0"] for r in cond], s=70,
+                   marker="X", color="#c53030", label=f"condemned ({len(cond)})")
+    ax.scatter([v[0] for v in DELETED.values()], [v[1] for v in DELETED.values()],
+               s=90, marker="X", facecolors="none", edgecolors="#c53030", lw=1.8,
+               label=f"condemned, since deleted ({len(DELETED)})")
     ax.axvline(C.V_MAX_MS, color="#2f855a", ls="--", lw=1.2)
     ax.axhline(C.V_MAX_MS, color="#2f855a", ls="--", lw=1.2,
                label=f"free fall, {C.V_MAX_MS} m/s")

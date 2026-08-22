@@ -645,9 +645,27 @@ def test_the_sync_landmark_catches_a_whole_rep_error():
         metrics.bench_sync = real
 
     assert not missed, f"a whole-rep sync error went undetected: {missed}"
-    assert len(caught) >= 6, (
-        f"only {len(caught)} captures exercised the guard; it was 14 when "
-        f"written, so either the corpus shrank or captures stopped syncing")
+
+    # The guard must have been EXERCISED, or `not missed` passes vacuously on a
+    # corpus where nothing reached `vs_truth` at all.
+    #
+    # **A fraction of what was eligible, not an absolute floor, since 2026-08-22
+    # (H31).** This asserted `>= 6` against "fourteen for fourteen when written",
+    # i.e. it had already been halved once to keep up with the corpus, and a
+    # constant that gets re-tuned whenever it fails is measuring the tuner. The
+    # denominator here is the number of attempts the loop could make — two
+    # shifts over every non-deadlift capture that has enough reps and a video —
+    # so this asks the real question: did the guard fire on essentially every
+    # capture that could exercise it?
+    eligible = 2 * sum(
+        1 for path in CAPTURES
+        if capture.lift_of(path) != "deadlift"
+        and pipeline.find_video(path) is not None
+        and len(pipeline.run(path)["bounds"]) >= metrics.LANDMARK_MIN_REPS)
+    assert eligible, "no capture can exercise the sync guard at all"
+    assert len(caught) >= 0.9 * eligible, (
+        f"only {len(caught)} of {eligible} eligible attempts exercised the "
+        f"guard; captures have stopped syncing")
 
 
 
@@ -918,7 +936,7 @@ def test_the_gravity_correction_mechanism_is_real():
 # It failed at 3.84 against 2.95 x 1.4. Lowering the factor would have made it
 # pass, and that is exactly what must not happen: the effect was measured across
 # a set of continuous squats and there is no longer a set to measure it across.
-# The finding it gated is in TASKS.md and CLAUDE.md as history.
+# The finding it gated is in `FINDINGS.md` as history.
 #
 # If continuous squats are captured again, restore it from git history rather
 # than rewriting it from the description above.

@@ -11,8 +11,17 @@ real values.
 **The implausibility flag must keep firing.** It is the thing that would have
 caught six unusable squat clips that had been feeding comparisons for days
 behind healthy-looking coverage and residual. A gate that stops noticing is
-worse than no gate, so it is pinned to specific captures known to be bad AND to
-specific captures known to be good.
+worse than no gate, so both halves are pinned: that it FIRES, and that it does
+not fire always.
+
+**Both halves are driven from CONSTRUCTED tracks, not named captures**, and that
+is a lesson this file learned twice. The registry of known-bad clips it once
+carried became unfixable when two of its four entries were deleted with the v1
+corpus and the other two started tracking correctly; the same thing happened
+again on 2026-08-22 when the owner deleted the last two mis-tracking captures.
+There is no mis-tracked capture left to point at, and there should not be. What
+the corpus is still asked is the invariant — see
+`test_every_cached_clip_is_plausible_now` — never a count or a list.
 """
 
 from __future__ import annotations
@@ -302,13 +311,19 @@ def test_the_video_finds_the_rep_count_the_FILENAME_says():
         f"flagged as mis-tracked: {unexplained}")
 
     # And the check must still be capable of firing, or it is measuring nothing.
-    # 14, not the 20 this asserted until 2026-08-14. That floor was set when
-    # both datasets were cached — 28 clips — and the v1 half has since been
-    # deleted, leaving 16. This tracks the corpus; it is a "the rep finder has
-    # not broadly regressed" floor, not a finding.
-    assert len(CACHED) - len(disagree) >= 14, (
-        f"only {len(CACHED) - len(disagree)} clips match their filename; the "
-        f"rep finder has probably regressed")
+    #
+    # **Expressed as a FRACTION since 2026-08-22 (H31), because an absolute
+    # floor here has now been wrong twice.** It asserted 20 until 2026-08-14,
+    # when F1 deleted the v1 half of a 28-clip cache and left 16; it was then
+    # re-tuned to 14, and the corpus has since been 29, 36 and 34. Each of those
+    # edits was somebody discovering the number by watching it fail. A fraction
+    # states the actual intent — "the rep finder has not broadly regressed" —
+    # and survives captures being added and removed, which is the normal life of
+    # this corpus and not an event a gate should notice.
+    matched = len(CACHED) - len(disagree)
+    assert matched >= 0.8 * len(CACHED), (
+        f"only {matched} of {len(CACHED)} clips match their filename; the rep "
+        f"finder has probably regressed")
 
 
 def test_ensure_force_actually_RE_TRACKS(monkeypatch, tmp_path):

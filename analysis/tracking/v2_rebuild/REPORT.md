@@ -1,3 +1,31 @@
+> **What is left here, and what went (H31, 2026-08-22).** The owner asked for
+> this directory to be deleted "if it simply holds a snapshot". Half of it did,
+> and that half is gone: `code/`, the frozen copy of the tracker, and the 15
+> per-capture PNGs and 5 stdout dumps beside it.
+>
+> **`code/` was verified redundant before it was deleted, not assumed to be.**
+> Run against `src/vtrack` on three clips, `detect.py` and `geom.py` were
+> byte-identical, `seed.py` and `track.py` differed only in import style and in
+> the superseded `PLATE_M * STICKER_RATIO` scale, and the two produced the same
+> constellation to 1e-9 px and the same path to 0.0000 mm after rescaling. So
+> `src/vtrack` IS this code, with H14's corrections on top. Its analysis drivers
+> went with it: `squatcheck.py` existed to bypass `vs_truth`'s squat refusal,
+> and G2 lifted that refusal on 2026-08-15, so squat is scored directly now. The
+> PNGs are superseded by `analysis/tracking/v2/`, re-rendered from the current
+> referee on 2026-08-22. Recover any of it with
+> `git show 62f2c38:analysis/tracking/v2_rebuild/code/track.py` and friends.
+>
+> **This file is NOT a snapshot and that is why it stayed.** It carries four
+> findings that live nowhere else — most importantly "A trap worth recording: a
+> tracking guard moved the ruler", which is the derivation of
+> `seed.prefer_sticker_ring`, a mechanism `path.track_clip` calls on every clip.
+> Deleting the reasoning behind shipped code because its prototype is redundant
+> is exactly the mistake `CLAUDE.md` records against `src/oracle.py`. `FINDINGS.md`
+> cites this file as *Evidence:* twice and those citations still resolve.
+>
+> Read the "How to run" section at the end as history: the commands in it no
+> longer exist. `python run.py --track` is the shipped equivalent.
+
 # v2 tracking, round 2 — the deadlift corpus and `squat_170x1` (2026-08-13)
 
 Owner's report after reviewing round 1: **`squat_170x1_20260806` and the entire

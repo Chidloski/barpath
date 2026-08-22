@@ -1187,8 +1187,14 @@ def track_all(force: bool = False) -> int:
     import warnings
     from src import tracked
 
-    clips = sorted(list((ROOT / "data_v2" / "video").glob("*.mov"))
-                   + list((ROOT / "data_v2" / "video").glob("*.mov")))
+    # One glob. This concatenated the SAME glob with itself until 2026-08-22
+    # (H31), so every clip was tracked, reviewed and re-rendered twice and the
+    # summary line reported 60 cached for 30 clips. Harmless on a cached run;
+    # on `--track --force` it doubled the only genuinely expensive command in
+    # the repo. The shape is a leftover from when there were two corpora, `data/`
+    # and `data_v2/`, and F1 deleted the first on 2026-08-14 by pointing both
+    # halves at the survivor instead of dropping one.
+    clips = sorted((ROOT / "data_v2" / "video").glob("*.mov"))
     if not clips:
         print("no clips found")
         return 1
