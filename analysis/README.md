@@ -3262,48 +3262,60 @@ established.
 
 ---
 
-## 91 — one universal error shape (H41, 2026-08-25)
+## 91, 92 — where the horizontal error comes from (H41/H42, 2026-08-25/26)
 
-### `91_error_shape.png`
+### `91_error_shape.png`, `92_bump_origin.png`
 
-The owner's hypothesis: *"the linear endpoint detrend is trying to do the job a
-higher order polynomial must do ... see if all sets and their reps share a
-similar quality with their polynomials."* They do, and more strongly than
-expected.
+The owner's hypothesis, then the owner's question: the linear detrend is doing a
+polynomial's job — so where does the polynomial come from, can the pipeline
+absorb it, and if not what step would?
 
-PCA over the per-rep video-minus-pipeline displacement, 113 refereed reps:
+**91 measured the shape and read it wrongly, and that is recorded rather than
+quietly fixed.** PCA over the per-rep video-minus-pipeline error gives PC1 =
+0.787 with a 0.962 overlap with `s²−s`, the same curve on every lift (cross-lift
+|cos| 0.88–0.97). That was read as a shared physical cause. **It is what the
+closure forces.** The same PCA on synthetic curves with no shared structure,
+closed the same way:
 
-    group        n     PC1     PC2     PC1+PC2
-    bench       39    0.841   0.120     0.961
-    squat       35    0.859   0.098     0.958
-    deadlift    39    0.795   0.118     0.912
-    ALL        113    0.787   0.102     0.888
+    source                          PC1     |overlap with parabola|
+    real error                     0.787            0.962
+    white noise                    0.328            0.193
+    random walk                    0.633            0.974
+    double-integrated white noise  0.915            0.998
 
-**One curve carries ~80% of every rep's error, and two carry ~90%.** The error
-is genuinely low-dimensional.
+Double-integrated noise — what integrating an IMU twice produces — beats the
+real data on both. Any smooth function pinned to zero at both ends looks like a
+bump. What survives is the AMPLITUDE, which is real and varies rep to rep.
 
-**And it is the same curve on every lift** — cross-lift |cos| 0.88–0.97, each
-lift aligning with the pooled shape at 0.967–0.983. It is symmetric (correlation
-with its own mirror +0.87), zero at both ends, peaks at phase 0.54, and overlaps
-`s²−s` at 0.91 / 0.90 / 0.74. **It is the mid-rep bump**, now established as a
-shared shape rather than inferred rep by rep — which is exactly why a line
-cannot reach it and a quadratic can.
+**92 found where it comes from, and the chain closes against measurements taken
+years apart and never compared:**
 
-*A first pass put PC1's overlap with the parabola at 0.18–0.50 and concluded it
-was some other shape. That was an error: it compared a mean-centred parabola
-against a non-centred PC1. Centre both and the overlap is 0.74–0.91.*
+    the bump implies a tilt of           0.13° median, 0.35° at p90
+    P5 measured attitude at a hold       0.05° opening, 0.14° closing
+    P4 measured it on a table            0.018° over 10 s
+    1 cm of bump at T = 3.1 s needs      0.049°
 
-**The amplitude varies rep to rep, not just set to set** — sd/|mean| of the PC1
-score within a set is 0.68 on deadlift, 0.96 on squat, 2.00 on bench. A per-set
-constant cannot carry it, which is `88`'s per-rep-beats-per-set ceiling seen
-from the other side.
+**The tilt the bump implies is the tilt P5 measured.** The horizontal spec needs
+the attitude 2.7× tighter than Core Motion delivers — so it is a sensor-accuracy
+problem, not a modelling one, and the reconstruction is already near what the
+attitude permits. Yaw is worse: gravity cannot constrain it and P5 bounds it at
+0.0–1.4° per set, an order above what 1 cm allows.
 
-Deadlift is the weakest fit throughout (PC1 0.795, parabola overlap 0.74),
-consistent with `88`: its landing puts 56% of its energy in higher modes.
+**And it is not a fixed body-frame vector.** One 3-vector fitted across all 113
+reps — as a wrist-offset error `R(t)·δd` or a body-frame accel bias `∬R(t)·b` —
+gives leave-one-capture-out R² of 0.44/0.46 on bench and negative on squat,
+deadlift and pooled. C28 reached that per capture; this reaches it with one
+vector against a hundred reps.
+
+**Can the existing pipeline absorb it?** Partly, and that is what `90` ships:
+bench 2.09 → 1.53 cm leave-one-out with the quadratic term, against a perfect
+per-rep bump correction's 0.65 and a 1 cm spec. No new step is proposed, because
+the remaining error is attitude noise and no step downstream of the attitude can
+remove it.
 
 ---
 
-*Numbering: 47 through 91 are taken. The next free number is 92. **52
+*Numbering: 47 through 92 are taken. The next free number is 93. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

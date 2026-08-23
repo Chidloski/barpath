@@ -230,33 +230,51 @@ cos θ, which at the 1–3° a barbell tilts is 0.01–0.11 px on an 85 px radiu
 Second order in the angle. Only the parallax, which is first order, carries
 signal.
 
-**There is ONE universal error shape, it is the mid-rep bump, and it carries
-~80% of every rep's error.** PCA over the per-rep video-minus-pipeline
-displacement, 113 refereed reps:
+**WHERE THE HORIZONTAL ERROR COMES FROM: it is the ATTITUDE, at the accuracy
+Core Motion actually delivers.** The chain closes against measurements taken
+independently years apart:
 
-    group        n     PC1     PC2     PC1+PC2
-    bench       39    0.841   0.120     0.961
-    squat       35    0.859   0.098     0.958
-    deadlift    39    0.795   0.118     0.912
-    ALL        113    0.787   0.102     0.888
+    the mid-rep bump implies a tilt of      0.13 deg median, 0.35 at p90
+    P5 measured attitude error at a hold    0.05 deg opening, 0.14 closing
+    P4 measured it on a table               0.018 deg over 10 s
+    1 cm of bump at T = 3.1 s needs         0.049 deg
 
-**And it is the SAME curve on every lift** — cross-lift |cos| of 0.88–0.97, each
-lift aligning with the pooled shape at 0.967–0.983. It is symmetric (correlation
-with its own mirror +0.87), zero at both endpoints, peaks at phase 0.54, and
-overlaps `s²−s` at 0.91 / 0.90 / 0.74 for bench / squat / deadlift. So the
-dominant error is the bump, established as a shared SHAPE rather than inferred
-rep by rep — which is why a line cannot reach it and a quadratic can.
+**The tilt the bump implies is the tilt P5 measured.** They were never compared.
+And 1 cm needs the attitude **2.7× tighter than Core Motion gives**, so the
+horizontal spec is not a modelling problem — it is a sensor-accuracy problem,
+and the reconstruction is already close to what the attitude permits. Yaw makes
+it worse: gravity cannot constrain it at all and P5 bounds it at 0.0–1.4° per
+set, an order of magnitude above what a 1 cm bump allows.
 
-*A first pass reported PC1 overlapping the parabola at only 0.18–0.50 and
-concluded it was some other shape. That was an error of mine: it compared a
-mean-centred parabola against a non-centred PC1. Centre both and it is 0.74–0.91.*
+*This is P3 restated with a number. "The error is not a constant in ANY frame"
+is what a tilt that varies at Core Motion's own noise level looks like.*
 
-**The amplitude varies REP to rep, not just set to set** — sd/|mean| of the PC1
-score within a set is 0.68 (deadlift), 0.96 (squat), 2.00 (bench). A per-SET
-constant cannot carry it, which is H38's per-rep-beats-per-set ceiling seen from
-the other side. `analysis/91`.
+**It is NOT a fixed body-frame vector**, and that is now tested the strong way.
+A single 3-vector fitted across all 113 reps — as a wrist-offset error `R(t)·δd`
+(step 6) or as a body-frame accel bias `∬R(t)·b` (steps 1–2) — reaches
+leave-one-capture-out R² of 0.44/0.46 on bench and **negative on squat, deadlift
+and pooled**. C28 reached the same verdict per capture; this reaches it with one
+vector against a hundred reps.
 
-**A smooth lift's rep BOUNDARY is an anchor, and on bench it halves the error.**
+**AND THE 'UNIVERSAL SHAPE' OF 2026-08-25 WAS AN ARTEFACT — the entry it
+replaces claimed otherwise.** That entry reported PCA over the per-rep error
+giving PC1 = 0.79 with a 0.96 parabola overlap, the same curve on every lift,
+and read it as a shared physical cause. It is what the CLOSURE forces. Run the
+identical PCA on synthetic curves with no shared structure, closed the same way:
+
+    source                          PC1     |overlap with parabola|
+    real error                     0.787            0.962
+    white noise                    0.328            0.193
+    random walk                    0.633            0.974
+    double-integrated white noise  0.915            0.998
+
+**Double-integrated noise — which is exactly what integrating an IMU twice
+produces — beats the real data on both.** Any smooth function pinned to zero at
+both endpoints looks like a bump, so the shape carries no information about
+cause. What survives from that entry is the AMPLITUDE, which is real, varies rep
+to rep, and is what the correction below estimates.
+
+**A smooth lift's rep BOUNDARY is an anchor, and on bench it halves the error.****A smooth lift's rep BOUNDARY is an anchor, and on bench it halves the error.**
 The standing reason bench and squat have no anchor — `metrics.momentum_closure`,
 that a bar descending at constant velocity reads |a| = g with a quiet gyro
 exactly as a bar at rest does — argues about DETECTING one from the raw signal.

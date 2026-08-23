@@ -108,6 +108,24 @@ the last entry in `KNOWN_ROM_FAILURES`.
   uniform, which would make it a different failure rather than the same one
   inverted.
 
+## The binding constraint
+
+**The horizontal spec needs the attitude 2.7x tighter than Core Motion gives.**
+Established 2026-08-26 (H42) and it reframes what is left to do. The mid-rep
+bump implies a tilt of 0.13 deg median; P5 measured attitude error at a still
+hold at 0.05-0.14 deg; 1 cm of bump at a 3.1 s rep needs 0.049 deg. Those are
+the same quantity, measured three ways, and the reconstruction is already close
+to what the attitude permits.
+
+So the remaining horizontal error is **not a modelling problem**, and no step
+downstream of the attitude can remove it. What is still worth doing:
+
+- estimate the per-rep bump where an anchor exists and subtract it, which is the
+  `h40-lockout-bump` branch (bench 2.09 -> 1.53 cm leave-one-out);
+- anything that improves the ATTITUDE itself, which needs information the watch
+  does not have during motion — P4/P5 close the obvious routes;
+- and accept that squat and deadlift are anchor-limited, not model-limited.
+
 ## Open problems
 
 Stated in full, with their evidence, in `FINDINGS.md`. What is *open* about each:
