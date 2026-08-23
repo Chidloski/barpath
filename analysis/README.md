@@ -3031,7 +3031,43 @@ means — P6's sign result, reproduced from position instead of acceleration.
 
 ---
 
-*Numbering: 47 through 84 are taken. The next free number is 85. **52
+## 85 — a quadratic detrend needs a third constraint (H35, 2026-08-24)
+
+### `85_third_constraint.png`
+
+The owner: *"investigate subtracting a polynomial from the endpoints rather than
+a straight line — this will need extra information from somewhere, see what you
+can do."*
+
+**The problem is one unknown, not three.** Keeping the endpoints and adding
+curvature forces the extra term to vanish at both, so it is `c₂(s²−s)` and
+nothing else — and `c₂ = a·T²/2` is exactly a constant acceleration error. It is
+worth **2.39 → 1.25 cm** per rep, **1.71 per set**; a global constant is
+worthless and makes deadlift worse, because the per-set sign is not fixed within
+a lift.
+
+**Four sources tested; all fail.** The pull anchors are 4.6× too large on 9 of
+9. Rep dispersion is blocked by construction — a bump identical on every rep is
+common-mode in rep phase, leaving only the 42% within-set T² spread, at
+r(T², c₂) = +0.45. The opening hold is the right size and uncorrelated per
+capture (Spearman −0.04, p = 0.83).
+
+**The turnaround fails structurally, and that is the interesting one.** The
+bump's slope vanishes at phase 0.5, and the turnaround is the middle of the
+motion by definition — bench 0.57, squat 0.47, deadlift 0.74. Where the bar is
+horizontally still (bench 0.20, squat 0.29 of typical) there is no lever; where
+there is a lever, deadlift at 0.74, the bar is moving 1.4× its typical speed.
+**Every pause the corpus has is at the useless phase.**
+
+**What would work is a capture change.** The IMU's horizontal velocity error at
+a still instant is 2.04 cm/s, so a pause cued at phase 0.25 gives σ(c₂) of 1.18×
+the signal per rep and **0.59× averaged over four**. A single rep is not enough
+and a set is — which suits, since per-set is the right granularity anyway.
+Carried into `TASKS.md`'s capture protocol.
+
+---
+
+*Numbering: 47 through 85 are taken. The next free number is 86. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

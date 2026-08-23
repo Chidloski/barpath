@@ -230,6 +230,34 @@ cos θ, which at the 1–3° a barbell tilts is 0.01–0.11 px on an 85 px radiu
 Second order in the angle. Only the parallax, which is first order, carries
 signal.
 
+**A quadratic detrend, for want of a third constraint.** Keeping the endpoints
+and adding curvature means adding a term that vanishes at both, so the whole
+extra freedom is one number: `q(s) = p(s) − c₂(s²−s)`, and `c₂ = a·T²/2` is
+exactly a constant acceleration error over the rep. It is **worth 2.39 → 1.25
+cm** if known per rep and 1.71 if known per set, which is 60% of the gain at the
+right granularity. **No available reading supplies it.** Four sources tested
+2026-08-24:
+
+    source                what happens
+    pull anchors (H27)    4.6x too large on 9 of 9, Spearman +0.32 at p = 0.41
+    rep dispersion        blocked by construction — a bump identical on every
+                          rep is common-mode in rep phase; only the within-set
+                          T² spread (42%) gives leverage, at r(T², c₂) = +0.45
+    the turnaround        structurally singular: the bump's slope vanishes at
+                          phase 0.5 and the turnaround IS mid-motion — bench
+                          0.57, squat 0.47, deadlift 0.74. Where the bar is
+                          still there is no lever; where there is a lever
+                          (deadlift) the bar moves 1.4x its typical speed
+    the opening hold      right size, wrong per capture: Spearman −0.04,
+                          p = 0.83, n = 26 — C28's posture objection confirmed
+
+**Every pause the corpus has is at the useless phase** — paused squats at the
+bottom, spoto benches at the chest, both mid-rep by definition. What would work
+is a still instant deliberately cued AWAY from the middle; the IMU's horizontal
+velocity error at a still instant is 2.04 cm/s, so a pause at phase 0.25
+averaged over a set of 4-6 reps estimates `c₂` to 0.48-0.59 of its own size. A
+single rep is not enough and a set is. `analysis/85`.
+
 **Correcting the per-rep non-closure (B3).** Reps genuinely do NOT start and
 end in the same place — median horizontal miss **1.61 cm over 111 refereed
 reps**, only 33% inside the 1 cm spec, 19–28% of the rep's own fore-aft
@@ -256,6 +284,15 @@ the odd rep is usually a real rep. It ships as a **label**, never as a deletion.
 **Raw gyro on watchOS.** `CMMotionManager.isGyroAvailable` returns false. Tried
 on one motion manager and on two. There is no public-API route — **do not
 re-propose this.**
+
+**Tuning a segmentation rule on the upright ratio, offline.** `_upright_ratios`
+reads `position`, which comes from step 5b, which is **fitted on the rep
+windows** — so changing the segmentation changes the ratios the rule keys on. A
+guard tuned against ratios measured under the old windows is tuned against
+numbers that no longer exist once it fires. Found the hard way on 2026-08-24: a
+separation guard that a corpus-wide table said would fix a third capture instead
+took `squat_170x1_20260820` from 2 windows to 4 against a labelled 1. Measure
+any such rule by running the pipeline, never from a precomputed table.
 
 **Synthetic gates as evidence.** A 1 cm synthetic gate was passing only on
 seed 0. Synthetic tests are unit tests now; a gate only counts if it runs on

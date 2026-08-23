@@ -181,6 +181,17 @@ reasoning behind them are in `FINDINGS.md`.*
   the two constants carrying the result — `BAR_ANGLE_DEG` and `FORE_AFT_SENSE` —
   are fitted or derived on a corpus that varies neither camera side nor grip.*
 
+- **A set paused at a QUARTER of the way through the rep, not the bottom.**
+  Four to six reps, any of the three lifts, pausing partway down a squat or
+  partway up a bench rather than at the turnaround. **This is the one capture
+  that would unlock the quadratic detrend**, which is worth 2.39 -> 1.71 cm at
+  per-set granularity and is blocked only for want of a number. Every pause the
+  corpus already has sits at phase 0.47-0.57, which is exactly where the term
+  being estimated has no slope, so no existing capture can supply it. At phase
+  0.25 over 4-6 reps the estimate lands at 0.48-0.59 of the signal's own size —
+  usable. See `FINDINGS.md` and `analysis/85`. Cue it as "pause halfway down",
+  not "pause at the bottom", and it costs one set.
+
 - **A deadlift DOUBLE.** A deadlift set has no gap between reps, so no
   truncation of a longer set can imitate one; deadlift doubles remain the one
   short-set case unvalidated end to end. Carried from G3.
