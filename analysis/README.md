@@ -2982,7 +2982,56 @@ per set at p = 0.05–0.10. n = 7–9 sets, so suggestive only.
 
 ---
 
-*Numbering: 47 through 83 are taken. The next free number is 84. **52
+## 84 — where the rep error lives, and why two corrections missed it (H34, 2026-08-23)
+
+### `84_error_phase.png`
+
+The follow-on from 83: if the endpoint is not where the error is, where is it?
+
+**A bulge at mid-rep.** Horizontal error against phase, rms cm — 0.00, 3.68,
+3.53, 4.17, **4.96**, 4.92, 4.11, 3.38, 2.27 across phases 0 to 1. Peak at 0.56,
+and the endpoint carries only 45% of it. That is the whole explanation of 83's
+null result: step 7 acts where the error is smallest.
+
+**An oracle ladder over polynomial order** — best per-rep fit against the video,
+so a ceiling and never a proposal:
+
+    lift        ships   ord 0   ord 1   ord 2   ord 3   ord 4
+    bench        2.10    1.05    0.98    0.34    0.22    0.17
+    deadlift     3.09    1.68    1.47    1.10    0.93    0.55
+    squat        2.58    1.87    1.78    0.77    0.67    0.58
+    ALL          2.39    1.65    1.37    0.71    0.56    0.39
+
+The jump is order 1 → 2, and 0.71 cm is inside spec. Not a contradiction of
+C19: that quadratic was constrained to CLOSE the rep and so could not learn the
+bulge. The basis was never the blocker.
+
+**On deadlift the bulge is a constant acceleration error.** A constant `a` over
+a rep of duration T leaves a parabola of amplitude a·T²/8 — a prediction with no
+free parameters, testable against durations of 2.2–5.8 s:
+
+    lift        Spearman(T, amplitude)   log-log slope   [T² predicts 2.00]
+    deadlift      +0.392 (p = 0.014)         +2.08
+    bench         +0.288 (p = 0.076)         +1.26
+    squat         −0.167 (p = 0.353)         −0.57
+
+Deadlift lands on it, at an implied 0.014 m/s² — inside the 0.011–0.070 P6
+measured from acceleration. **Squat does not fit at all**, and squat is also
+where 83's closure oracle *hurt* and where the non-closure walks.
+
+**And it diagnoses H27.** Its pull-anchor estimate against what the position
+error implies: too large on **9 of 9 deadlifts, median 4.6×, range 1.8–23.8×**.
+Right sign on every capture (Spearman +0.32) but n = 9 at p = 0.41, so the gain
+cannot be fitted without fitting noise. Applying a real effect at four times its
+size is how a correct mechanism produces `beats_null` 0.68 → 0.33.
+
+The granularity is right too: the implied acceleration is stable within a set
+(sd/|mean| 0.34–0.60, under 1.0 on 22 of 24) and negative on 22 of 24 set
+means — P6's sign result, reproduced from position instead of acceleration.
+
+---
+
+*Numbering: 47 through 84 are taken. The next free number is 85. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

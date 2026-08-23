@@ -187,8 +187,18 @@ localised to the floor landing alone and a splice does fix it — and still lose
 because the linear detrend cannot absorb a localised correction.
 
 **A per-set tilt correction from the pull anchors.** Built and measured: 2.78 →
-5.01 cm, `beats_null` 0.68 → 0.33. The mechanism was right and the correction
-loses anyway.
+5.01 cm, `beats_null` 0.68 → 0.33. **The mechanism is right and the ESTIMATOR is
+what fails** (2026-08-23): compared against the acceleration the position error
+actually implies, the pull-anchor estimate is too large on **9 of 9 deadlifts,
+by a median of 4.6× and a range of 1.8–23.8×**. Applying a real effect at four
+times its size is how a correct mechanism produces that regression. Its
+direction is right — same sign on every capture, Spearman +0.32 — but n = 9 at
+p = 0.41, so there are not enough deadlift sets to fit the gain without fitting
+noise. The granularity is also right: the implied acceleration is stable within
+a set (sd/|mean| 0.34–0.60, under 1.0 on 22 of 24 sets) and its set mean is
+negative on 22 of 24, which is P6's sign result reproduced from position rather
+than from acceleration. What is missing is a better estimator, not a better
+correction.
 
 **Applying the ZUPT velocity correction to all three axes.** It damaged the
 vertical. The horizontal ceiling it reaches is `beats_null` 0.77, and it cannot
@@ -280,10 +290,22 @@ failure is less irregular than a capture that passes.
     rep scores an upright ratio of 0.63 against 8.3–23.4 for every other squat
     rep in the corpus, and that has no explanation.
 
-Cutting the sorted upright ratios at their largest multiplicative gap — an
-argmax, not a threshold — gives bench 9/9 and squat 12/13 on the velocity path
-against shipping's 9/9 and 9/13, and costs `deadlift_200x1`. A lead, not a fix.
-`analysis/82`. Left red in the suite rather than xfailed.
+**`segment._readmit` fixes the first mechanism and is on the branch
+`h34-segment-readmit`, not on main.** It takes back any lobe whose upright ratio
+is at least the LOWEST the cluster already accepted — the capture sets its own
+bar, so there is no threshold — guarded to clusters of three or more, because
+with one or two members the cluster's worst member is its only member and
+re-admitting against it is how the deadlift singles acquire extra windows.
+Measured over the 24 velocity-path captures: **19/24 correct before, 21/24
+after, 32 of 34 captures bit-identical, and nothing regresses.** It fixes
+`squat_140x4_1` and `squat_pause_140x4_1`; `squat_140x4_2` is left, its cluster
+holding only two members.
+
+The corpus-wide alternative — cutting the sorted ratios at their largest
+multiplicative gap — reaches 22/24 and was **rejected as tuned**: its constant
+has to land in a gap of [1.8, 2.2] between the captures it must fire on and
+those it must not, a 22% margin. `analysis/82`. The remaining three miscounts
+are left red rather than xfailed.
 
 **P2 — the horizontal error against video. OPEN, and it is the project.**
 Deadlift sits at `beats_null` 0.14–0.38 and a better referee did not rescue it,
@@ -291,11 +313,45 @@ so the fault is in the reconstruction. One bench capture,
 `bench_spoto_95x5_1_20260806`, is the single capture to explain: a re-referee
 moved its session-mate across the null and left this one at 0.89.
 
-**P3 — the error sits at rep frequency, where no filter or line can reach it.**
-See "any constant error model" above. This is the load-bearing negative result
-of the project and it constrains every proposed fix: an error that repeats with
-the rep is preserved perfectly by rep-to-rep comparison, so "it's common-mode"
-is not available as a defence.
+**P3 — the error sits at rep frequency, and it is now LOCATED.** See "any
+constant error model" above for why no estimator of a constant pays off. What
+2026-08-23 adds is *where in the rep the error is*, and it reframes every
+proposed fix.
+
+**It is a bulge in the middle.** Horizontal error against rep phase, rms cm,
+start-aligned as `vs_truth` scores it — 0.00, 3.68, 3.53, 4.17, **4.96**, 4.92,
+4.11, 3.38, 2.27 at phases 0 to 1. Peak at phase 0.56; **the endpoint carries
+45% of the peak**. That is the whole reason H33's closure oracle gained nothing
+— step 7 acts where the error is smallest.
+
+**And the basis is not the blocker.** Best per-rep polynomial fitted against the
+video, an oracle and therefore a ceiling:
+
+    lift        ships   ord 0   ord 1   ord 2   ord 3   ord 4
+    bench        2.10    1.05    0.98    0.34    0.22    0.17
+    deadlift     3.09    1.68    1.47    1.10    0.93    0.55
+    squat        2.58    1.87    1.78    0.77    0.67    0.58
+    ALL          2.39    1.65    1.37    0.71    0.56    0.39
+
+The jump is order 1 to order 2 — 1.37 to **0.71 cm, inside spec**. A bulge is
+quadratic and step 7 fits a line, so the shape it cannot represent is exactly
+the shape the error has. This does **not** contradict C19's rejected quadratic
+detrend: C19's quadratic was constrained to CLOSE the rep, so it could not learn
+the bulge. The missing ingredient was never the basis, it is an estimator for
+the coefficient.
+
+**On deadlift the bulge is a constant acceleration error**, and that is a
+prediction rather than a fit: a constant `a` over a rep of duration T leaves a
+parabola of amplitude a·T²/8. Against rep durations of 2.2–5.8 s the log-log
+slope comes out **+2.08 on deadlift** (Spearman +0.39, p = 0.014) where T²
+predicts 2.00, at an implied 0.014 m/s² — inside the 0.011–0.070 P6 measured
+from acceleration. Bench is intermediate (k = +1.26). **Squat does not fit at
+all** (k = −0.57, p = 0.35), and squat is also where the closure oracle *hurts*
+and where the non-closure walks; three independent analyses now say squat's
+horizontal error is a different animal, and nothing explains it.
+
+This is why "it's common-mode" is not available as a defence: an error that
+repeats with the rep is preserved perfectly by rep-to-rep comparison.
 
 **P4 — there is almost no gyro bias to calibrate. CLOSED as a problem.** On a
 watch lying on a table the residual gyro bias is 0.002 °/s and is not resolvable

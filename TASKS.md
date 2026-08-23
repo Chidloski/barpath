@@ -21,8 +21,10 @@ what they established is in `FINDINGS.md` as verdicts.*
 
 ## Red in the suite
 
-**Five captures miscount, and the count gate is failing on them right now.**
-Verified 2026-08-22. Left RED rather than registered in `WRONG_REP_COUNT`, per
+**Three captures miscount.** Was five until 2026-08-23, when
+`segment._readmit` fixed two on the branch `h34-segment-readmit` — **not yet on
+main, awaiting the owner**. The rows below are the state ON MAIN; with the
+branch applied, `squat_140x4_1` and `squat_pause_140x4_1` count 4/4. Left RED rather than registered in `WRONG_REP_COUNT`, per
 F1's precedent: they are the finding, and burying them under an expected-failure
 mark is how the previous ones stayed invisible.
 
@@ -30,9 +32,9 @@ mark is how the previous ones stayed invisible.
 |---|---|---|---|
 | `deadlift_210x1_20260815` | 2 | 1 | a spurious PAIR outvotes the real single |
 | `squat_170x1_20260820` | 2 | 1 | same — and its real rep scores upright 0.63 against 8.3–23.4 corpus-wide, which has no explanation |
-| `squat_140x4_1_20260813` | 3 | 4 | `_similar_cluster` discards a rep it identified |
-| `squat_140x4_2_20260813` | 2 | 4 | same, two of them |
-| `squat_pause_140x4_1_20260820` | 3 | 4 | same |
+| `squat_140x4_1_20260813` | 3 | 4 | `_similar_cluster` discards a rep it identified — **fixed on the branch** |
+| `squat_140x4_2_20260813` | 2 | 4 | same, two of them; the branch abstains, its cluster holding only 2 members |
+| `squat_pause_140x4_1_20260820` | 3 | 4 | same — **fixed on the branch** |
 
 The video counts the 2026-08-13 and 2026-08-15 cases correctly, so the labels
 are right and the segmenter is wrong.
@@ -116,9 +118,14 @@ Stated in full, with their evidence, in `FINDINGS.md`. What is *open* about each
   But an **oracle given the true non-closure gains nothing** — +0.15 cm bench,
   +0.33 deadlift, −0.61 squat, −0.18 corpus-wide, better on 50% of reps. There
   is no estimator worth building behind a ceiling of zero. See `FINDINGS.md`
-  and `analysis/83`. What is left open is not B3 but the question underneath it:
-  the error is distributed through the rep, so a correction has to act there,
-  not at the endpoints.
+  and `analysis/83`. **What replaced it is sharper (2026-08-23):** the error is
+  a BULGE peaking at phase 0.56, the endpoint carries 45% of it, and an oracle
+  over polynomial order says a per-rep QUADRATIC would reach 0.71 cm — inside
+  spec. On deadlift that bulge scales as a·T²/8 with the implied `a` inside the
+  range P6 measured, so the live question is an estimator for a per-set constant
+  acceleration offset. H27 built one from the pull anchors and it was too large
+  on 9 of 9 by a median 4.6×; the mechanism was right and the estimator was not.
+  See `FINDINGS.md` P3 and `analysis/84`.
 - **B6 / P3 / P6 — a deadlift correction that meets all three requirements at
   once.** Local in time (B7, B6, C19 and C28b each failed this); boundaries not
   on the impacts, or step 7 annihilates it (C29); and it must cover every rep
