@@ -230,33 +230,48 @@ cos θ, which at the 1–3° a barbell tilts is 0.01–0.11 px on an 85 px radiu
 Second order in the angle. Only the parallax, which is first order, carries
 signal.
 
-**A quadratic detrend, for want of a third constraint.** Keeping the endpoints
-and adding curvature means adding a term that vanishes at both, so the whole
-extra freedom is one number: `q(s) = p(s) − c₂(s²−s)`, and `c₂ = a·T²/2` is
-exactly a constant acceleration error over the rep. It is **worth 2.39 → 1.25
-cm** if known per rep and 1.71 if known per set, which is 60% of the gain at the
-right granularity. **No available reading supplies it.** Four sources tested
-2026-08-24:
+**A quadratic detrend — the constraint EXISTS on deadlift, and the gain it
+needs is unexplained.** Keeping the endpoints and adding curvature forces the
+extra term to vanish at both, so the whole added freedom is one number:
+`q(s) = p(s) − c₂(s²−s)`, and `c₂ = a·T²/2` is exactly a constant acceleration
+error. Worth **2.39 → 1.25 cm** known per rep, 1.71 per set.
 
-    source                what happens
-    pull anchors (H27)    4.6x too large on 9 of 9, Spearman +0.32 at p = 0.41
-    rep dispersion        blocked by construction — a bump identical on every
-                          rep is common-mode in rep phase; only the within-set
-                          T² spread (42%) gives leverage, at r(T², c₂) = +0.45
-    the turnaround        structurally singular: the bump's slope vanishes at
-                          phase 0.5 and the turnaround IS mid-motion — bench
-                          0.57, squat 0.47, deadlift 0.74. Where the bar is
-                          still there is no lever; where there is a lever
-                          (deadlift) the bar moves 1.4x its typical speed
-    the opening hold      right size, wrong per capture: Spearman −0.04,
-                          p = 0.83, n = 26 — C28's posture objection confirmed
+**P6 said the information was already spent and that was WRONG.** Its claim —
+two still instants give two numbers and closure is the second — misreads the
+algebra: a linear detrend of POSITION shifts VELOCITY by a constant, so it can
+match one velocity condition, not two. Closure removes the MEAN of the two
+velocity errors; their difference divided by T is `a` itself and is untouched.
+Verified symbolically to 1e-16.
 
-**Every pause the corpus has is at the useless phase** — paused squats at the
-bottom, spoto benches at the chest, both mid-rep by definition. What would work
-is a still instant deliberately cued AWAY from the middle; the IMU's horizontal
-velocity error at a still instant is 2.04 cm/s, so a pause at phase 0.25
-averaged over a set of 4-6 reps estimates `c₂` to 0.48-0.59 of its own size. A
-single rep is not enough and a set is. `analysis/85`.
+**A deadlift already has both instants**, because the bar rests on the floor
+between reps, and `oracle.rest_observables` has been returning the quantity
+since C28b — which used it to ZERO the error, i.e. the mean again. Dividing it
+by the span instead:
+
+    a_est vs the oracle a   Pearson +0.594 (p = 0.0011), Spearman +0.430
+    raw                     3.10 → 8.23 cm     (3.9x too large, a disaster)
+    fitted gain 0.173       3.10 → 2.42 cm
+    LEAVE-ONE-CAPTURE-OUT   3.10 → 2.66 cm     better on 48% of reps
+    oracle ceiling          3.10 → 1.88 cm
+
+**It survives leave-one-out**, which is the standard C28's ladder failed, and
+the held-out gains are 0.157–0.218 on eight of nine captures. The median
+improves while the per-rep hit rate is a coin flip, so it helps bad reps more
+than it hurts good ones. **The gain of ~0.17 is unexplained**, is not span
+bookkeeping (span/T = 1.00), and is the open question: either the interval
+contains the floor impact, whose impulse is not a constant acceleration, or the
+watch's posture at rest differs from its posture under load. Until that is
+settled it is an empirical constant. Bench and squat cannot do this and never
+will — a bar descending at constant velocity is indistinguishable from a bar at
+rest in raw acceleration and gyro.
+
+*Four other sources were tested first and all fail (`analysis/85`): the pull
+anchors, 4.6× too large on 9 of 9; rep-to-rep dispersion, blocked because a bump
+identical on every rep is common-mode in rep phase; the turnaround, singular
+because the bump's slope vanishes at phase 0.5 and the turnaround is mid-motion
+by definition; and the opening hold, right size and uncorrelated per capture.
+A mid-rep pause would have supplied it and **is ruled out — the capture must
+never affect the set.***
 
 **Correcting the per-rep non-closure (B3).** Reps genuinely do NOT start and
 end in the same place — median horizontal miss **1.61 cm over 111 refereed

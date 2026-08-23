@@ -3067,7 +3067,45 @@ Carried into `TASKS.md`'s capture protocol.
 
 ---
 
-*Numbering: 47 through 85 are taken. The next free number is 86. **52
+## 86 — the spare constraint was there all along (H36, 2026-08-24)
+
+### `86_rest_zupt.png`
+
+The owner ruled out 85's recommendation: **the capture must never affect the
+set**, so a mid-rep pause is not available. That sent the question back to the
+algebra, and the algebra had been read wrong.
+
+**P6 says the two still instants are already spent by step 7's closure. They are
+not.** A linear detrend of POSITION shifts VELOCITY by a constant, so it can
+match one velocity condition, not two. Closure removes the MEAN of the two
+velocity errors; their difference over T is `a` itself, untouched. Verified
+symbolically to 1e-16.
+
+**And a deadlift already has both instants** — the bar rests on the floor
+between reps. `oracle.rest_observables` has returned the quantity since C28b,
+which used it to ZERO the error, i.e. the mean again. Divide by the span
+instead and it estimates the bump:
+
+    a_est vs the oracle a   Pearson +0.594 (p = 0.0011), Spearman +0.430
+    raw                     3.10 → 8.23 cm    (3.9x too large)
+    fitted gain 0.173       3.10 → 2.42 cm
+    LEAVE-ONE-CAPTURE-OUT   3.10 → 2.66 cm    better on 48% of reps
+    oracle ceiling          3.10 → 1.88 cm
+
+**It survives leave-one-out**, the standard C28's ladder failed, with held-out
+gains of 0.157–0.218 on eight of nine captures. The median improves while the
+per-rep hit rate is a coin flip — it helps bad reps more than it hurts good
+ones.
+
+**The gain of ~0.17 is the open question.** Not span bookkeeping (span/T =
+1.00). Either the interval contains the floor impact, whose impulse is not a
+constant acceleration, or the watch's posture at rest differs from under load.
+Bench and squat cannot do this at all: a bar descending at constant velocity
+reads |a| = g with a quiet gyro exactly as a bar at rest does.
+
+---
+
+*Numbering: 47 through 86 are taken. The next free number is 87. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*
