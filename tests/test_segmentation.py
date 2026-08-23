@@ -495,3 +495,61 @@ def test_the_deadlift_single_lands_on_the_pull_not_the_drop():
     assert not (log["t"][a2] < 16.61 < log["t"][b2 - 1]), (
         "the displacement fallback now finds the pull too, so this capture no "
         "longer demonstrates why the singleton rule was replaced")
+
+
+# ------------------------------------------------ H34: cluster re-admission --
+
+def test_readmit_takes_back_reps_the_cluster_identified_and_discarded():
+    """`_readmit` fixes the two squats whose reps the cluster threw away.
+
+    The mechanism, measured 2026-08-23: on `squat_140x4_1` and
+    `squat_pause_140x4_1` all four reps are present as concentric lobes with
+    upright ratios ten times anything else in the capture, and
+    `_similar_cluster` keeps three. Neither `_upright` nor `peak_ratio` is
+    responsible — the clustering is.
+    """
+    for stem, want in (("squat_140x4_1_20260813", 4),
+                       ("squat_pause_140x4_1_20260820", 4)):
+        csv = next((RAW.glob(f"{stem}*.csv")), None)
+        if csv is None:
+            pytest.skip(f"{stem} not present")
+        from src import pipeline
+        got = len(pipeline.run(csv)["bounds"])
+        assert got == want, f"{stem}: {got} windows against a labelled {want}"
+
+
+def test_readmit_abstains_on_a_small_cluster():
+    """The guard that keeps the deadlift singles out of it.
+
+    With one or two members the cluster's worst member IS its only member, so
+    re-admitting against it re-admits most of the capture. `deadlift_210x1`'s
+    cluster of two sits at a bar of 0.9 upright, which nearly every lobe in that
+    capture clears — it would go from 2 windows to 7. Its count is still wrong
+    for the separate reason in `FINDINGS.md` P1, and this must not make it
+    worse.
+    """
+    csv = next((RAW.glob("deadlift_210x1_20260815*.csv")), None)
+    if csv is None:
+        pytest.skip("deadlift_210x1 not present")
+    from src import pipeline
+    assert len(pipeline.run(csv)["bounds"]) == 2, (
+        "the guard has stopped abstaining; a small cluster cannot set a bar")
+
+    lobes = [(0, 10, 20, 0.5), (0, 30, 40, 0.5), (0, 50, 60, 0.5)]
+    up = {10: 9.0, 30: 8.0, 50: 12.0}
+    assert segment._readmit(lobes, lobes[:2], up) == lobes[:2], (
+        "a cluster of 2 must abstain")
+    assert len(segment._readmit(lobes, lobes[:2], up, min_cluster=2)) == 3, (
+        "with the guard lowered it must re-admit the 12.0")
+
+
+def test_readmit_cannot_fire_on_a_unanimous_cluster():
+    """No lobe is left to take back, so the function is a no-op by construction.
+
+    Worth pinning: the bar is the cluster's own worst member, so a cluster that
+    already holds every lobe has nothing above it. This is why the rule needs no
+    threshold and cannot disturb a capture that was already right.
+    """
+    lobes = [(0, 10, 20, 0.5), (0, 30, 40, 0.5)]
+    up = {10: 9.0, 30: 8.0}
+    assert segment._readmit(lobes, lobes, up, min_cluster=1) == lobes
