@@ -449,9 +449,46 @@ def apply_drift_tilt(quat: np.ndarray, t: np.ndarray, beta: np.ndarray,
     return corrected.as_quat(scalar_first=True)
 
 
+# Which lifts get step 7's QUADRATIC term, and on which axes. H40, 2026-08-25.
+#
+# **C19 built the quadratic and rejected it, and the rejection was right about
+# the thing it tested.** It applied the term to ALL THREE AXES, where a
+# deadlift's `dv` is ~1 m/s of landing impulse; spreading that smoothly injects
+# `dv*T/8` at mid-rep and the VERTICAL and the ROM are what threw it out — 48.7,
+# 41.8 and 73.1 cm vertical against a shipped 5.2/6.6/5.2, ROM 78-116 cm against
+# a 61 cm ceiling. None of that is disputed here and none of it is repaired.
+#
+# What is new is that the term is sound on the HORIZONTAL of a SMOOTH lift, and
+# nobody had separated the axes. Bench has no landing, so its `dv` is the
+# velocity error and not an impulse, and its rep boundary sits at lockout where
+# the bar is horizontally still — 0.66 of the rep's own typical speed against
+# 0.44 at the deadlift floor rest that `oracle.rest_observables` already trusts.
+#
+# Measured through this code path, leave-one-CAPTURE-out, vertical untouched by
+# construction:
+#
+#     lift        h rms         beats_null      captures improved
+#     bench     1.81 -> 1.53   2.46 -> 2.82        6 of 7
+#     squat     3.19 -> 3.95   1.40 -> 1.36        2 of 10   <- REFUSED
+#     deadlift  3.11 -> 2.88   0.64 -> 0.66        4 of 9    <- REFUSED
+#
+# and bench goes from 6 of 7 captures beating the flat-line null to **7 of 7**,
+# `bench_spoto_95x5_2` crossing at last. Squat is refused because it is worse on
+# 8 of 10; deadlift because 4 of 9 is a coin flip and its in-sample curve
+# degrades hard past gain 0.2, which is C19's rejection reproducing.
+#
+# **There is no gain constant, and that is deliberate.** An earlier measurement
+# fitted one at 0.58 and it was an artefact of an intercept in that harness;
+# choosing the gain by leave-one-out through THIS path picks 1.0 on six of seven
+# captures. The plateau is broad — every gain from 0.5 to 1.1 leaves 7 of 7
+# beating the null at 1.30-1.59 cm — so the term is used as C19 wrote it.
+QUAD_LIFTS = {"bench": (0,)}
+
+
 def detrend_rep(position: np.ndarray, start: int, stop: int, t: np.ndarray,
                 axes: tuple[int, ...] = (0, 1, 2), edge: int = 1,
-                velocity: np.ndarray | None = None, order: int = 1) -> np.ndarray:
+                velocity: np.ndarray | None = None, order: int = 1,
+                quad_axes: tuple[int, ...] | None = None) -> np.ndarray:
     """Subtract the endpoint-to-endpoint line, on `axes` only. Step 7. B3.
 
     `order=2` adds one quadratic term, pinned by a SECOND closure the rep
@@ -583,15 +620,28 @@ def detrend_rep(position: np.ndarray, start: int, stop: int, t: np.ndarray,
     vel = velocity[start:stop]
     dv = np.median(vel[-e:], axis=0) - np.median(vel[:e], axis=0)
 
-    a = (dv * keep) / (2.0 * span)
-    b = (drift * keep) / span - (dv * keep) / 2.0
+    # `quad_axes` restricts the QUADRATIC term to a subset of the axes being
+    # detrended; the linear closure still runs on all of `axes`. None means
+    # "the same axes", which is C19's behaviour and is bit-identical to it.
+    #
+    # The distinction is the whole of H40: the term is sound on a smooth lift's
+    # horizontal and ruinous on a deadlift's vertical, and until now `axes`
+    # could only turn the detrend off entirely, not the quadratic half of it.
+    qkeep = keep if quad_axes is None else np.zeros_like(keep)
+    if quad_axes is not None:
+        qkeep[[a for a in quad_axes if a < rep.shape[1]]] = 1.0
+        qkeep = qkeep * keep                      # never outside the detrended set
+
+    a = (dv * qkeep) / (2.0 * span)
+    b = (drift * keep) / span - (dv * qkeep) / 2.0
     return rep - (a * tau ** 2 + b * tau)
 
 
 def detrend_set(position: np.ndarray, bounds: list[tuple[int, int]],
                 t: np.ndarray, axes: tuple[int, ...] = (0, 1, 2),
                 velocity: np.ndarray | None = None,
-                order: int = 1) -> list[np.ndarray]:
+                order: int = 1,
+                quad_axes: tuple[int, ...] | None = None) -> list[np.ndarray]:
     """One detrended path per rep, each translated so its start is the origin.
 
     Alignment is by START POINT ONLY. Do not align whole paths — between-rep
@@ -612,7 +662,7 @@ def detrend_set(position: np.ndarray, bounds: list[tuple[int, int]],
     reps = []
     for start, end in bounds:
         rep = detrend_rep(position, start, end, t[start:end], axes=axes,
-                          velocity=velocity, order=order)
+                          velocity=velocity, order=order, quad_axes=quad_axes)
         rep -= rep[0]
         reps.append(rep)
     return reps

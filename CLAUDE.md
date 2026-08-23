@@ -210,8 +210,14 @@ each step is shaped the way it is, and what was tried instead, is in
 6. `correct.py` — subtract the wrist-to-bar offset R(t)·d. **ON as of
    2026-08-06.** See *Reading a number* below before quoting anything measured
    before that date.
-7. `correct.py` — per-rep linear detrend. `order` defaults to 1; a quadratic is
-   implemented and was measured and rejected (C19).
+7. `correct.py` — per-rep detrend. Linear on every lift; **plus a quadratic
+   term on BENCH, fore-aft only, as of 2026-08-25 (H40)** — see
+   `correct.QUAD_LIFTS`. C19 built the same quadratic, applied it to all three
+   axes, and was right to reject it there: a deadlift's `dv` is a landing
+   impulse and spreading it wrecks the vertical and the ROM. The axis
+   restriction is what is new, not the term. Bench 1.81 -> 1.53 cm
+   leave-one-capture-out and 6 of 7 -> 7 of 7 beating the null; squat and
+   deadlift are bit-identical to the linear detrend and gated as such.
    **Load-bearing because of its per-rep INDEPENDENCE, not its closure** — two
    free parameters per rep with no continuity between them. Making it
    continuous costs 8.21 -> 17.00 cm.

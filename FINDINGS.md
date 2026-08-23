@@ -230,40 +230,39 @@ cos θ, which at the 1–3° a barbell tilts is 0.01–0.11 px on an 85 px radiu
 Second order in the angle. Only the parallax, which is first order, carries
 signal.
 
-**A smooth lift's rep BOUNDARY is an anchor, and on bench it halves the error.**
-The standing reason bench and squat have no anchor — `metrics.momentum_closure`,
-that a bar descending at constant velocity reads |a| = g with a quiet gyro
-exactly as a bar at rest does — argues about DETECTING one from the raw signal.
-It does not apply, because nothing has to be detected: `_full_cycles` already
-runs a smooth lift's window turnaround to turnaround, so the boundary sits at
-lockout and the segmenter has placed it. And the bar is still enough there in
-the channel that matters — measured against video, horizontal speed at the
-boundary is 0.66 of the rep's typical on bench and 0.45 on squat, against 0.44
-at the deadlift floor rest that H36's working estimator uses.
+**Step 7's QUADRATIC term, on bench, fore-aft only. SHIPS as of 2026-08-25.**
+`correct.QUAD_LIFTS`. The term itself is C19's — a quadratic pinned by the rep's
+own endpoint velocity difference, no new anchor — and **C19's rejection was
+right about what it tested**: applied to all three axes a deadlift's `dv` is
+~1 m/s of landing impulse, and spreading it smoothly wrecked the vertical
+(48.7/41.8/73.1 cm against a shipped 5.2/6.6/5.2) and the ROM (78–116 cm against
+a 61 cm ceiling). None of that is repaired. What is new is that nobody had
+separated the axes.
 
-    a_est = [v_h(end) - v_h(start)] / T,   no new sensing, no capture change
+Why bench can take it: it has no landing, so its `dv` is velocity error rather
+than an impulse; and its rep boundary already sits at lockout, where the bar is
+horizontally still — 0.66 of the rep's own typical speed, against 0.44 at the
+deadlift floor rest the pipeline already trusts. **`metrics.momentum_closure`'s
+objection does not apply**, because it is about DETECTING an anchor from the raw
+signal and nothing has to be detected: `_full_cycles` runs a smooth lift's window
+turnaround to turnaround, so the segmenter has already placed it.
 
-    lift        n      r        p     gain   ships   LOO    better   ceiling
-    bench      39   +0.656   0.0000   0.576   2.09   0.98    79%      0.65
-    squat      35   +0.217   0.21     0.396   2.81   2.55    54%      1.41
-    deadlift   39   +0.558   0.0002   0.088   3.10   2.76    49%      1.83
+    lift        h rms          beats_null      captures improved
+    bench     1.81 → 1.30     2.46 → 2.82         6 of 7
+    squat     3.19 → 3.95     1.40 → 1.36         2 of 10    REFUSED
+    deadlift  3.11 → 5.84     0.64 → 0.32         0 of 9     REFUSED
 
-**Bench halves under leave-one-CAPTURE-out and lands inside the 1 cm spec**:
-median h_rms 2.09 → 0.98, median `beats_null` 2.46 → 4.27, six of seven captures
-improve, and **all seven now beat the null where six did**. `bench_spoto_95x5_2`,
-the one capture that LOST to drawing no fore-aft motion at all, crosses at 1.53;
-`bench_spoto_95x5_1`, which `TASKS.md` names as the capture to explain, goes
-2.71 → 1.28. Held-out gains 0.458–0.622, six of seven inside 0.55–0.62.
+**Bench goes from 6 of 7 captures beating the flat-line null to 7 of 7** —
+`bench_spoto_95x5_2`, the only capture in the corpus that lost to drawing no
+fore-aft motion at all, crosses at 1.81 — and four of seven land inside the 1 cm
+spec. Leave-one-capture-out, which is the number to quote, is **1.81 → 1.53 cm,
+better on 6 of 7**. The vertical does not move, by construction and by gate.
 
-The gain being near 0.58 rather than deadlift's 0.088 is H37's attenuation
-identity working in bench's favour — the estimator is far less noisy here, which
-is the same fact as bench's 94% k=1 model fit.
-
-**Squat fails despite a BETTER anchor** (r = +0.217, p = 0.21). Two candidate
-reasons and the second is more likely: its k=1 fit is 83% against bench's 94%,
-and the bar is moving vertically at 0.170 m/s at its boundary against bench's
-0.058 — three times faster, so any error in the display axis leaks that into the
-horizontal channel. Not established. `analysis/89`.
+**There is no gain constant, and an earlier claim of one was wrong.** A harness
+fitted 0.58 and that was an artefact of an intercept in the harness; choosing the
+weight by leave-one-out through the shipped path picks 1.0 on six of seven, and
+every weight from 0.5 to 1.1 leaves 7 of 7 beating the null. The term ships as
+C19 wrote it. `analysis/90`.
 
 **A quadratic detrend — the constraint EXISTS on deadlift, and the gain it
 needs is unexplained.** Keeping the endpoints and adding curvature forces the

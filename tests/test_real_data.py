@@ -1164,3 +1164,96 @@ def test_the_fore_aft_SIGN_agrees_with_the_video_B4_closed():
     assert agree >= checked - 1, (
         f"the geometric fore-aft sign disagrees with the video on {misses} "
         f"({agree}/{checked}); those captures would render MIRRORED")
+
+
+# --------------------------------------- H40: step 7's quadratic, bench only --
+
+@needs_data
+def test_the_quadratic_touches_bench_and_nothing_else():
+    """Squat and deadlift must be BIT-IDENTICAL to the linear detrend.
+
+    `correct.QUAD_LIFTS` is bench-only, and this is what makes that claim
+    checkable rather than asserted. C19 applied the same quadratic to all three
+    axes of every lift and the deadlift VERTICAL is what rejected it — 48.7,
+    41.8 and 73.1 cm against a shipped 5.2/6.6/5.2 — so a regression here is the
+    exact failure the axis restriction exists to prevent.
+    """
+    from src import capture, correct, pipeline
+
+    for path in CAPTURES:
+        lift = capture.lift_of(path)
+        if lift in correct.QUAD_LIFTS:
+            continue
+        res = pipeline.run(path)
+        if not res["bounds"]:
+            continue
+        plain = correct.detrend_set(res["bar_position"], res["bounds"],
+                                    res["log"]["t"])
+        assert res.get("quad_axes") is None, f"{path.stem}: {lift} got a quadratic"
+        for a, b in zip(res["reps"], plain):
+            assert np.array_equal(a, b), (
+                f"{path.stem}: {lift} is not bit-identical to the linear detrend")
+
+
+@needs_data
+def test_the_quadratic_leaves_benchs_VERTICAL_alone():
+    """It is a horizontal correction. The vertical must not move at all.
+
+    C19's rejection was the vertical and the ROM, not the horizontal, so this is
+    the gate that separates H40 from what C19 measured. `quad_axes=(0,)` masks
+    the quadratic to the fore-aft axis while the linear closure still runs on
+    all three.
+    """
+    from src import capture, correct, pipeline
+
+    checked = 0
+    for path in CAPTURES:
+        if capture.lift_of(path) != "bench":
+            continue
+        res = pipeline.run(path)
+        if not res["bounds"]:
+            continue
+        plain = correct.detrend_set(res["bar_position"], res["bounds"],
+                                    res["log"]["t"])
+        for a, b in zip(res["reps"], plain):
+            assert np.allclose(a[:, 1:], b[:, 1:], atol=1e-12), (
+                f"{path.stem}: the quadratic moved an axis other than fore-aft")
+            assert not np.allclose(a[:, 0], b[:, 0]), (
+                f"{path.stem}: the quadratic did nothing to fore-aft")
+        checked += 1
+    assert checked >= 3, f"only {checked} bench captures exercised this"
+
+
+def test_restricting_the_quadratic_axes_is_a_strict_refinement():
+    """Algebraic, so it runs without data.
+
+    `quad_axes=None` must reproduce C19 exactly — that is what makes the
+    parameter a refinement rather than a change — and restricting it must leave
+    the untouched axes at the LINEAR result, not somewhere in between.
+    """
+    from src import correct
+
+    n = 240
+    t = np.linspace(0.0, 3.0, n)
+    rng = np.random.RandomState(0)
+    pos = np.cumsum(rng.randn(n, 3) * 1e-3, axis=0)
+    vel = np.cumsum(rng.randn(n, 3) * 1e-3, axis=0)
+
+    full = correct.detrend_rep(pos, 0, n, t, velocity=vel, order=2)
+    same = correct.detrend_rep(pos, 0, n, t, velocity=vel, order=2,
+                               quad_axes=(0, 1, 2))
+    assert np.array_equal(full, same), "quad_axes=None must be C19's behaviour"
+
+    lin = correct.detrend_rep(pos, 0, n, t, order=1)
+    one = correct.detrend_rep(pos, 0, n, t, velocity=vel, order=2,
+                              quad_axes=(0,))
+    assert np.allclose(one[:, 0], full[:, 0]), "axis 0 should still be quadratic"
+    assert np.allclose(one[:, 1:], lin[:, 1:]), (
+        "the unrestricted axes must land on the LINEAR result exactly")
+
+    # and it can never act outside the axes being detrended at all
+    none_ = correct.detrend_rep(pos, 0, n, t, axes=(1, 2), velocity=vel,
+                                order=2, quad_axes=(0,))
+    assert np.allclose(none_, correct.detrend_rep(pos, 0, n, t, axes=(1, 2),
+                                                  order=1)), (
+        "quad_axes outside `axes` must be a no-op")

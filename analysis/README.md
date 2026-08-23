@@ -3262,7 +3262,52 @@ established.
 
 ---
 
-*Numbering: 47 through 89 are taken. The next free number is 90. **52
+## 90 — C19's quadratic, restricted to the horizontal (H40, 2026-08-25)
+
+### `90_quadratic_bench.png`
+
+**Step 7 now carries a quadratic term on bench, fore-aft only.** `correct.QUAD_LIFTS`.
+
+`correct.detrend_rep` has had `order=2` since C19 built it — a quadratic pinned
+by the rep's own endpoint velocity difference, needing no new anchor. C19
+measured it and rejected it, **and the rejection was right about what it
+tested**: applied to all three axes, a deadlift's `dv` is ~1 m/s of landing
+impulse, spreading that smoothly injects `dv·T/8` at mid-rep, and the vertical
+and the ROM threw it out — 48.7, 41.8 and 73.1 cm vertical against a shipped
+5.2/6.6/5.2, ROM 78–116 cm against a 61 cm ceiling. None of that is disputed or
+repaired here.
+
+What is new is that nobody had separated the axes. Bench has no landing, so its
+`dv` is velocity error rather than an impulse, and its rep boundary sits at
+lockout where the bar is horizontally still — 0.66 of the rep's own typical
+speed, against 0.44 at the deadlift floor rest the pipeline already trusts.
+
+    lift        h rms          beats_null      captures improved
+    bench     1.81 → 1.30     2.46 → 2.82         6 of 7
+    squat     3.19 → 3.95     1.40 → 1.36         2 of 10    REFUSED
+    deadlift  3.11 → 5.84     0.64 → 0.32         0 of 9     REFUSED
+
+**Bench goes from 6 of 7 captures beating the flat-line null to 7 of 7**, with
+`bench_spoto_95x5_2` — the only capture in the corpus that lost to drawing no
+fore-aft motion at all — crossing at 1.81. Four of seven now sit inside the 1 cm
+spec. **The vertical does not move at all**, by construction and by gate.
+
+The left panel is the argument in one line: sweeping the weight on the quadratic
+from 0 to 1.3, bench falls and the other two rise. The deadlift curve is C19's
+rejection reproducing.
+
+**There is no gain constant.** An earlier harness fitted one at 0.58 and it was
+an artefact of an intercept in that harness; choosing the weight by
+leave-one-capture-out through the shipped code path picks 1.0 on six of seven,
+and every weight from 0.5 to 1.1 leaves 7 of 7 beating the null at 1.30–1.59 cm.
+So the term ships as C19 wrote it.
+
+Leave-one-capture-out, which is the number to quote: **1.81 → 1.53 cm, better on
+6 of 7 captures.** The 1.30 above is in-sample.
+
+---
+
+*Numbering: 47 through 90 are taken. The next free number is 91. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*
