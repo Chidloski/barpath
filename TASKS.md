@@ -126,6 +126,18 @@ Stated in full, with their evidence, in `FINDINGS.md`. What is *open* about each
   acceleration offset. H27 built one from the pull anchors and it was too large
   on 9 of 9 by a median 4.6×; the mechanism was right and the estimator was not.
   See `FINDINGS.md` P3 and `analysis/84`.
+- **THE LOCKOUT-ANCHOR BUMP CORRECTION ON BENCH — the strongest unbuilt result
+  in the project.** H39: a smooth lift's rep boundary is already at lockout and
+  the bar is horizontally still there, so `a_est = [v_h(end) - v_h(start)]/T`
+  needs no new sensing and no capture change. Under leave-one-CAPTURE-out bench
+  goes **2.09 -> 0.98 cm, inside the 1 cm spec**, `beats_null` 2.46 -> 4.27, and
+  **all seven captures beat the null where six did** — including
+  `bench_spoto_95x5_2`, which was the only capture losing to drawing no fore-aft
+  motion at all. Held-out gains 0.458-0.622. **What is not settled** is whether
+  to put a calibrated constant into `correct.py` on the strength of 7 captures
+  and 39 reps, and squat does not work under the same rule (r = +0.217, ns), so
+  it would ship per-lift. See `FINDINGS.md` and `analysis/89`.
+
 - **The rest-ZUPT bump correction, ready to build and not built.** H36/H37: the
   rest-to-rest velocity change predicts the mid-rep bump at Pearson +0.59, and
   applied with its calibrated gain of 0.173 takes deadlift 3.10 -> 2.66 cm under

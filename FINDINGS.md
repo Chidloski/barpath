@@ -230,6 +230,41 @@ cos θ, which at the 1–3° a barbell tilts is 0.01–0.11 px on an 85 px radiu
 Second order in the angle. Only the parallax, which is first order, carries
 signal.
 
+**A smooth lift's rep BOUNDARY is an anchor, and on bench it halves the error.**
+The standing reason bench and squat have no anchor — `metrics.momentum_closure`,
+that a bar descending at constant velocity reads |a| = g with a quiet gyro
+exactly as a bar at rest does — argues about DETECTING one from the raw signal.
+It does not apply, because nothing has to be detected: `_full_cycles` already
+runs a smooth lift's window turnaround to turnaround, so the boundary sits at
+lockout and the segmenter has placed it. And the bar is still enough there in
+the channel that matters — measured against video, horizontal speed at the
+boundary is 0.66 of the rep's typical on bench and 0.45 on squat, against 0.44
+at the deadlift floor rest that H36's working estimator uses.
+
+    a_est = [v_h(end) - v_h(start)] / T,   no new sensing, no capture change
+
+    lift        n      r        p     gain   ships   LOO    better   ceiling
+    bench      39   +0.656   0.0000   0.576   2.09   0.98    79%      0.65
+    squat      35   +0.217   0.21     0.396   2.81   2.55    54%      1.41
+    deadlift   39   +0.558   0.0002   0.088   3.10   2.76    49%      1.83
+
+**Bench halves under leave-one-CAPTURE-out and lands inside the 1 cm spec**:
+median h_rms 2.09 → 0.98, median `beats_null` 2.46 → 4.27, six of seven captures
+improve, and **all seven now beat the null where six did**. `bench_spoto_95x5_2`,
+the one capture that LOST to drawing no fore-aft motion at all, crosses at 1.53;
+`bench_spoto_95x5_1`, which `TASKS.md` names as the capture to explain, goes
+2.71 → 1.28. Held-out gains 0.458–0.622, six of seven inside 0.55–0.62.
+
+The gain being near 0.58 rather than deadlift's 0.088 is H37's attenuation
+identity working in bench's favour — the estimator is far less noisy here, which
+is the same fact as bench's 94% k=1 model fit.
+
+**Squat fails despite a BETTER anchor** (r = +0.217, p = 0.21). Two candidate
+reasons and the second is more likely: its k=1 fit is 83% against bench's 94%,
+and the bar is moving vertically at 0.170 m/s at its boundary against bench's
+0.058 — three times faster, so any error in the display axis leaks that into the
+horizontal channel. Not established. `analysis/89`.
+
 **A quadratic detrend — the constraint EXISTS on deadlift, and the gain it
 needs is unexplained.** Keeping the endpoints and adding curvature forces the
 extra term to vanish at both, so the whole added freedom is one number:

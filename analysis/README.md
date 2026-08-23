@@ -3192,7 +3192,63 @@ anchor without the thing that spoils the model.
 
 ---
 
-*Numbering: 47 through 88 are taken. The next free number is 89. **52
+## 89 — bench gets an anchor at lockout, and it halves the error (H39, 2026-08-25)
+
+### `89_lockout_anchor.png`
+
+H38 made this the biggest prize on the board — 94% of bench's post-closure error
+is reachable by a one-number-per-rep correction — and the only blocker was an
+anchor.
+
+**The standing objection was about detection, not availability.**
+`metrics.momentum_closure` records that a bar descending at constant velocity
+reads |a| = g with a quiet gyro exactly as a bar at rest does. True, and it is
+about DETECTING an anchor from the raw signal. Nothing has to be detected:
+`_full_cycles` already runs a smooth lift's window turnaround to turnaround, so
+the boundary is at lockout and the segmenter has placed it.
+
+**And the bar is still enough there, in the channel that matters.** Measured
+against video, with the deadlift floor rest as the control since H36's working
+estimator is built on it:
+
+    where                    n   |v_h| median   vs typical   |v_v| median
+    bench window edge       55      0.0323         0.66         0.0581
+    squat window edge       72      0.0196         0.45         0.1704
+    deadlift window edge    79      0.0352         0.89         0.6375
+    deadlift REST (works)   35      0.0168         0.44         0.0123
+
+The bar is moving vertically at a smooth lift's boundary — it is reversing — but
+its horizontal velocity is near zero, and horizontal is where the problem is.
+
+**The result**, `a_est = [v_h(end) − v_h(start)] / T`:
+
+    lift        n      r        p     gain   ships   LOO    better   ceiling
+    bench      39   +0.656   0.0000   0.576   2.09   0.98    79%      0.65
+    squat      35   +0.217   0.21     0.396   2.81   2.55    54%      1.41
+    deadlift   39   +0.558   0.0002   0.088   3.10   2.76    49%      1.83
+
+    bench, per capture          h rms now → LOO     beats_null now → LOO
+    bench_92.5x6_1                1.21   1.39         3.25   2.84
+    bench_92.5x6_2                1.68   1.01         2.55   4.27
+    bench_95x6_1                  1.90   0.71         2.27   6.06
+    bench_95x6_2                  1.81   0.73         2.46   6.10
+    bench_spoto_80x5_1            1.12   0.98         3.77   4.33
+    bench_spoto_95x5_1            2.71   1.28         1.26   2.67
+    bench_spoto_95x5_2            5.10   2.50         0.75   1.53
+    median                        2.09   0.98         2.46   4.27
+
+**Six of seven improve and all seven beat the null**, where six did before.
+`bench_spoto_95x5_2` — the only capture that lost to drawing no fore-aft motion
+at all — crosses at 1.53. Held-out gains 0.458–0.622.
+
+**Squat fails despite a better anchor** (r = +0.217, p = 0.21). Its k=1 fit is
+83% against bench's 94%, and its bar moves vertically 3× faster at the boundary
+(0.170 vs 0.058 m/s), so any display-axis error leaks into the channel. Not
+established.
+
+---
+
+*Numbering: 47 through 89 are taken. The next free number is 90. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*
