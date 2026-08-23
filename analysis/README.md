@@ -3262,7 +3262,48 @@ established.
 
 ---
 
-*Numbering: 47 through 89 are taken. The next free number is 90. **52
+## 91 — one universal error shape (H41, 2026-08-25)
+
+### `91_error_shape.png`
+
+The owner's hypothesis: *"the linear endpoint detrend is trying to do the job a
+higher order polynomial must do ... see if all sets and their reps share a
+similar quality with their polynomials."* They do, and more strongly than
+expected.
+
+PCA over the per-rep video-minus-pipeline displacement, 113 refereed reps:
+
+    group        n     PC1     PC2     PC1+PC2
+    bench       39    0.841   0.120     0.961
+    squat       35    0.859   0.098     0.958
+    deadlift    39    0.795   0.118     0.912
+    ALL        113    0.787   0.102     0.888
+
+**One curve carries ~80% of every rep's error, and two carry ~90%.** The error
+is genuinely low-dimensional.
+
+**And it is the same curve on every lift** — cross-lift |cos| 0.88–0.97, each
+lift aligning with the pooled shape at 0.967–0.983. It is symmetric (correlation
+with its own mirror +0.87), zero at both ends, peaks at phase 0.54, and overlaps
+`s²−s` at 0.91 / 0.90 / 0.74. **It is the mid-rep bump**, now established as a
+shared shape rather than inferred rep by rep — which is exactly why a line
+cannot reach it and a quadratic can.
+
+*A first pass put PC1's overlap with the parabola at 0.18–0.50 and concluded it
+was some other shape. That was an error: it compared a mean-centred parabola
+against a non-centred PC1. Centre both and the overlap is 0.74–0.91.*
+
+**The amplitude varies rep to rep, not just set to set** — sd/|mean| of the PC1
+score within a set is 0.68 on deadlift, 0.96 on squat, 2.00 on bench. A per-set
+constant cannot carry it, which is `88`'s per-rep-beats-per-set ceiling seen
+from the other side.
+
+Deadlift is the weakest fit throughout (PC1 0.795, parabola overlap 0.74),
+consistent with `88`: its landing puts 56% of its energy in higher modes.
+
+---
+
+*Numbering: 47 through 91 are taken. The next free number is 92. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

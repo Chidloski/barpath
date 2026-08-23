@@ -230,6 +230,32 @@ cos θ, which at the 1–3° a barbell tilts is 0.01–0.11 px on an 85 px radiu
 Second order in the angle. Only the parallax, which is first order, carries
 signal.
 
+**There is ONE universal error shape, it is the mid-rep bump, and it carries
+~80% of every rep's error.** PCA over the per-rep video-minus-pipeline
+displacement, 113 refereed reps:
+
+    group        n     PC1     PC2     PC1+PC2
+    bench       39    0.841   0.120     0.961
+    squat       35    0.859   0.098     0.958
+    deadlift    39    0.795   0.118     0.912
+    ALL        113    0.787   0.102     0.888
+
+**And it is the SAME curve on every lift** — cross-lift |cos| of 0.88–0.97, each
+lift aligning with the pooled shape at 0.967–0.983. It is symmetric (correlation
+with its own mirror +0.87), zero at both endpoints, peaks at phase 0.54, and
+overlaps `s²−s` at 0.91 / 0.90 / 0.74 for bench / squat / deadlift. So the
+dominant error is the bump, established as a shared SHAPE rather than inferred
+rep by rep — which is why a line cannot reach it and a quadratic can.
+
+*A first pass reported PC1 overlapping the parabola at only 0.18–0.50 and
+concluded it was some other shape. That was an error of mine: it compared a
+mean-centred parabola against a non-centred PC1. Centre both and it is 0.74–0.91.*
+
+**The amplitude varies REP to rep, not just set to set** — sd/|mean| of the PC1
+score within a set is 0.68 (deadlift), 0.96 (squat), 2.00 (bench). A per-SET
+constant cannot carry it, which is H38's per-rep-beats-per-set ceiling seen from
+the other side. `analysis/91`.
+
 **A smooth lift's rep BOUNDARY is an anchor, and on bench it halves the error.**
 The standing reason bench and squat have no anchor — `metrics.momentum_closure`,
 that a bar descending at constant velocity reads |a| = g with a quiet gyro
