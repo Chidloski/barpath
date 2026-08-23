@@ -3148,7 +3148,51 @@ and loses, because the oracle `a` genuinely varies rep to rep.
 
 ---
 
-*Numbering: 47 through 87 are taken. The next free number is 88. **52
+## 88 — the ceiling on a one-number correction, per lift (H38, 2026-08-24)
+
+### `88_dwell_average.png`
+
+H37 put all the leverage in reducing `sd(a_est)`. This tried the obvious way,
+found it does not work, and the reason sets a hard ceiling and inverts which
+lift the whole approach should be aimed at.
+
+**Averaging the rest velocity does nothing.** `rest_observables` samples a
+single index at each rest; averaging over a window either side should cut white
+noise by √n. A 0.5 s window moves `sd` by 1% and `r` from +0.594 to +0.614,
+where white noise would have cut it fivefold. **So the 65% that does not map to
+the bump is structure, not noise.**
+
+**Why: the acceleration error is not constant across a rep.** After closure the
+error vanishes at both endpoints, so its natural basis is `sin(kπs)`. A constant
+acceleration error is a parabola — 99.9% the k = 1 mode. Median energy share
+over 113 refereed reps:
+
+    lift        k=1     k=2     k=3     k=4    k≥5 + rest
+    bench      0.940   0.015   0.004   0.006     0.035
+    squat      0.829   0.044   0.020   0.004     0.103
+    deadlift   0.445   0.078   0.201   0.005     0.271
+
+k = 1 is the ceiling on **any** correction carrying one number per rep. So
+deadlift's rest-ZUPT estimator at r = 0.594 is not weak — it is close to what
+the model allows, and its remaining 56% sits in higher modes, k = 3 most of all,
+which is the signature of something localised. That is B6's term, now sized.
+
+**And the lifts are the wrong way round.**
+
+    lift        the model fits      a raw anchor exists
+    bench            94%            no — and provably never
+    squat            83%            no
+    deadlift         44%            yes, the floor between reps
+
+The lift where a constant acceleration explains the error is the one with no way
+to measure it. That is not bad luck, it is the same physics twice: a bar that
+sets down gives you a zero-velocity anchor **and** a landing impulse, and the
+impulse is exactly what fills deadlift's higher modes. You cannot have the
+anchor without the thing that spoils the model.
+
+---
+
+*Numbering: 47 through 88 are taken. The next free number is 89. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*

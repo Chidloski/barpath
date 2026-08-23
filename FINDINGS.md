@@ -282,13 +282,31 @@ third is the useful one:
     "constant acceleration plus impulse" is not a decomposition this data
     supports.
 
-**The leverage is entirely in reducing `sd(a_est)`**, since the gain rises
-toward 1 as the noise falls. Averaging over a set was tried and LOSES (3.10 →
-3.11 against per-rep's 2.66), because the oracle `a` genuinely varies rep to rep
-and averaging discards that. What would help is a less noisy velocity error at
-the anchors — a sensing question, not an algorithmic one. Bench and squat cannot
-do any of this and never will: a bar descending at constant velocity is
-indistinguishable from a bar at rest in raw acceleration and gyro.
+**AND IT IS NEAR ITS CEILING, which is set by the lift and not by the
+estimator.** Decompose the post-closure error in `sin(kπs)`, the natural basis
+for a function vanishing at both endpoints. A constant acceleration error is a
+parabola, which is 99.9% the k = 1 mode, so the k = 1 share is the ceiling on
+ANY correction carrying one number per rep. Median over 113 refereed reps:
+
+    lift        k=1     k=2     k=3    k>=4 + rest
+    bench      0.940   0.015   0.004     0.041
+    squat      0.829   0.044   0.020     0.107
+    deadlift   0.445   0.078   0.201     0.276
+
+**On deadlift the parabola is only 44% of the error**, so the rest-ZUPT
+estimator's r = 0.594 is not a weak estimator — it is close to what the model
+allows. Its remaining 56% sits in higher modes, k = 3 most of all, which is what
+a localised landing impulse looks like; that is the term `TASKS.md`'s B6 has
+been chasing, now sized.
+
+Two consequences. **Averaging the rest velocity does not help** — a 0.5 s window
+moves sd by 1% and r by 0.02 where white noise would cut it by 5x, so the
+residual is structure and not noise. And **the lifts are the wrong way round**:
+bench is where a constant acceleration explains 94% of the error and where a raw
+anchor is provably impossible, deadlift is where the anchor exists and the model
+suits worst. That is the same physics twice — a bar that sets down gives you a
+zero-velocity anchor AND the landing impulse that spoils the model, and you
+cannot have one without the other. `analysis/88`.
 
 *Four other sources were tested first and all fail (`analysis/85`): the pull
 anchors, 4.6× too large on 9 of 9; rep-to-rep dispersion, blocked because a bump

@@ -134,11 +134,17 @@ Stated in full, with their evidence, in `FINDINGS.md`. What is *open* about each
   identity — and stable at 0.157-0.218 across held-out captures. **What is not
   settled is whether it should ship**, because it improves the median while
   helping only 48% of reps, and because it introduces a calibrated constant into
-  `correct.py`. That is a decision, not a measurement. See `FINDINGS.md` and
-  `analysis/86`, `analysis/87`.
+  `correct.py`. That is a decision, not a measurement. **And it is near its
+  ceiling**: the parabola is only 44% of deadlift's post-closure error, so
+  r = 0.594 is close to what the model allows and better estimation will not
+  pay. See `FINDINGS.md` and `analysis/86`, `87`, `88`.
 
 - **B6 / P3 / P6 — a deadlift correction that meets all three requirements at
-  once.** Local in time (B7, B6, C19 and C28b each failed this); boundaries not
+  once.** **Now sized (2026-08-24):** the term B6 is chasing is 56% of
+  deadlift's post-closure error energy, concentrated in the k = 3 mode of
+  `sin(kπs)` — the signature of something localised, i.e. the landing. Bench
+  carries 6% and squat 17% in the same modes, which is why B6 has always been a
+  deadlift problem. Local in time (B7, B6, C19 and C28b each failed this); boundaries not
   on the impacts, or step 7 annihilates it (C29); and it must cover every rep
   (the owner's ruling, H23). H24's final cut is the first frame to meet all
   three — and it still reaches only `beats_null` 0.77, worse than drawing no
