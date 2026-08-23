@@ -210,11 +210,23 @@ each step is shaped the way it is, and what was tried instead, is in
 6. `correct.py` — subtract the wrist-to-bar offset R(t)·d. **ON as of
    2026-08-06.** See *Reading a number* below before quoting anything measured
    before that date.
-7. `correct.py` — per-rep linear detrend so each rep closes. `order` defaults
-   to 1; a quadratic is implemented and was measured and rejected (C19).
+7. `correct.py` — per-rep linear detrend. `order` defaults to 1; a quadratic is
+   implemented and was measured and rejected (C19).
    **Load-bearing because of its per-rep INDEPENDENCE, not its closure** — two
    free parameters per rep with no continuity between them. Making it
    continuous costs 8.21 -> 17.00 cm.
+
+   **It is a DRIFT REMOVER, and "reps start and end in the same place" is not
+   why it is there.** That sentence is false and was never load-bearing:
+   measured 2026-08-23 over 111 refereed reps, the real bar misses closing
+   horizontally by a median of 1.61 cm and only a third of reps close inside
+   the 1 cm spec. Keep the operation and drop the belief. What justifies the
+   operation is that **97-100% of what it removes is integration drift** —
+   50-454 cm of it per rep against 1.4-1.8 cm of real motion — and that an
+   oracle given the true non-closure gains nothing (-0.18 cm corpus-wide,
+   better on 50% of reps). So do not "fix" the closure assumption, and do not
+   cite closure as the reason for the step. The error it leaves behind is a
+   BULGE at mid-rep, not a misplaced endpoint; see `FINDINGS.md` P3.
 8. `project.py` — the display axis comes from the ATTITUDE (H9), via
    `anatomical_axis`: the hand is clamped to the bar, so fore-aft is a fixed
    direction in watch coordinates and one angle (`BAR_ANGLE_DEG`) fixes it. PCA

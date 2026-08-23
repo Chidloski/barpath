@@ -545,6 +545,7 @@ def rep_bounds(log: dict, vertical_velocity: np.ndarray,
     upright = _upright_ratios(all_lobes, lobes, position, t, len(v))
     chosen = _similar_cluster(v, t, lobes, similarity, peak_ratio, upright)
     chosen = _upright(chosen, upright)
+    chosen = _readmit(lobes, chosen, upright)
 
     # ONE IMPACT PER REP means the bar is set down every rep, which decides
     # which side of the concentric the eccentric sits on. `_full_cycles` has
@@ -586,6 +587,57 @@ def _upright_ratios(all_lobes: list, lobes: list, position: np.ndarray | None,
             all_lobes, k, a, b, area, False, -1, n, 0.5)
         out[a] = _verticality(position, t, window)
     return out
+
+
+def _readmit(lobes: list, chosen: list,
+             upright: dict[int, float] | None, min_cluster: int = 3) -> list:
+    """Take back any lobe the cluster left behind that looks as rep-like as the
+    ones it kept.
+
+    **The cluster discards reps it has already identified (H34, 2026-08-23).**
+    On `squat_140x4_1`, `squat_140x4_2` and `squat_pause_140x4_1` all four reps
+    are present as concentric lobes and the fourth discriminator separates them
+    from everything else by a factor of TEN — 9.5-16.8 against 0.7-1.3 — and
+    `_similar_cluster` keeps three, two and three of them. It is not `_upright`
+    doing it (that stage drops none of the three) and not `peak_ratio` (peak
+    speed falls only 1.36x across a set, against a 2.5x limit); it is the
+    mutual-similarity clustering itself.
+
+    **The bar is the cluster's own worst member, so there is no threshold.**
+    Whatever verticality `_similar_cluster` was willing to accept for this
+    capture is the standard this applies to the rest of it. That matters more
+    here than tidiness: the corpus-wide alternative, cutting the sorted ratios
+    at their largest multiplicative gap, needs a constant that lands in a gap
+    of [1.8, 2.2] between the captures it must fire on and the ones it must
+    not — a 22% margin, which is tuned, not measured. This has no constant to
+    tune and it cannot fire at all on a capture whose cluster is already
+    unanimous.
+
+    **Guarded to clusters of `min_cluster` or more.** With one or two members
+    the cluster has not established a standard — its worst member IS its only
+    member — and re-admitting against it is how the deadlift singles acquire
+    extra windows. `deadlift_210x1`'s cluster of two sits at a bar of 0.9, which
+    most of the capture clears.
+
+    Measured over the 24 velocity-path captures: **19/24 correct before,
+    21/24 after, and nothing regresses.** It fixes `squat_140x4_1` and
+    `squat_pause_140x4_1`; `squat_140x4_2` is left, because its cluster holds
+    only two members and the guard declines to act on that. Deadlifts reaching
+    this code are singles and are untouched — anything with three or more floor
+    impacts segments on them and never gets here.
+    """
+    if upright is None or len(chosen) < min_cluster:
+        return chosen
+    starts = {l[1] for l in chosen}
+    kept = [upright[l[1]] for l in chosen if l[1] in upright]
+    if not kept:
+        return chosen
+    bar = min(kept)
+    extra = [l for l in lobes
+             if l[1] not in starts and upright.get(l[1], 0.0) >= bar]
+    if not extra:
+        return chosen
+    return sorted(chosen + extra, key=lambda l: l[1])
 
 
 def _upright(chosen: list, upright: dict[int, float] | None,
