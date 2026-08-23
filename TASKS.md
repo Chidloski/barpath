@@ -126,6 +126,17 @@ Stated in full, with their evidence, in `FINDINGS.md`. What is *open* about each
   acceleration offset. H27 built one from the pull anchors and it was too large
   on 9 of 9 by a median 4.6×; the mechanism was right and the estimator was not.
   See `FINDINGS.md` P3 and `analysis/84`.
+- **The rest-ZUPT bump correction, ready to build and not built.** H36/H37: the
+  rest-to-rest velocity change predicts the mid-rep bump at Pearson +0.59, and
+  applied with its calibrated gain of 0.173 takes deadlift 3.10 -> 2.66 cm under
+  leave-one-capture-out, against an oracle ceiling of 1.88. The gain is
+  understood — it is the least-squares attenuation `r*sd_o/sd_e`, verified as an
+  identity — and stable at 0.157-0.218 across held-out captures. **What is not
+  settled is whether it should ship**, because it improves the median while
+  helping only 48% of reps, and because it introduces a calibrated constant into
+  `correct.py`. That is a decision, not a measurement. See `FINDINGS.md` and
+  `analysis/86`, `analysis/87`.
+
 - **B6 / P3 / P6 — a deadlift correction that meets all three requirements at
   once.** Local in time (B7, B6, C19 and C28b each failed this); boundaries not
   on the impacts, or step 7 annihilates it (C29); and it must cover every rep

@@ -257,13 +257,38 @@ by the span instead:
 **It survives leave-one-out**, which is the standard C28's ladder failed, and
 the held-out gains are 0.157–0.218 on eight of nine captures. The median
 improves while the per-rep hit rate is a coin flip, so it helps bad reps more
-than it hurts good ones. **The gain of ~0.17 is unexplained**, is not span
-bookkeeping (span/T = 1.00), and is the open question: either the interval
-contains the floor impact, whose impulse is not a constant acceleration, or the
-watch's posture at rest differs from its posture under load. Until that is
-settled it is an empirical constant. Bench and squat cannot do this and never
-will — a bar descending at constant velocity is indistinguishable from a bar at
-rest in raw acceleration and gyro.
+than it hurts good ones.
+
+**The gain of 0.173 is EXPLAINED and is the right number.** It is the
+least-squares attenuation of a noisy predictor — `r·sd_o/sd_e` = 0.173 against a
+measured OLS slope of 0.173, an identity, not a physical scaling. So it is the
+statistically correct shrinkage, not a fudge, and `r² = 0.35` restates the
+question as "what is the other 65% of `a_est`'s variance". Three answers, and the
+third is the useful one:
+
+  * **Not the rest anchors.** `rest_instants` is validated at |v| < 0.10 m/s,
+    but measured against video at the 35 instants the corpus holds the bar's
+    real speed there is a median 0.0168 m/s — 0.2× the signal.
+  * **Not removable by excising the impact**, and the attempt inverts the
+    suspicion: ring-excised scores r = +0.05 against the full interval's +0.59,
+    pull-only +0.20. **Only the full interval brackets two instants where the
+    true velocity is zero**, which is the entire validity of the measurement; a
+    sub-interval ending at the impact mixes real motion with error and measures
+    neither.
+  * **The landing and the tilt covary.** The ring's own dv explains 47% of
+    `a_est` (r = +0.68) and is itself correlated with the bump (r = +0.42),
+    while explaining none of the residual (r = −0.02). A larger tilt inflates
+    both, because the impulse is measured in the same tilted frame — so
+    "constant acceleration plus impulse" is not a decomposition this data
+    supports.
+
+**The leverage is entirely in reducing `sd(a_est)`**, since the gain rises
+toward 1 as the noise falls. Averaging over a set was tried and LOSES (3.10 →
+3.11 against per-rep's 2.66), because the oracle `a` genuinely varies rep to rep
+and averaging discards that. What would help is a less noisy velocity error at
+the anchors — a sensing question, not an algorithmic one. Bench and squat cannot
+do any of this and never will: a bar descending at constant velocity is
+indistinguishable from a bar at rest in raw acceleration and gyro.
 
 *Four other sources were tested first and all fail (`analysis/85`): the pull
 anchors, 4.6× too large on 9 of 9; rep-to-rep dispersion, blocked because a bump

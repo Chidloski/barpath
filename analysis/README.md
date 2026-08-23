@@ -3105,7 +3105,50 @@ reads |a| = g with a quiet gyro exactly as a bar at rest does.
 
 ---
 
-*Numbering: 47 through 86 are taken. The next free number is 87. **52
+## 87 — the 0.17 explained (H37, 2026-08-24)
+
+### `87_the_gain.png`
+
+H36 needed a gain of 0.173 to make the rest-ZUPT estimator usable and could not
+say what it was. It is the **least-squares attenuation of a noisy predictor**,
+and the identity reproduces it exactly:
+
+    sd(a_oracle) 0.0261    sd(a_est) 0.0895    Pearson r +0.594
+    predicted r*sd_o/sd_e  +0.173
+    measured OLS slope     +0.173
+
+So it is not a physical scaling and not a fudge — it is the correct shrinkage,
+and `r² = 0.35` restates the question as what the other 65% of `a_est` is.
+
+**Not the rest anchors.** `rest_instants` is validated at |v| < 0.10 m/s, but
+measured against video at the 35 instants the corpus holds, the bar's real speed
+there is a median **0.0168 m/s** — 0.2× the signal.
+
+**Not removable by excising the impact**, and the attempt inverts the suspicion:
+
+    estimator                 sd       r vs oracle    p
+    rest-to-rest (H36)      0.0895      +0.594      0.0011
+    pull only, pre-impact   0.0881      +0.200      0.32
+    post-ring only          0.4304      -0.164      0.41
+    ring EXCISED            0.1010      +0.050      0.80
+
+**Only the full interval brackets two instants where the true velocity is
+zero**, which is the entire validity of the measurement. A sub-interval ending
+at the impact does not — the bar is genuinely moving there, so its `dv` mixes
+real motion with error and measures neither.
+
+**The landing and the tilt covary.** The ring's own dv explains 47% of `a_est`
+(r = +0.684, p = 0.0001) and is itself correlated with the bump (r = +0.421),
+while explaining none of the residual (r = −0.018). A larger tilt inflates both,
+because the impulse is measured in the same tilted frame — so "constant
+acceleration plus impulse" is not a decomposition this data supports.
+
+The leverage is entirely in reducing `sd(a_est)`. Averaging over a set was tried
+and loses, because the oracle `a` genuinely varies rep to rep.
+
+---
+
+*Numbering: 47 through 87 are taken. The next free number is 88. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*
