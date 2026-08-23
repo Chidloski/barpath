@@ -210,8 +210,15 @@ each step is shaped the way it is, and what was tried instead, is in
 6. `correct.py` — subtract the wrist-to-bar offset R(t)·d. **ON as of
    2026-08-06.** See *Reading a number* below before quoting anything measured
    before that date.
-7. `correct.py` — per-rep linear detrend. `order` defaults to 1; a quadratic is
-   implemented and was measured and rejected (C19).
+7. `correct.py` — per-rep detrend. Linear on every lift; **plus a quadratic
+   term on BENCH, fore-aft only, as of 2026-08-25 (H40)** — see
+   `correct.QUAD_LIFTS`. C19 built the same quadratic, applied it to all three
+   axes, and was right to reject it there: a deadlift's `dv` is a landing
+   impulse and spreading it wrecks the vertical and the ROM. The axis
+   restriction is what is new, not the term. Bench 1.81 -> 1.30 cm against the
+   video and 6 of 7 -> 7 of 7 beating the null; nothing in it is fitted, so
+   there is no held-out number and an earlier one of 1.53 is withdrawn. Squat
+   and deadlift are bit-identical to the linear detrend and gated as such.
    **Load-bearing because of its per-rep INDEPENDENCE, not its closure** — two
    free parameters per rep with no continuity between them. Making it
    continuous costs 8.21 -> 17.00 cm.
@@ -314,7 +321,7 @@ shows the pattern.
 
 ## Reading a number
 
-Seven standing facts. A figure that predates one of them is measuring a
+Eight standing facts. A figure that predates one of them is measuring a
 different quantity. `FINDINGS.md` mostly does **not** cross out the superseded
 figure — it records it beside the new one, because what was believed and why it
 was wrong is the record this project runs on. **So check the date before you
@@ -347,6 +354,11 @@ quote, and say which side of the change you are on.**
    cited in these docs no longer do; `run.py` carries a `FLAGS` table and a
    `RETIRED` table and refuses both cases by name. Until 2026-08-20 typing a
    retired one silently ran the whole corpus and looked like it had worked.
+8. **Step 7 gained a QUADRATIC term on BENCH's fore-aft axis (H40, 2026-08-25),
+   so every bench horizontal figure measured before that date is on the linear
+   pipeline** — including most of the ones in `FINDINGS.md`. Squat and deadlift
+   are bit-identical either side and their numbers carry over unchanged. To
+   reproduce a pre-H40 bench figure, empty `correct.QUAD_LIFTS`.
 
 ### The one measured constant you should not re-fit
 

@@ -3234,31 +3234,88 @@ estimator is built on it:
 The bar is moving vertically at a smooth lift's boundary — it is reversing — but
 its horizontal velocity is near zero, and horizontal is where the problem is.
 
-**The result**, `a_est = [v_h(end) − v_h(start)] / T`:
+**The result**, `a_est = [v_h(end) − v_h(start)] / T` — and **the numbers this
+entry first published are WITHDRAWN.** It reported bench going 2.09 → 0.98 cm
+under leave-one-capture-out with a fitted gain of 0.576. Both came from a
+harness that carried an INTERCEPT the shipped pipeline does not have, and the
+intercept was absorbing part of the signal. Measured through the code that
+actually ships — `correct.QUAD_LIFTS`, entry `90` — bench goes **1.81 → 1.30 cm
+with nothing fitted**, six of seven captures improve, and six of seven beating
+the null becomes seven of seven. The direction and the sign of every claim here
+survived; the size did not.
 
-    lift        n      r        p     gain   ships   LOO    better   ceiling
-    bench      39   +0.656   0.0000   0.576   2.09   0.98    79%      0.65
-    squat      35   +0.217   0.21     0.396   2.81   2.55    54%      1.41
-    deadlift   39   +0.558   0.0002   0.088   3.10   2.76    49%      1.83
-
-    bench, per capture          h rms now → LOO     beats_null now → LOO
-    bench_92.5x6_1                1.21   1.39         3.25   2.84
-    bench_92.5x6_2                1.68   1.01         2.55   4.27
-    bench_95x6_1                  1.90   0.71         2.27   6.06
-    bench_95x6_2                  1.81   0.73         2.46   6.10
-    bench_spoto_80x5_1            1.12   0.98         3.77   4.33
-    bench_spoto_95x5_1            2.71   1.28         1.26   2.67
-    bench_spoto_95x5_2            5.10   2.50         0.75   1.53
-    median                        2.09   0.98         2.46   4.27
-
-**Six of seven improve and all seven beat the null**, where six did before.
-`bench_spoto_95x5_2` — the only capture that lost to drawing no fore-aft motion
-at all — crosses at 1.53. Held-out gains 0.458–0.622.
+What this entry established and `90` did not repeat is WHY bench can carry an
+anchor at all, which is the velocity table above. Squat's failure under the same
+rule (r = +0.217, p = 0.21 over 35 reps) also stands, and `90` reaches it a
+second way.
 
 **Squat fails despite a better anchor** (r = +0.217, p = 0.21). Its k=1 fit is
 83% against bench's 94%, and its bar moves vertically 3× faster at the boundary
 (0.170 vs 0.058 m/s), so any display-axis error leaks into the channel. Not
 established.
+
+---
+
+## 90 — C19's quadratic, restricted to the horizontal (H40, 2026-08-25)
+
+### `90_quadratic_bench.png`
+
+**Step 7 now carries a quadratic term on bench, fore-aft only.** `correct.QUAD_LIFTS`.
+
+`correct.detrend_rep` has had `order=2` since C19 built it — a quadratic pinned
+by the rep's own endpoint velocity difference, needing no new anchor. C19
+measured it and rejected it, **and the rejection was right about what it
+tested**: applied to all three axes, a deadlift's `dv` is ~1 m/s of landing
+impulse, spreading that smoothly injects `dv·T/8` at mid-rep, and the vertical
+and the ROM threw it out — 48.7, 41.8 and 73.1 cm vertical against a shipped
+5.2/6.6/5.2, ROM 78–116 cm against a 61 cm ceiling. None of that is disputed or
+repaired here.
+
+What is new is that nobody had separated the axes. Bench has no landing, so its
+`dv` is velocity error rather than an impulse, and its rep boundary sits at
+lockout where the bar is horizontally still — 0.66 of the rep's own typical
+speed, against 0.44 at the deadlift floor rest the pipeline already trusts.
+
+    lift        h rms          beats_null      improved   beat the null
+    bench     1.81 → 1.30     2.46 → 2.82        6 of 7    6 of 7 → 7 of 7
+    squat     3.19 → 3.41     1.40 → 1.36        6 of 10   8 of 10 → 8 of 10
+    deadlift  3.11 → 5.84     0.64 → 0.32        0 of 9    0 of 9 → 0 of 9
+
+**Bench goes from 6 of 7 captures beating the flat-line null to 7 of 7**, with
+`bench_spoto_95x5_2` — the only capture in the corpus that lost to drawing no
+fore-aft motion at all — crossing at 1.81. Four of seven now sit inside the 1 cm
+spec. **The vertical does not move**, to 3e-15 cm on every capture of every
+lift, by construction and by gate.
+
+The left panel is the argument in one line: sweeping the weight on the quadratic,
+bench falls and the other two rise. The deadlift curve is C19's rejection
+reproducing. **The figure's sweep stops at 1.3**; the 1.5 quoted below was
+measured later and is not drawn here.
+
+**Squat is a WASH that hurts where the reconstruction works, and that is why it
+is refused.** Six of ten captures improve, but the median moves the wrong way
+and so does `beats_null`, because the losses are bigger than the gains and are
+not randomly placed: dropping the miscounted single, the gain correlates with
+the baseline error at r = +0.78 — it helps the worst captures and hurts the
+best, taking `squat_pause_140x4_1` from 1.18 cm, the best squat in the corpus,
+to 2.18. The middle-right of the third panel is that: squat's points sit close
+to the diagonal, scattered both sides.
+
+**There is no gain constant, and two earlier claims of one are withdrawn.** A
+harness fitted 0.58, an artefact of an intercept in that harness. A
+leave-one-capture-out figure of 1.53 was then quoted as the number to trust, and
+it is not: it came from choosing the weight by LOO on a 0–1.3 grid, and widening
+the grid to 1.5 moves it to 1.84 — the held-out median is not monotonic in the
+weight across seven captures. **The weight is not identifiable from this
+corpus**, so it stays at 1 where C19 put it and there is no held-out number to
+quote. The sweep does show the result is not delicate: every weight from 0.5 to
+1.5 leaves 7 of 7 beating the null at 1.30–1.68 cm, against 1.81 at weight 0.
+
+*The table above was measured on 2026-08-26 through the shipped code path and
+replaces the one first published with this figure, whose squat row read
+3.19 → 3.95 on 2 of 10. The figure itself was right — its left panel puts squat
+at 3.4 at weight 1 — and was not regenerated.*
+
 
 ---
 
@@ -3308,8 +3365,8 @@ deadlift and pooled. C28 reached that per capture; this reaches it with one
 vector against a hundred reps.
 
 **Can the existing pipeline absorb it?** Partly, and that is what `90` ships:
-bench 2.09 → 1.53 cm leave-one-out with the quadratic term, against a perfect
-per-rep bump correction's 0.65 and a 1 cm spec. No new step is proposed, because
+bench 1.81 → 1.30 cm with the quadratic term, against a perfect per-rep bump
+correction's 0.65 and a 1 cm spec. No new step is proposed, because
 the remaining error is attitude noise and no step downstream of the attitude can
 remove it.
 

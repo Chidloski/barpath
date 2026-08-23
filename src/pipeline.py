@@ -353,7 +353,26 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
     result["bar_position"] = bar
 
     # 7 --- per-rep detrend --------------------------------------------------
-    reps = correct.detrend_set(bar, bounds, log["t"]) if bounds else []
+    #
+    # **The quadratic term is ON for bench, on the HORIZONTAL only** (H40,
+    # 2026-08-25). `correct.QUAD_LIFTS` carries which lifts and which axes, and
+    # the whole argument for the split is beside it. Every other lift takes the
+    # linear detrend it always took, bit-identically — the lookup returns None
+    # and `detrend_set` passes `order=1`.
+    #
+    # Read `correct.detrend_rep`'s docstring before changing this: C19 built the
+    # same quadratic, applied it to all three axes, and was right to reject it.
+    # What is new is the axis restriction, not the term.
+    try:
+        quad_axes = correct.QUAD_LIFTS.get(capture.lift_of(path))
+    except (ValueError, KeyError):
+        quad_axes = None
+    if bounds and quad_axes is not None:
+        reps = correct.detrend_set(bar, bounds, log["t"], velocity=velocity,
+                                   order=2, quad_axes=quad_axes)
+    else:
+        reps = correct.detrend_set(bar, bounds, log["t"]) if bounds else []
+    result["quad_axes"] = quad_axes
     result["reps"] = reps
 
     # Vertical ROM against what the lifter can actually move the bar through.

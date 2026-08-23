@@ -97,10 +97,29 @@ the last entry in `KNOWN_ROM_FAILURES`.
   same thing twice? This was `analysis/C31b_STATE.md` item B until that file was
   deleted on 2026-08-25; its substance is the two sentences above, and
   `git show c29ec71:analysis/C31b_STATE.md` has the rest.
-- **`bench_spoto_95x5_1` is the capture to explain.** It loses to the flat-line
-  null and reproduced the old referee to 0.01 when its session-mate crossed —
-  so half of P2's referee-versus-pause tension was a referee artefact and half
-  is real. This is the real half.
+- **`bench_spoto_95x5_2` is the capture to explain, and this entry named the
+  WRONG ONE until 2026-08-26.** Measured through the shipped pipeline, `_1`
+  beats the flat-line null at 1.25 and `_2` is the only capture in the corpus
+  that does not, at 0.75 on 5.11 cm. H40's quadratic takes `_2` to 1.81 on 2.12
+  cm, so it no longer loses — and that is not an explanation: it is still the
+  worst bench in the corpus by 40%. The referee half of the old note stands and
+  is not reassigned here, because the capture it was written about may be a v1
+  name and v1 cannot be re-run: one of the pair reproduced the old referee to
+  0.01 when its session-mate crossed, so half of P2's referee-versus-pause
+  tension was a referee artefact and half is real. Which capture that was needs
+  re-deriving before it is quoted again.
+- **The suite's standing baseline is 33 failures, and nothing in these docs said
+  so.** Measured 2026-08-26 on `df5607f`: 33 failed, 667 passed, 32 skipped, 1
+  xfailed. Several commit messages through H40 report "20 failures, unchanged
+  from main", which is stale — quote 33 and re-measure before quoting it again,
+  because an unrecorded baseline is how a new failure hides in an old number.
+  Nobody has triaged the 33.
+- **`README.md`'s layout table has two stale lines**, both older than H43 and
+  neither caught by `tests/test_docs.py`. It lists `src/truth.py` as a live
+  module — it was deleted at H21 and the gate deliberately exempts the name, so
+  a live pointer in a layout table slips through — and it calls step 8 the "PCA
+  display axis", which H9 replaced with the attitude-derived axis. Recorded, not
+  fixed: neither is what H43 changed.
 - **`deadlift_190x3_20260818` improves under every arm of H27's correction**,
   reaching `beats_null` 1.69, the highest any deadlift has scored here. It is
   also the capture H20 left open as elevated. n = 1, on the one capture that was
@@ -120,8 +139,10 @@ to what the attitude permits.
 So the remaining horizontal error is **not a modelling problem**, and no step
 downstream of the attitude can remove it. What is still worth doing:
 
-- estimate the per-rep bump where an anchor exists and subtract it, which is the
-  `h40-lockout-bump` branch (bench 2.09 -> 1.53 cm leave-one-out);
+- estimate the per-rep bump where an anchor exists and subtract it. **Done for
+  bench and LANDED** (H40/H43, `correct.QUAD_LIFTS`): 1.81 -> 1.30 cm and 7 of 7
+  beating the null. Squat is a wash and deadlift is refused, so this route is
+  spent unless a better anchor appears;
 - anything that improves the ATTITUDE itself, which needs information the watch
   does not have during motion — P4/P5 close the obvious routes;
 - and accept that squat and deadlift are anchor-limited, not model-limited.
@@ -145,17 +166,14 @@ Stated in full, with their evidence, in `FINDINGS.md`. What is *open* about each
   acceleration offset. H27 built one from the pull anchors and it was too large
   on 9 of 9 by a median 4.6×; the mechanism was right and the estimator was not.
   See `FINDINGS.md` P3 and `analysis/84`.
-- **THE LOCKOUT-ANCHOR BUMP CORRECTION ON BENCH — the strongest unbuilt result
-  in the project.** H39: a smooth lift's rep boundary is already at lockout and
-  the bar is horizontally still there, so `a_est = [v_h(end) - v_h(start)]/T`
-  needs no new sensing and no capture change. Under leave-one-CAPTURE-out bench
-  goes **2.09 -> 0.98 cm, inside the 1 cm spec**, `beats_null` 2.46 -> 4.27, and
-  **all seven captures beat the null where six did** — including
-  `bench_spoto_95x5_2`, which was the only capture losing to drawing no fore-aft
-  motion at all. Held-out gains 0.458-0.622. **What is not settled** is whether
-  to put a calibrated constant into `correct.py` on the strength of 7 captures
-  and 39 reps, and squat does not work under the same rule (r = +0.217, ns), so
-  it would ship per-lift. See `FINDINGS.md` and `analysis/89`.
+- **The lockout-anchor bump correction on bench is BUILT and LANDED**, and this
+  entry is kept only because the numbers it used to carry are quoted elsewhere.
+  It shipped as step 7's quadratic term restricted to bench's fore-aft axis
+  (`correct.QUAD_LIFTS`), reaching **1.81 -> 1.30 cm** and taking bench from six
+  of seven captures beating the flat-line null to seven of seven. The 2.09 ->
+  0.98 cm this entry once promised was measured through a harness with an
+  intercept and is withdrawn. Squat is a wash and deadlift is refused, so the
+  route is spent unless a better anchor turns up. See `analysis/90`.
 
 - **The rest-ZUPT bump correction, ready to build and not built.** H36/H37: the
   rest-to-rest velocity change predicts the mid-rep bump at Pearson +0.59, and
