@@ -1,5 +1,19 @@
 # analysis — real-data diagnostics (2026-07-26/27)
 
+**This directory holds PNGs and this file. Nothing else** — owner's rule,
+2026-08-25. Twenty-one measurement scripts, six JSON caches, six working notes
+and a generated HTML page were deleted that day. Each entry below states what
+was measured and what it cost, which is what a reader comes for; the code that
+produced it is in `git show c29ec71:analysis/<name>.py` if a method ever needs
+checking.
+
+**The consequence, stated because it is real: a figure here is no longer
+reproducible from the repo.** That was the trade — the scripts were one-off
+measurements whose results are written down, and the numbers in this file are
+the record. Anything that must stay RUNNABLE belongs in `src/`, which is where
+`src/gallery.py` went rather than being deleted with the rest.
+
+
 Graphs from running the current pipeline on the first real watch captures, plus
 an off-pipeline reconstruction experiment. Generating scripts live in the
 session scratchpad (not the repo). Data in `data/raw/`.

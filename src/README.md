@@ -692,6 +692,13 @@ rebuild's separate report safe.
 | `condition.py` | reject impossible frames, then smooth. ON by default |
 | `geometry.py` | where along the BAR the tracked point sits, and what bar tilt costs |
 
+`src/gallery.py` sits outside the referee package: it renders `rep_gallery.html`,
+a browsable page of every set and every rep with the video against the
+reconstruction, for eyeballing the corpus. It moved here from `analysis/` on
+2026-08-25 when that directory was cut back to PNGs and a README — it generates
+a deliverable rather than recording a measurement, so it has to stay runnable.
+Regenerate with `python3 -m src.gallery`; the output is gitignored.
+
 ## What is actually different
 
 **The owner's prior — eight stickers on a circle at even spacing — is used in

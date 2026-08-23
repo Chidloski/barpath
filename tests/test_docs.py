@@ -158,6 +158,32 @@ def test_nothing_points_at_a_deleted_file(gone):
           "deleted and how to recover it.")
 
 
+# ------------------------------------------------------ analysis hygiene ----
+
+def test_analysis_holds_only_figures_and_its_readme():
+    """`analysis/` is PNGs and a README. Owner's rule, 2026-08-25.
+
+    It had accumulated 21 measurement scripts, 6 JSON caches, 6 working notes
+    and a generated HTML page beside 89 figures. Each script was a one-off whose
+    RESULT is written into `analysis/README.md`, so what they added was bulk and
+    a second place to look.
+
+    The trade is real and is stated in that README: a figure here is no longer
+    reproducible from the repo, and `git show` is the recovery path. **Anything
+    that must stay runnable belongs in `src/`** — `src/gallery.py` moved there
+    on the same day rather than being deleted with the rest, because it
+    generates a deliverable rather than recording a measurement.
+    """
+    strays = sorted(p.name for p in (ROOT / "analysis").iterdir()
+                    if p.is_file() and p.suffix.lower() != ".png"
+                    and p.name.lower() != "readme.md")
+    assert not strays, (
+        "analysis/ holds only PNGs and README.md; these do not belong: "
+        + ", ".join(strays)
+        + ". If it must stay runnable it goes in src/; if it is a result, "
+          "write the result into analysis/README.md.")
+
+
 # ------------------------------------------------- code the docs never met --
 
 def test_every_src_module_is_documented_somewhere():

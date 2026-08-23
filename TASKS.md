@@ -94,8 +94,9 @@ the last entry in `KNOWN_ROM_FAILURES`.
 - **C28b and C29 have never been re-run with step 6 applied.** Every number in
   P6 was measured with `d` off, and `d` is the term that recovers most of the
   deadlift horizontal *acceleration* channel. Do the two compose, or correct the
-  same thing twice? `analysis/C31b_STATE.md` item B; the highest-priority open
-  item there.
+  same thing twice? This was `analysis/C31b_STATE.md` item B until that file was
+  deleted on 2026-08-25; its substance is the two sentences above, and
+  `git show c29ec71:analysis/C31b_STATE.md` has the rest.
 - **`bench_spoto_95x5_1` is the capture to explain.** It loses to the flat-line
   null and reproduced the old referee to 0.01 when its session-mate crossed —
   so half of P2's referee-versus-pause tension was a referee artefact and half

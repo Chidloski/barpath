@@ -1,4 +1,4 @@
-"""H33 — a browsable gallery of every set and every rep, video against pipeline.
+"""A browsable gallery of every set and every rep, video against pipeline.
 
 The owner: *"keep live graphs of each set and rep for both video and data ran
 through the most recent pipeline and video tracking so I can sanity check."*
@@ -15,7 +15,12 @@ set, and the thing it cannot do is let you go from "this set looks wrong" to
 "this rep, against this video frame range" without opening a second file. The
 per-rep panels are the point; the set overlay is the index into them.
 
-    python3 analysis/81_rep_gallery.py
+**Lives in `src/` because it is a TOOL, not an analysis.** It moved here on
+2026-08-25 when `analysis/` was cut back to PNGs and a README: everything else
+there was a one-off measurement whose result is written down, while this
+generates a deliverable the owner uses and must stay runnable.
+
+    python3 -m src.gallery
 """
 from __future__ import annotations
 
@@ -34,7 +39,9 @@ from src import capture, metrics, pipeline, tracked   # noqa: E402
 
 RAW = ROOT / "data_v2" / "raw"
 TRACKED = ROOT / "data_v2" / "tracked"
-OUT = ROOT / "analysis" / "rep_gallery.html"
+# Written to the repo root and gitignored: `analysis/` holds only PNGs and a
+# README, and this is generated output rather than a record.
+OUT = ROOT / "rep_gallery.html"
 
 # Excluded from every aggregate, never from the page. The watch moved; the
 # capture is a record of that and hiding it would misrepresent the corpus.
@@ -258,7 +265,7 @@ def render(rows):
                  'how <code>vs_truth</code> scores them.</p>')
     parts.append(f'<p class="stamp">{len(rows)} captures · '
                  f'{sum(1 for r in rows for x in r["reps"] if x)} refereed reps · '
-                 f'regenerate with <code>python3 analysis/81_rep_gallery.py</code></p>')
+                 f'regenerate with <code>python3 -m src.gallery</code></p>')
 
     parts.append('<div class="legend">'
                  '<span class="key"><span class="swatch" style="background:var(--video)">'
