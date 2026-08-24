@@ -124,10 +124,17 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
       best-possible axis of 2.24, so there was nothing to win. `deadlift_170x4_3`
       5.54 -> 7.76 is the capture whose video clock fits 22.8% drift at a 216 ms
       residual and whose score is untrustworthy either way.
-    * **the axis is DIRECTED as of 2026-08-16 (B4).** `project.FORE_AFT_SENSE`
-      turns the line into a direction from the wrist, the grip and the attitude,
-      checked against the video through `tracked.CAMERA_SIDE`. `vs_truth`
-      reports `sign_agrees_with_geometry`; it holds on 12 of 13.
+    * **the axis is DIRECTED as of 2026-08-16 (B4), by one of TWO routes as of
+      2026-08-24 (H44), and `axis_sense_source` says which.**
+      `project.FORE_AFT_SENSE` turns the line into a direction from the wrist,
+      the grip and the attitude; it is right 7 of 7 on bench and 8 of 10 on
+      deadlift but only 5 of 10 on SQUAT, which takes its anterior from the
+      crown instead — **and that does not fix it either, 6 of 10.** `vs_truth`
+      reports `sign_agrees_with_geometry`, checked against the video through
+      `tracked.CAMERA_SIDE`. **That check held on 12 of 13 when this line was
+      written and reads 12 of 17 now** — the corpus grew, the gate went red, and
+      nobody looked until the owner saw the mirroring by eye. Squat's fore-aft
+      DIRECTION is an open problem; see `project.CROWN_BODY` and `TASKS.md`.
     * **nothing crosses `beats_null` on deadlift yet, 0 of 6.** `160x6_2` at 1.72
       against a 1.54 null is close where it was 4.40, but no deadlift is yet
       demonstrably better than drawing a straight vertical line.
@@ -429,7 +436,22 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
                     "step 8 axis is UNDIRECTED: cannot tell which lift this is, "
                     "so the fore-aft sign is unresolved and the path may mirror")
             try:
-                axis = project.anatomical_axis(quat, bounds, lift=lift_name)
+                axis, sense_source = project.anatomical_axis(
+                    quat, bounds, lift=lift_name, return_sense_source=True)
+                # WHICH ROUTE RESOLVED THE SIGN (H44). Reported because the two
+                # are not equally trustworthy: "constant" is `FORE_AFT_SENSE`,
+                # which is right 7 of 7 on bench and 5 of 10 on squat, and
+                # "crown" is the attitude-derived anterior that replaced it
+                # there. A squat that reports "constant" has fallen through the
+                # `project.CROWN_MIN_H` guard and its fore-aft direction should
+                # not be trusted — see `project.CROWN_BODY`.
+                result["axis_sense_source"] = sense_source
+                if lift_name == "squat":
+                    result["notes"].append(
+                        "step 8's fore-aft sign is UNRESOLVED on squat: the "
+                        "crown agrees with the video on 6 of 10 sets and the "
+                        "per-lift constant on 5 of 10, so this path may be "
+                        "mirrored whichever route ran. See project.CROWN_BODY")
             except ValueError as e:
                 result["notes"].append(f"step 8 fell back to max variance: {e}")
         else:

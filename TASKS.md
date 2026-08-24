@@ -78,12 +78,47 @@ the last entry in `KNOWN_ROM_FAILURES`.
 
 ## Decisions for the owner
 
-- **Should `deadlift_160x6_1_20260818` be excluded from scoring IN CODE?** It is
+- **SQUAT'S FORE-AFT DIRECTION IS UNRESOLVED, and it is the live question.**
+  The shipped sign agrees with the video on 6 of 10 squats via the crown and 5
+  of 10 via the old per-lift constant — chance either way, so a squat path may
+  render MIRRORED. The four that disagree are the three 2026-08-06 sets and
+  `squat_155x4_3` (weak, |corr| 0.19). **Three explanations are eliminated;
+  do not spend time re-opening them:**
+    - *Camera side.* The owner confirmed 2026-08-24 that every squat is filmed
+      from their right except `squat_145x4_2_20260817`, which is from the left.
+      The `# camera_side` lines in `data_v2/tracked/` are correct as they stand.
+    - *Synchronisation.* The disagreeing sets do prefer a lag of about half a
+      rep, where their horizontal correlation reaches +0.61 to +0.84 — but the
+      VERTICAL rms explodes there from 2–4 cm to 51–86 cm, so τ=0 is the correct
+      alignment and the lag is an artefact of comparing a descent to an ascent.
+    - *Any fixed wrist convention.* Swept over the full sphere of body
+      directions, no constant exceeds 6 of 10 on squat at any angle.
+  **What is left, in order of cheapness.** (1) A MIRRORED CLIP — a front-camera
+  or otherwise flipped recording inverts image-right and would explain a
+  per-session flip exactly. The 2026-08-13 clip's floor text reads the right way
+  round so it is not mirrored; the 2026-08-06 clips have no legible text in
+  frame and their file metadata is identical (same iPhone, same software), so
+  this is decidable only by the owner or by a landmark of known handedness.
+  (2) A per-capture sign calibration at capture time — a deliberate step forward
+  during the opening hold — which is the only route that recovers the direction
+  without the video.
+- **Should `deadlift_160x6_1_20260818` be excluded from scoring IN CODE?**- **Should `deadlift_160x6_1_20260818` be excluded from scoring IN CODE?** It is
   the only strapped capture in the corpus, the watch moved, and it should
   referee nothing. Excluding it changes what every corpus-wide median means, so
   it is a decision and not a tidy-up. Until it is taken, exclude it by hand and
   say so. See H20 and the *Reading a number* section of `CLAUDE.md`.
 - **Wire `capture.fore_aft_flags` in, or delete it?** See above.
+- **`metrics.vs_truth` still chooses the axis sign by correlating with the
+  video**, so no score it reports can penalise a mirrored set — which is half of
+  why H44's defect survived so long, the other half being that a near-
+  perpendicular axis FLATTENS the curve and rms rewards that. The owner has asked
+  for "report both": keep the fitted flip so every existing number stays
+  comparable, and report the shipped-sign error and the video in anatomical
+  coordinates alongside it. **Not yet built** — `metrics.py` is a `main` module
+  and was out of scope for H44's branch. Until it is, the gallery is showing a
+  BETTER sign than the pipeline ships, because it draws `curve_pipeline` after
+  the flip, and every camera-left capture (all ten deadlifts, plus
+  `squat_145x4_2`) is drawn mirrored against every camera-right one.
 
 ## Measurement debt
 

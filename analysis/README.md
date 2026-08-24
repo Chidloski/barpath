@@ -3370,9 +3370,38 @@ correction's 0.65 and a 1 cm spec. No new step is proposed, because
 the remaining error is attitude noise and no step downstream of the attitude can
 remove it.
 
+## 93 — `93_display_axis_sign.png`, why squat renders mirrored (H44)
+
+The owner reported squat sets drawn as mirror images of the video, most obviously
+`squat_155x4_3` and the `squat_pause_140x4_*` sets, faintly on bench, invisibly
+on deadlift. That ordering is the finding, not an accident of which plots got
+looked at.
+
+**A** is the mechanism. Step 8 takes fore-aft as a fixed direction in watch
+coordinates, but only that vector's HORIZONTAL projection becomes the axis — and
+the vector lies 4–6° off horizontal on bench, 0–5° on deadlift and **31–55° on
+squat**. **B** is the consequence: the shipped axis sits a median 12° from the
+video-optimal direction on bench, 47° on deadlift and **62° on squat**, with two
+squats within 5° of PERPENDICULAR. A tipped vector both amplifies the body-plane
+angle into a larger screen angle and makes it posture-sensitive, so the direction
+moves between sessions and the sign flips with it.
+
+**C** shows the line is a constant after all, just not 23° — squat's optimum is
+−8°, leave-one-capture-out folds land −12…−4, held-out |correlation| 0.75 against
+0.62. The SIGN is not: no fixed body direction exceeds 6 of 10 on squat at any
+angle, which is why it now comes from the crown instead.
+
+**The bottom row is deliberately not a clean sweep, and the third panel is the
+finding.** Two sets go from mirrored to tracking; `squat_pause_140x4_3_20260806`
+goes the other way. The crown scores 6 of 10 on squat against the old constant's
+5 of 10 — it moves WHICH sets are wrong without fixing how many. Camera side
+(owner-confirmed) and synchronisation (the half-rep lag takes the vertical from
+2–4 cm to 51–86 cm) are both eliminated, so squat's fore-aft DIRECTION is an
+open problem, recorded in `TASKS.md` rather than tuned away.
+
 ---
 
-*Numbering: 47 through 92 are taken. The next free number is 93. **52
+*Numbering: 47 through 93 are taken. The next free number is 94. **52
 (`52_deadlift_excursion_origin.png`) is on disk and has no entry in this
 file** — it predates G1 and is not G1's to caption, but it is doc debt and
 somebody should.*
