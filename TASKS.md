@@ -214,8 +214,18 @@ Stated in full, with their evidence, in `FINDINGS.md`. What is *open* about each
 Not code, and the highest value per effort available. *Completed items and the
 reasoning behind them are in `FINDINGS.md`.*
 
-- **NO LIFTING STRAPS. Owner's decision, 2026-08-19, and it is the first rule
-  here because it is the only one that has already cost a capture.** Straps put
+- **MARK AN UNUSUAL CAMERA SIDE IN THE FILENAME. Owner's convention,
+  2026-08-25.** Normal is bench and squat from the lifter's RIGHT and deadlift
+  from their LEFT. When a clip is filmed from the other side, put a bare `l` or
+  `r` token in the stem — `squat_140x4_1_l_20260901.mov`. `tracked.camera_side`
+  reads it LITERALLY and it outranks `CAMERA_SIDE_EXCEPTIONS`, so a redundant
+  marker is harmless and can never invert anything; a MISSING one on an unusual
+  clip scores it mirrored with nothing to say so, which is why this is a capture
+  rule and not a code rule. Before this the side lived in a hardcoded dict that
+  only the repo knew about.
+
+- **NO LIFTING STRAPS. Owner's decision, 2026-08-19, and it is the only rule
+  here that has already cost a capture.** Straps put
   the watch further up the forearm and let it move: `deadlift_160x6_1_20260818`
   invents 19.9–27.9 cm of per-rep fore-aft where its own unstrapped twin invents
   5.4–7.7 and the bar really moved 4.4–6.0, reconstructing at 14.91 cm against

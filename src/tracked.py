@@ -80,16 +80,45 @@ CAMERA_SIDE = {"deadlift": "left", "bench": "right", "squat": "right"}
 # this field is that it is external to the reconstruction.
 CAMERA_SIDE_EXCEPTIONS = {"squat_145x4_2_20260817": "left"}
 
+# THE FILENAME CONVENTION, and it OUTRANKS the table above (H45, 2026-08-25).
+# The owner: *"from now on if the footage is filmed from the wrong angle i will
+# add the angle into the filename with either l or r, only if it is filmed from
+# the opposite side of what is normal"*.
+#
+# So a bare `l` or `r` token anywhere in the stem names the side outright:
+# `squat_140x4_1_l_20260901.mov` is filmed from the lifter's LEFT. It is read
+# LITERALLY rather than as "the opposite of normal", so a redundant marker is
+# still correct and never inverts anything.
+#
+# **Why this exists at all.** `CAMERA_SIDE_EXCEPTIONS` is a hardcoded dict, so a
+# capture arriving under the new convention would have scored through the
+# per-lift default and rendered MIRRORED with nothing to say so — the exact
+# silent failure this field exists to prevent. The convention moves the fact
+# into the one place that always travels with the footage.
+#
+# A bare `l`/`r` cannot collide with the existing stems: every other token is a
+# lift, a variant word, a weight like `140x4`, an index, or a date.
+CAMERA_SIDE_TOKENS = {"l": "left", "r": "right"}
+
 
 def camera_side(name: str | Path) -> str:
-    """Which side the camera stood on for one capture, exceptions first.
+    """Which side the camera stood on for one capture. Filename, then table.
 
     Takes a clip or capture name rather than a lift, because the answer is a
     property of the capture. Raises on an unknown lift exactly as
     `capture.lift_of` does, rather than defaulting to a side — a silent default
     here mirrors the path and the mirror is invisible.
+
+    Three sources, most specific first: a bare `l`/`r` token in the stem
+    (`CAMERA_SIDE_TOKENS`, the owner's convention as of 2026-08-25), then
+    `CAMERA_SIDE_EXCEPTIONS` for the captures that predate it, then the per-lift
+    default. The filename wins because it is the owner's statement about where
+    they stood, written at capture time and carried by the clip itself.
     """
     stem = Path(name).stem
+    for token in stem.split("_"):
+        if token in CAMERA_SIDE_TOKENS:
+            return CAMERA_SIDE_TOKENS[token]
     for tag, side in CAMERA_SIDE_EXCEPTIONS.items():
         if tag in stem:
             return side

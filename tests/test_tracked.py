@@ -275,6 +275,41 @@ def test_camera_side_is_a_property_of_the_CAPTURE_not_the_lift():
         assert "# camera_side = left" in csv.read_text()
 
 
+def test_an_l_or_r_in_the_filename_names_the_camera_side():
+    """H45 — the owner's convention, and it outranks the exception table.
+
+    From 2026-08-25 a clip filmed from the other side carries a bare `l` or `r`
+    token in its stem. Before this, `camera_side` read a hardcoded dict, so such
+    a capture would have scored through the per-lift default and rendered
+    MIRRORED with nothing to say so.
+
+    The token is read LITERALLY, not as "the opposite of normal", so a redundant
+    marker is still correct and can never invert anything. The existing corpus
+    carries no tokens, so every current answer is unchanged — which is asserted
+    here rather than assumed, because a bare letter is exactly the kind of match
+    that could collide with a variant word or an index.
+    """
+    from src import tracked
+
+    # The convention, on both lifts and in both directions.
+    assert tracked.camera_side("squat_140x4_1_l_20260901.mov") == "left"
+    assert tracked.camera_side("deadlift_180x3_r_20260901.mov") == "right"
+    assert tracked.camera_side("bench_100x5_1_l_20260901.mov") == "left"
+    # Redundant markers agree with the default rather than flipping it.
+    assert tracked.camera_side("squat_140x4_1_r_20260901.mov") == "right"
+    assert tracked.camera_side("deadlift_180x3_l_20260901.mov") == "left"
+    # It beats the exception table for the same capture.
+    assert tracked.camera_side("squat_145x4_2_r_20260817.mov") == "right"
+    assert tracked.camera_side("squat_145x4_2_20260817.mov") == "left"
+    # And no existing capture accidentally matches a token.
+    raw = ROOT / "data_v2" / "raw"
+    for csv in sorted(raw.glob("*.csv")) if raw.is_dir() else []:
+        tokens = set(csv.stem.split("_")) & set(tracked.CAMERA_SIDE_TOKENS)
+        assert not tokens, (
+            f"{csv.stem} already contains {tokens}, so H45's token would "
+            f"change how an existing capture is scored")
+
+
 def test_the_video_finds_the_rep_count_the_FILENAME_says():
     """The check that makes this figure a gate rather than a picture.
 
