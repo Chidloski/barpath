@@ -54,6 +54,22 @@ the last entry in `KNOWN_ROM_FAILURES`.
 
 ## Defects recorded and not fixed
 
+- **A NEW CAPTURE'S NAME COLLIDES WITH AN OLD ONE'S PREFIX, and a gate now
+  scores the wrong capture.** `deadlift_160x6_20260825` (2026-08-25, one set, no
+  index) sorts BEFORE `deadlift_160x6_2_20260804` and matches the prefix
+  `deadlift_160x6_2`, so `test_the_three_deadlifts_H8_and_H9_were_built_for`
+  silently scores the 2026-08-25 capture in place of the 2026-08-04 one it was
+  written for, and fails. Found 2026-08-25 (H47).
+
+  The mechanism is `next(p for p in CAPTURES if p.stem.startswith(stem))`, and
+  the same `startswith` idiom is used in `WRONG_REP_COUNT`,
+  `KNOWN_ROM_FAILURES`, `CAMERA_SIDE_EXCEPTIONS` and the B4 gate's exception
+  tuples. **An unindexed capture name is a prefix of every indexed one that
+  shares its weight and reps**, so this will happen again. Either index every
+  capture (`_1` even when there is only one set) or match on the date-stripped
+  stem rather than a prefix.
+
+
 - **Two 2026-08-13 spoto benches do not track** — 94.1 and 72.2 cm of whole-clip
   travel on a bench press. A footage problem, not a code one. `vtrack.IMPLAUSIBLE_MULT`
   is the two-sided flag that now catches them (H16).
@@ -79,29 +95,42 @@ the last entry in `KNOWN_ROM_FAILURES`.
 ## Decisions for the owner
 
 - **SQUAT'S FORE-AFT DIRECTION IS UNRESOLVED, and it is the live question.**
-  The shipped sign agrees with the video on 6 of 10 squats via the crown and 5
-  of 10 via the old per-lift constant — chance either way, so a squat path may
-  render MIRRORED. The four that disagree are the three 2026-08-06 sets and
-  `squat_155x4_3` (weak, |corr| 0.19). **Three explanations are eliminated;
-  do not spend time re-opening them:**
-    - *Camera side.* The owner confirmed 2026-08-24 that every squat is filmed
-      from their right except `squat_145x4_2_20260817`, which is from the left.
-      The `# camera_side` lines in `data_v2/tracked/` are correct as they stand.
-    - *Synchronisation.* The disagreeing sets do prefer a lag of about half a
-      rep, where their horizontal correlation reaches +0.61 to +0.84 — but the
-      VERTICAL rms explodes there from 2–4 cm to 51–86 cm, so τ=0 is the correct
-      alignment and the lag is an artefact of comparing a descent to an ascent.
-    - *Any fixed wrist convention.* Swept over the full sphere of body
-      directions, no constant exceeds 6 of 10 on squat at any angle.
-  **What is left, in order of cheapness.** (1) A MIRRORED CLIP — a front-camera
-  or otherwise flipped recording inverts image-right and would explain a
-  per-session flip exactly. The 2026-08-13 clip's floor text reads the right way
-  round so it is not mirrored; the 2026-08-06 clips have no legible text in
-  frame and their file metadata is identical (same iPhone, same software), so
-  this is decidable only by the owner or by a landmark of known handedness.
-  (2) A per-capture sign calibration at capture time — a deliberate step forward
-  during the opening hold — which is the only route that recovers the direction
-  without the video.
+  The shipped constant agrees with the video on 5 of 10 squats — chance — so a
+  squat path may render MIRRORED. The five it gets wrong are named in
+  `test_the_fore_aft_SIGN_agrees_with_the_video_B4_closed`; deleting that tuple
+  is the test that this is solved.
+
+  **WHY NO WRIST CONVENTION CAN WORK, measured 2026-08-25 and the reason to stop
+  proposing one.** The azimuth of every watch axis from the lifter's own
+  ANTERIOR, as circular consistency R (1 = every set agrees, 0 = scattered):
+
+    | axis | squat | bench |
+    |---|---|---|
+    | X (crown) | **0.22** | 0.80 |
+    | Y (12 o'clock) | **0.26** | 0.77 |
+    | Z (screen) | **0.33** | 0.77 |
+
+  The crown's bearing across the ten squats is +4, −1, −26, −56, −73, +17, +84,
+  +150, −166, −178 — the whole circle. WITHIN a set it holds to 9–13 degrees, so
+  the posture is stable and the owner's description of it is right; it is
+  BETWEEN sets that the bearing moves. A hand resting on a bar behind the neck
+  does that; a hand gripping a straight bar does not, which is why bench sits at
+  0.80.
+
+  **FIVE explanations are ELIMINATED. Do not re-open them.** The crown
+  convention (tried, 6 of 10, rejected); camera side (owner-confirmed 2026-08-25
+  — every squat from the right except `squat_145x4_2_20260817`); a mirrored clip
+  (owner: clips are never flipped); synchronisation (the half-rep lag that lifts
+  the horizontal to +0.61…+0.84 takes the VERTICAL from 2–4 cm to 51–86 cm, so
+  τ=0 is right); and a stale tracker cache (all thirteen tracked on one commit).
+
+  **What is left.** A capture-time sign calibration — a deliberate known-direction
+  move during the opening hold — is the only route that recovers the direction
+  without the video. The walkout will NOT serve: pre-rep integration drift is
+  9.5–22 m over 25–32 s, burying a ~1 m signal. The SSB squats are the natural
+  experiment for whether GRIP is the variable, and they are recoverable once the
+  tracker handles 720p.
+
 - **Should `deadlift_160x6_1_20260818` be excluded from scoring IN CODE?**- **Should `deadlift_160x6_1_20260818` be excluded from scoring IN CODE?** It is
   the only strapped capture in the corpus, the watch moved, and it should
   referee nothing. Excluding it changes what every corpus-wide median means, so

@@ -249,25 +249,24 @@ each step is shaped the way it is, and what was tried instead, is in
    the angle is now per-lift: `BAR_ANGLE_BY_LIFT` holds squat at -8 degrees,
    everything else keeps `BAR_ANGLE_DEG` = 23 and is bit-identical.
 
-   The SIGN has **two routes, and `pipeline.run` reports which one ran** as
-   `axis_sense_source`. `FORE_AFT_SENSE` (B4) is a per-lift constant and is
-   right 7 of 7 on bench and 8 of 10 on deadlift — but only **5 of 10 on squat**,
-   and wrong on precisely the sets the reconstruction tracks best. No fixed body
-   direction fixes that at any angle. Squat instead takes its anterior from the
-   **CROWN**, on the owner's own account of how they lift, gated on the crown
-   having a horizontal projection to read (`CROWN_MIN_H`); it does on squat
-   (0.76-0.97) and does not on bench or deadlift (0.11-0.23), so the gate is
-   self-diagnosing and the other two lifts never take the route and stay
-   bit-identical.
+   The SIGN comes from `FORE_AFT_SENSE` (B4), a per-lift constant, and it is
+   right 7 of 7 on bench and 8 of 10 on deadlift.
 
-   **SQUAT'S FORE-AFT DIRECTION IS UNRESOLVED, and the crown did not resolve it
-   — 6 of 10 against the constant's 5 of 10, chance either way.** The crown is
-   kept because it is derived rather than fitted and is not worse, not because
-   it works; a squat path may still render MIRRORED. Three explanations are
-   eliminated and should not be re-opened — camera side (owner-confirmed
-   2026-08-24), synchronisation (the half-rep lag that would fix the horizontal
-   takes the vertical from 2-4 cm to 51-86 cm), and any fixed wrist convention
-   (full-sphere sweep). See `project.CROWN_BODY` and `TASKS.md`.
+   **IT IS 5 OF 10 ON SQUAT — chance — so a squat path may render MIRRORED, and
+   nothing in the pipeline can tell.** It is wrong on precisely the sets the
+   reconstruction otherwise tracks best (|correlation| 0.74-0.92), and no fixed
+   body direction repairs it: over a full-sphere sweep the best any constant
+   achieves is 6 of 10, against bench's perfectly consistent 0 of 7 raw. The
+   reason is measured — the azimuth of every watch axis from the lifter's own
+   anterior has circular consistency **0.22-0.33 on squat against 0.77-0.80 on
+   bench**, scattered around the whole circle. Within a set the wrist is stable
+   to 9-13 degrees; it is BETWEEN sets that its bearing moves.
+
+   Five explanations are ELIMINATED and must not be re-opened: the crown
+   convention (tried, 6 of 10, rejected), camera side (owner-confirmed),
+   synchronisation (the half-rep lag that would fix the horizontal takes the
+   vertical from 2-4 cm to 51-86 cm), a mirrored clip (owner: never flipped),
+   and a stale tracker cache. See `project.anatomical_axis` and `TASKS.md`.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
 
 **Step 10, which is not a step:** `display.py`, the product view (H13). A layer
@@ -393,7 +392,7 @@ quote, and say which side of the change you are on.**
    any date may be mirrored and squat's fore-aft DIRECTION should not be quoted
    at all. Bench and deadlift are bit-identical either side and carry over
    unchanged. To reproduce a pre-H44 squat figure, empty
-   `project.BAR_ANGLE_BY_LIFT` and set `project.CROWN_MIN_H` above 1.0.
+   `project.BAR_ANGLE_BY_LIFT`.
 
 ### The one measured constant you should not re-fit
 

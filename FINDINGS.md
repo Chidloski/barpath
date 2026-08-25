@@ -65,7 +65,7 @@ Nine steps, one module each. `CLAUDE.md` has the mechanism; this is the verdict.
 | 5b drift tilt | `correct.fit_drift_tilt` | **ON since 2026-08-16.** Self-limiting. |
 | 6 wrist→bar offset | `correct.apply_offset` | **ON since 2026-08-06.** |
 | 7 per-rep detrend | `correct.detrend` | **ON**, order 1. Load-bearing for its per-rep INDEPENDENCE. |
-| 8 display axis | `project.py` | From ATTITUDE, via `anatomical_axis`. Angle per-lift (`BAR_ANGLE_BY_LIFT`: squat −8°, rest 23°). Sign from `FORE_AFT_SENSE`, except **squat, which takes it from the CROWN**. |
+| 8 display axis | `project.py` | From ATTITUDE, via `anatomical_axis`. Angle per-lift (`BAR_ANGLE_BY_LIFT`: squat −8°, rest 23°). Sign from `FORE_AFT_SENSE` — **7 of 7 bench, 8 of 10 deadlift, 5 of 10 SQUAT, i.e. chance**. |
 | 9 overlay plot | `plot.py` | Horizontal stretched 4×. |
 | 10 product view | `display.py` | Not a pipeline step. A layer after 9. |
 
@@ -102,20 +102,20 @@ the median goes 3.19 → 3.05 cm, because a near-perpendicular axis projects a
 FLATTENED curve and rms rewards flatness (H37's attenuation), so the metric
 mildly preferred the wrong axis. Shipped under correctness-outranks-score.
 
-**The SIGN is not a constant, and the crown does not fix it either.** No fixed
+**The SIGN is not a constant, and nothing wrist-derived can be one.** No fixed
 body direction exceeds 6 of 10 on squat over a full-sphere sweep, against bench's
-perfectly consistent 0 of 7 raw, which is the control. The owner's convention —
-the crown points where the face points — is a genuine anatomical reference,
-well conditioned exactly where the constant fails (|crown_h| squat 0.76–0.97,
-bench 0.23, deadlift 0.11–0.15, and on deadlift it scores 4 of 10 against 8 of
-10, which is what the `CROWN_MIN_H` gate is measured on). **It scores 6 of 10.
-It is kept because it is derived rather than fitted and is not worse, not
-because it works.** Three explanations for the residual are ELIMINATED: camera
-side (owner-confirmed), sync (the half-rep lag that lifts the horizontal to
-+0.61…+0.84 takes the vertical from 2–4 cm to 51–86 cm, so τ=0 is right), and
-any fixed wrist convention. A mirrored clip would explain it and is not ruled
-out. The B4 sign gate had been red at 11 of 17 throughout, unread; it now reads
-12 of 17.
+perfectly consistent 0 of 7 raw, which is the control. The owner's crown
+convention — the crown points where the face points — was tried and **REJECTED at
+6 of 10**; it moved which sets are mirrored, not how many. The reason it cannot
+work is the finding: the azimuth of every watch axis from the lifter's own
+anterior has circular consistency **0.22-0.33 on squat against 0.77-0.80 on
+bench** — scattered round the whole circle. Within a set the wrist holds to 9-13
+degrees, so the posture is stable; it is BETWEEN sets that its bearing moves,
+which is what a hand resting on a bar does and a hand gripping one does not.
+Also eliminated: camera side and a mirrored clip (both owner-confirmed), sync
+(the half-rep lag that lifts the horizontal to +0.61…+0.84 takes the vertical
+from 2-4 cm to 51-86 cm), and a stale tracker cache. The B4 sign gate had been
+red at 11 of 17 throughout, unread.
 
 **Step 8's attitude-derived axis (H9), as qualified by H44 above.** The rotation
 axis is **3–25× more reproducible** than the video-identified reference it was

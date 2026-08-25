@@ -287,66 +287,51 @@ BAR_ANGLE_BY_LIFT = {"squat": -8.0}
 # sign here should invert and `sign_agrees_with_geometry` should stay true.
 FORE_AFT_SENSE = {"deadlift": -1.0, "squat": +1.0, "bench": -1.0}
 
-# THE CROWN, and why squat takes its sign from there — WHICH DOES NOT FIX IT.
-# H44, 2026-08-24. Read the last paragraph before quoting this.
+# THE CROWN WAS TRIED AS SQUAT'S SIGN AND REJECTED (H44/H47, 2026-08-25).
+# Recorded rather than deleted, because the measurement is the useful part and
+# the idea is an obvious one to have again.
 #
-# `FORE_AFT_SENSE` is a per-lift CONSTANT, and squat is not a lift that has one.
-# Measured over the 10 squats it gives the direction the video agrees with on
-# **5 of 10 sets** — and the sets it gets wrong are the ones the reconstruction
-# otherwise tracks BEST, at |correlation| 0.74 to 0.92. So the curve is good and
-# the arrow on it is a coin toss. No fixed body direction repairs this: swept
-# over the full sphere of `body` vectors, the best any constant achieves on
-# squat is 6 of 10. Bench by contrast is 0 of 7 raw — perfectly consistent,
-# which is exactly why a constant works there and is the control that makes this
-# a real difference rather than noise.
+# `FORE_AFT_SENSE` above is a per-lift CONSTANT and squat is not a lift that has
+# one: it agrees with the video on **5 of 10 sets**, and is wrong on precisely
+# the sets the reconstruction otherwise tracks BEST, at |correlation| 0.74-0.92.
+# So the curve is good and the arrow on it is a coin toss. No fixed body
+# direction repairs that — swept over the full sphere, the best any constant
+# achieves on squat is 6 of 10, against bench's 0 of 7 raw, which is perfectly
+# consistent and is the control that makes the difference real.
 #
-# THE OWNER SUPPLIED AN ANATOMICAL CONVENTION (2026-08-24): *"during all reps
-# the crown points in the same horizontal direction as my face does"*. That is a
-# reference read straight off the attitude, which is what B4 has always lacked —
-# `anatomical_axis` uses only `body = [0, sin, cos]`, so the watch's X axis, the
-# one the crown lies on, was the one direction never consulted.
+# The owner supplied an anatomical convention: *"during all reps the crown
+# points in the same horizontal direction as my face does"*. It reads the
+# anterior off the attitude, which is what B4 has always lacked. **It scored 6 of
+# 10 — it moved WHICH sets are mirrored, not how many — and it is not shipped.**
 #
-# It is also self-diagnosing, which is why it is gated rather than assumed. The
-# rule needs the crown to HAVE a horizontal direction, and whether it does is a
-# fact about the grip:
+# WHY IT CANNOT WORK, which is the finding worth keeping. Measured across the
+# corpus, the azimuth of every watch axis from the lifter's own anterior:
 #
-#     lift      mean crown world-z      |crown horizontal|
-#     bench          +0.97                   0.23
-#     deadlift       -0.98                   0.11 - 0.15
-#     squat          +0.35                   0.76 - 0.97
+#     axis          squat, circular R      bench, circular R
+#     X (crown)          0.22                    0.80
+#     Y (12 o'clock)     0.26                    0.77
+#     Z (screen)         0.33                    0.77
 #
-# Pronated hands on a bar behind the neck hold the crown near HORIZONTAL; a fist
-# wrapped round a bar in front points it at the ceiling (bench, supinated) or
-# the floor (deadlift, mixed grip). `CROWN_MIN_H` sits in that gap, so bench and
-# deadlift never take this route and are bit-identical either side of H44.
-# Applying it to deadlift anyway scores 4 of 10 against the constant's 8 of 10,
-# which is the measurement behind the threshold rather than an assumption.
+# R = 1 means every set agrees, 0 means scattered uniformly. The crown's bearing
+# across the ten squats is +4, -1, -26, -56, -73, +17, +84, +150, -166, -178 —
+# the whole circle. WITHIN a set it is stable to 9-13 degrees, so the owner's
+# posture description is right; what is not repeatable is that posture's BEARING
+# relative to the torso. With the elbow tucked back, a small change in hand width
+# swings the forearm's horizontal bearing a long way, which is why bench — hand
+# clamped to a straight bar, same grip every time — sits at R = 0.80 and squat
+# does not.
 #
-# **AND IT DOES NOT RESOLVE THE SIGN. It scores 6 of 10 on squat against the
-# constant's 5 of 10 — chance either way.** It is kept because it is DERIVED
-# from a stated physical fact rather than fitted, and because it is not worse;
-# it is not kept because it works. What it changed is WHICH four sets disagree,
-# moving them off 2026-08-13/08-20 and onto 2026-08-06 plus `squat_155x4_3`.
-#
-# Three explanations for the residual have been eliminated, so do not re-open
-# them: **camera side** (the owner confirmed every squat is filmed from their
-# right except `squat_145x4_2_20260817`, so the labels are correct);
-# **synchronisation** (the disagreeing sets do prefer a lag of half a rep, at
-# which their horizontal correlation reaches +0.61 to +0.84 — but their VERTICAL
-# rms explodes from 2-4 cm to 51-86 cm there, so tau = 0 is right and the lag is
-# an artefact of comparing a descent to an ascent); and **any fixed wrist
-# convention** (the full-sphere sweep above). A mirrored image would explain it
-# and is not ruled out — the 2026-08-13 clip's floor text reads the right way
-# round, the 2026-08-06 clips have no legible text, and the file metadata is
-# identical. See `TASKS.md`.
-CROWN_BODY = np.array([1.0, 0.0, 0.0])
-CROWN_MIN_H = 0.5
+# So squat's fore-aft DIRECTION is not recoverable from wrist attitude by any
+# fixed convention. Eliminated alongside it: camera side (owner-confirmed
+# 2026-08-25), synchronisation (the half-rep lag that would fix the horizontal
+# takes the VERTICAL from 2-4 cm to 51-86 cm), a mirrored clip (owner: never
+# flipped), and a stale tracker cache (all thirteen tracked on one commit).
+# See `TASKS.md`.
 
 
 def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
                     angle_deg: float | None = None,
-                    lift: str | None = None,
-                    return_sense_source: bool = False) -> np.ndarray:
+                    lift: str | None = None) -> np.ndarray:
     """The display axis from ATTITUDE alone, DIRECTED when the lift is known.
 
     Returns a unit vector in world xy, like `principal_axis`'s first element,
@@ -373,18 +358,12 @@ def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
     behaves as it did before, which is what a caller with an unknown lift should
     get.
 
-    **THERE ARE TWO SIGN ROUTES AS OF 2026-08-24 (H44), and which one ran is
-    returned to the caller.** `FORE_AFT_SENSE` is a per-lift constant and squat
-    is not a lift that has one — it is right on 5 of 10 sets, and wrong on
-    precisely the sets the reconstruction tracks best. The CROWN route reads the
-    anterior direction off the attitude instead, and is taken whenever the crown
-    has enough horizontal projection to be worth reading.
-
-    **NEITHER ROUTE RESOLVES SQUAT'S SIGN — 6 of 10 against 5 of 10, chance
-    either way.** The crown is kept because it is derived from a stated physical
-    fact rather than fitted, and because it is not worse. Read `CROWN_BODY`
-    before quoting any of this: it carries the threshold's evidence, and the
-    three explanations for the residual that have already been eliminated.
+    **THE SIGN IS RIGHT ON BENCH AND DEADLIFT AND UNRESOLVED ON SQUAT.**
+    `FORE_AFT_SENSE` is right 7 of 7 on bench and 8 of 10 on deadlift, and 5 of
+    10 on squat — chance. A squat path may therefore render MIRRORED, and no
+    fixed convention fixes it; the crown was tried and rejected. The comment
+    block above `anatomical_axis` carries the measurement and the list of
+    explanations already eliminated. Do not re-open them.
 
     Two things had to become true, and both are measurements rather than
     arguments. **First, the reconstruction had to agree with itself.** This
@@ -411,11 +390,9 @@ def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
     `bench_spoto_95x5_2`). Four of six deadlifts disagree on nothing.
 
     **Second, a CONVENTION was needed** — which end of the axis is "toward the
-    lifter" — and this paragraph used to end by saying so and deferring it. That
-    is answered now, and not by the route it predicted. It proposed the screen
-    normal, which needs a grip input the API does not have; the answer was the
-    CROWN, which needs nothing but the attitude already in hand, and which the
-    owner supplied as a fact about how they lift. See `CROWN_BODY`.
+    lifter" — and it is still missing on SQUAT. This paragraph used to propose
+    the screen normal; the crown was tried instead and rejected at 6 of 10. The
+    block above records why no wrist-derived convention can work there.
     """
     quat = np.asarray(quat, dtype=float)
     inside = np.zeros(len(quat), dtype=bool)
@@ -454,27 +431,14 @@ def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
         axis = -axis
 
     if lift is None:
-        return (axis, "undirected") if return_sense_source else axis
-
-    # THE CROWN ROUTE (H44). The owner lifts with the crown pointing the way
-    # they face, so the crown's world-horizontal direction IS the anterior —
-    # but only where it HAS a horizontal direction. `CROWN_BODY` carries the
-    # measurement that splits the lifts, and the guard is what keeps bench and
-    # deadlift on the constant they are already right about.
-    crown = R.apply(np.tile(CROWN_BODY, (int(inside.sum()), 1)))[:, :2].mean(axis=0)
-    if float(np.linalg.norm(crown)) >= CROWN_MIN_H:
-        if float(crown @ axis) < 0.0:
-            axis = -axis
-        return (axis, "crown") if return_sense_source else axis
-
+        return axis
     try:
-        axis = FORE_AFT_SENSE[lift] * axis
+        return FORE_AFT_SENSE[lift] * axis
     except KeyError:
         raise ValueError(
             f"no fore-aft sense recorded for lift {lift!r}; add it to "
             f"FORE_AFT_SENSE with its derivation, or pass lift=None to get an "
             f"undirected axis") from None
-    return (axis, "constant") if return_sense_source else axis
 
 
 def principal_axis(paths: list[np.ndarray]):

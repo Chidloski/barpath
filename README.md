@@ -25,9 +25,9 @@ All nine steps now run, on every capture — step 8 was implemented on
 reconstruction is still 5-15x outside its horizontal spec where anything can
 measure it, and 6 of 17 sets do not earn enough axis confidence to be drawn
 stretched. The display axis's sign is resolved on bench (7 of 7) and deadlift
-(8 of 10) by a per-lift constant and **still unresolved on SQUAT** — 6 of 10,
-chance, so a squat path may render mirrored (H44). Camera side and sync are both
-eliminated as explanations; see `TASKS.md`. It is being rebuilt after the
+(8 of 10) by a per-lift constant and **unresolved on SQUAT** — 5 of 10, chance,
+so a squat path may render mirrored (H44/H47). Five explanations are eliminated,
+the owner's crown convention among them; see `TASKS.md`. It is being rebuilt after the
 original version passed every synthetic gate and failed in the gym by two
 orders of magnitude, and a completing pipeline is not a working one.
 

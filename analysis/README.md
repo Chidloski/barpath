@@ -3388,16 +3388,16 @@ moves between sessions and the sign flips with it.
 
 **C** shows the line is a constant after all, just not 23° — squat's optimum is
 −8°, leave-one-capture-out folds land −12…−4, held-out |correlation| 0.75 against
-0.62. The SIGN is not: no fixed body direction exceeds 6 of 10 on squat at any
-angle, which is why it now comes from the crown instead.
+0.62. **The SIGN is not a constant and nothing wrist-derived can be**: no fixed
+body direction exceeds 6 of 10 on squat at any angle.
 
-**The bottom row is deliberately not a clean sweep, and the third panel is the
-finding.** Two sets go from mirrored to tracking; `squat_pause_140x4_3_20260806`
-goes the other way. The crown scores 6 of 10 on squat against the old constant's
-5 of 10 — it moves WHICH sets are wrong without fixing how many. Camera side
-(owner-confirmed) and synchronisation (the half-rep lag takes the vertical from
-2–4 cm to 51–86 cm) are both eliminated, so squat's fore-aft DIRECTION is an
-open problem, recorded in `TASKS.md` rather than tuned away.
+**The bottom row's green curve is the axis fix, NOT a sign fix.** Panels showing
+green tracking blue are the line coming right; where green is still mirrored, the
+sign is wrong and stays wrong. The owner's crown convention was tried here and
+rejected at 6 of 10 — it moved which sets are mirrored, not how many — because
+the azimuth of every watch axis from the lifter's anterior has circular
+consistency 0.22–0.33 on squat against 0.77–0.80 on bench. Squat's fore-aft
+DIRECTION is an open problem, recorded in `TASKS.md` rather than tuned away.
 
 ---
 

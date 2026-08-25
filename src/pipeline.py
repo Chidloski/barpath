@@ -128,8 +128,8 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
       2026-08-24 (H44), and `axis_sense_source` says which.**
       `project.FORE_AFT_SENSE` turns the line into a direction from the wrist,
       the grip and the attitude; it is right 7 of 7 on bench and 8 of 10 on
-      deadlift but only 5 of 10 on SQUAT, which takes its anterior from the
-      crown instead — **and that does not fix it either, 6 of 10.** `vs_truth`
+      deadlift but only 5 of 10 on SQUAT, where no fixed convention works — the
+      crown was tried and rejected at 6 of 10. `vs_truth`
       reports `sign_agrees_with_geometry`, checked against the video through
       `tracked.CAMERA_SIDE`. **That check held on 12 of 13 when this line was
       written and reads 12 of 17 now** — the corpus grew, the gate went red, and
@@ -436,22 +436,16 @@ def run(path: str | Path, wrist_offset: np.ndarray | str | None = "auto",
                     "step 8 axis is UNDIRECTED: cannot tell which lift this is, "
                     "so the fore-aft sign is unresolved and the path may mirror")
             try:
-                axis, sense_source = project.anatomical_axis(
-                    quat, bounds, lift=lift_name, return_sense_source=True)
-                # WHICH ROUTE RESOLVED THE SIGN (H44). Reported because the two
-                # are not equally trustworthy: "constant" is `FORE_AFT_SENSE`,
-                # which is right 7 of 7 on bench and 5 of 10 on squat, and
-                # "crown" is the attitude-derived anterior that replaced it
-                # there. A squat that reports "constant" has fallen through the
-                # `project.CROWN_MIN_H` guard and its fore-aft direction should
-                # not be trusted — see `project.CROWN_BODY`.
-                result["axis_sense_source"] = sense_source
+                axis = project.anatomical_axis(quat, bounds, lift=lift_name)
+                # SQUAT'S FORE-AFT SIGN IS UNRESOLVED (H44/H47). Said on every
+                # squat result rather than left to the docs, because the failure
+                # is a MIRRORED path and nothing downstream can see it.
                 if lift_name == "squat":
                     result["notes"].append(
                         "step 8's fore-aft sign is UNRESOLVED on squat: the "
-                        "crown agrees with the video on 6 of 10 sets and the "
-                        "per-lift constant on 5 of 10, so this path may be "
-                        "mirrored whichever route ran. See project.CROWN_BODY")
+                        "per-lift constant agrees with the video on 5 of 10 "
+                        "sets, so this path may be mirrored. No fixed wrist "
+                        "convention fixes it — see project.anatomical_axis")
             except ValueError as e:
                 result["notes"].append(f"step 8 fell back to max variance: {e}")
         else:
