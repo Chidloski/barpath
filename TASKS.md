@@ -54,6 +54,63 @@ the last entry in `KNOWN_ROM_FAILURES`.
 
 ## Defects recorded and not fixed
 
+- **`src/vtrack/` HAS A PIXEL-SCALE ASSUMPTION BAKED IN, and it is why the
+  2026-08-24/25 720p captures do not track.** Owner's instruction 2026-08-25 is
+  to make the tracker flexible rather than downscale, because past problems came
+  from too LITTLE resolution. Diagnosed but NOT fixed — what follows is measured,
+  so the next attempt does not start from zero.
+
+  **The blocker that is proven.** `geom.R_MIN, R_MAX = 45.0, 145.0` bounds the
+  seed's plate-radius search in ABSOLUTE PIXELS. Every 360p capture locks
+  73.7-109.9 px, comfortably inside. At 720p the true radius is ~200 px, outside
+  it, so the search cannot see the plate and locks clutter instead: the six 720p
+  clips lock 50, 51, 62, 70, 87 and 94 px and all are wrong. Widening the band
+  to 90-290 takes `squat_ssb_120x4_2` from 69.7 px to **197.1 px** — the correct
+  plate — at 99.8% coverage. That much is settled.
+
+  **It is necessary and NOT sufficient.** With the band widened and
+  `track.MAX_STEP_PX`, `LATTICE_AGREE_PX`, `REACQ_BASE_REACH`, `SPEED_SLACK`,
+  `REACQ_MAX_REACH` and `geom.RING_TOL` all scaled x2, the clip is still
+  CONDEMNED — and correctly: `condition.condemned` is `speed_frac >
+  CONDEMN_FRAC`, the fraction of frames implying over 5 m/s, so the path is
+  still jumping even with the right plate. Something beyond these constants
+  differs at 720p.
+
+  **Three hypotheses tested and FALSIFIED**, recorded so they are not retried:
+  `LATTICE_AGREE_PX` alone (8/12/16 give bit-identical output — at 5 markers the
+  clip runs the conic branch and that constant never executes); the detector
+  kernel `detect_frame(size=7 -> 13)` alone (worse, and with the band also open
+  it pushes the radius to 253 px and the path under-reads by 26%); and
+  `CONDEMN_FRAC` (raising it to 0.05 does not un-condemn, because the speed
+  fraction is what fires).
+
+  **What downscaling proves, and why it is not the fix.** `squat_ssb_120x4_2` at
+  360p gives fore-aft 47.4 cm and travel 74.6 cm against straight-bar squats'
+  42.1-55.1 and 70.2-81.2, with 7 of 8 markers. All three SSB squats recover
+  that way. So the FOOTAGE is good and only the tracker's scale assumption is
+  wrong — but downscaling throws away the resolution the owner deliberately
+  added.
+
+  **The suggested shape of a real fix**: work in units of the PLATE RADIUS
+  rather than pixels. Estimate the radius once with a scale-free search, then
+  express every constant above as a fraction of it. That is resolution-
+  independent by construction rather than by a frame-height fudge factor, and it
+  survives a camera that moves closer as well as a sensor that gains pixels.
+
+- **`deadlift_180x3_20260825` is the extreme case of the same bug** — shot close
+  AND at 720p, so its plate is ~190 px, furthest outside the band; it locks 87 px
+  of clutter and reports 15 cm of travel for a deadlift. It does NOT recover by
+  downscaling (the only one of the four that does not), so it likely has a second
+  problem on top and needs its own look once the scale fix lands.
+
+- **`bench_pause_105x2_20260824` has a person walking through frame** with a
+  water bottle at t=12 s, occluding the plate entirely, and tracks at 59.6%
+  coverage with 3 markers. The owner's position is that an occlusion this brief
+  should not break a clip. UNTOUCHED so far — some of its marker loss may be the
+  scale bug rather than the passer-by, and that cannot be separated until the
+  scale fix lands.
+
+
 - **THE SEVEN 2026-08-24/25 CAPTURES ARE TRACKED AND FIVE OF THEM ARE JUNK.**
   Their CSVs are written into `data_v2/tracked/` but **deliberately NOT
   committed**, pending the owner, because a cached read does not run
