@@ -54,6 +54,42 @@ the last entry in `KNOWN_ROM_FAILURES`.
 
 ## Defects recorded and not fixed
 
+- **THE SEVEN 2026-08-24/25 CAPTURES ARE TRACKED AND FIVE OF THEM ARE JUNK.**
+  Their CSVs are written into `data_v2/tracked/` but **deliberately NOT
+  committed**, pending the owner, because a cached read does not run
+  `vtrack.validate` — committing a bad track silences its own warning for the
+  life of the repo.
+
+  | capture | verdict |
+  |---|---|
+  | `bench_90x4_20260824` | GOOD — 98.4% coverage, 32.7 cm travel, 4/4 reps |
+  | `deadlift_160x6_20260825` | GOOD — 100%, 41.4 cm, 6/6 reps |
+  | `bench_pause_105x2_20260824` | flagged — 218.7 cm travel, 59.6% coverage |
+  | `deadlift_180x3_20260825` | flagged — travel implausible, 4 reps vs 3 |
+  | `squat_ssb_110x4_1_20260824` | flagged — 3 reps vs 4 |
+  | `squat_ssb_130x4_3_20260824` | flagged — 36.1 cm travel |
+  | `squat_ssb_120x4_2_20260824` | **BAD AND SILENT** — see below |
+
+  **No SSB squat tracks.** That is a loss beyond the three captures: an SSB is a
+  different grip, and grip is the live hypothesis for why squat's fore-aft sign
+  is unrecoverable, so these were the natural experiment for it.
+
+- **`vtrack.validate` does not gate FORE-AFT excursion, and one capture proves
+  it should.** `squat_ssb_120x4_2` passes every check — 100% coverage, 1.58 px
+  residual, 4 of 4 reps — with **163.4 cm of whole-clip fore-aft on a squat**.
+  It is the D2 failure the `implausible` flag exists to catch, arriving through
+  the one quantity nothing looks at.
+
+  **Travel is the wrong thing to tighten**: `implausible` uses `VERTICAL_ROM_M`
+  as a FLOOR and must, because whole-clip travel legitimately includes the
+  walkout — good squats reach 70.2-81.2 cm against a 45-76 cm rep ROM, so a
+  ceiling would fire on `squat_145x4_2`. **Fore-aft separates cleanly where
+  travel cannot**: every straight-bar squat in the corpus sits at 42.1-55.1 cm
+  (median 51.7), and the two SSB tracks that produced a number are 149.6 and
+  163.4 — 2.7x the worst good one, with nothing in the gap. A `FORE_AFT_MAX_M`
+  per lift, measured the way `VERTICAL_ROM_M` was, would have caught this.
+
+
 - **Two 2026-08-13 spoto benches do not track** — 94.1 and 72.2 cm of whole-clip
   travel on a bench press. A footage problem, not a code one. `vtrack.IMPLAUSIBLE_MULT`
   is the two-sided flag that now catches them (H16).
