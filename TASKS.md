@@ -88,6 +88,20 @@ the last entry in `KNOWN_ROM_FAILURES`.
   (median 51.7), and the two SSB tracks that produced a number are 149.6 and
   163.4 — 2.7x the worst good one, with nothing in the gap. A `FORE_AFT_MAX_M`
   per lift, measured the way `VERTICAL_ROM_M` was, would have caught this.
+- **A NEW CAPTURE'S NAME COLLIDES WITH AN OLD ONE'S PREFIX, and a gate now
+  scores the wrong capture.** `deadlift_160x6_20260825` (2026-08-25, one set, no
+  index) sorts BEFORE `deadlift_160x6_2_20260804` and matches the prefix
+  `deadlift_160x6_2`, so `test_the_three_deadlifts_H8_and_H9_were_built_for`
+  silently scores the 2026-08-25 capture in place of the 2026-08-04 one it was
+  written for, and fails. Found 2026-08-25 (H47).
+
+  The mechanism is `next(p for p in CAPTURES if p.stem.startswith(stem))`, and
+  the same `startswith` idiom is used in `WRONG_REP_COUNT`,
+  `KNOWN_ROM_FAILURES`, `CAMERA_SIDE_EXCEPTIONS` and the B4 gate's exception
+  tuples. **An unindexed capture name is a prefix of every indexed one that
+  shares its weight and reps**, so this will happen again. Either index every
+  capture (`_1` even when there is only one set) or match on the date-stripped
+  stem rather than a prefix.
 
 
 - **Two 2026-08-13 spoto benches do not track** — 94.1 and 72.2 cm of whole-clip
@@ -114,12 +128,60 @@ the last entry in `KNOWN_ROM_FAILURES`.
 
 ## Decisions for the owner
 
-- **Should `deadlift_160x6_1_20260818` be excluded from scoring IN CODE?** It is
+- **SQUAT'S FORE-AFT DIRECTION IS UNRESOLVED, and it is the live question.**
+  The shipped constant agrees with the video on 5 of 10 squats — chance — so a
+  squat path may render MIRRORED. The five it gets wrong are named in
+  `test_the_fore_aft_SIGN_agrees_with_the_video_B4_closed`; deleting that tuple
+  is the test that this is solved.
+
+  **WHY NO WRIST CONVENTION CAN WORK, measured 2026-08-25 and the reason to stop
+  proposing one.** The azimuth of every watch axis from the lifter's own
+  ANTERIOR, as circular consistency R (1 = every set agrees, 0 = scattered):
+
+    | axis | squat | bench |
+    |---|---|---|
+    | X (crown) | **0.22** | 0.80 |
+    | Y (12 o'clock) | **0.26** | 0.77 |
+    | Z (screen) | **0.33** | 0.77 |
+
+  The crown's bearing across the ten squats is +4, −1, −26, −56, −73, +17, +84,
+  +150, −166, −178 — the whole circle. WITHIN a set it holds to 9–13 degrees, so
+  the posture is stable and the owner's description of it is right; it is
+  BETWEEN sets that the bearing moves. A hand resting on a bar behind the neck
+  does that; a hand gripping a straight bar does not, which is why bench sits at
+  0.80.
+
+  **FIVE explanations are ELIMINATED. Do not re-open them.** The crown
+  convention (tried, 6 of 10, rejected); camera side (owner-confirmed 2026-08-25
+  — every squat from the right except `squat_145x4_2_20260817`); a mirrored clip
+  (owner: clips are never flipped); synchronisation (the half-rep lag that lifts
+  the horizontal to +0.61…+0.84 takes the VERTICAL from 2–4 cm to 51–86 cm, so
+  τ=0 is right); and a stale tracker cache (all thirteen tracked on one commit).
+
+  **What is left.** A capture-time sign calibration — a deliberate known-direction
+  move during the opening hold — is the only route that recovers the direction
+  without the video. The walkout will NOT serve: pre-rep integration drift is
+  9.5–22 m over 25–32 s, burying a ~1 m signal. The SSB squats are the natural
+  experiment for whether GRIP is the variable, and they are recoverable once the
+  tracker handles 720p.
+
+- **Should `deadlift_160x6_1_20260818` be excluded from scoring IN CODE?**- **Should `deadlift_160x6_1_20260818` be excluded from scoring IN CODE?** It is
   the only strapped capture in the corpus, the watch moved, and it should
   referee nothing. Excluding it changes what every corpus-wide median means, so
   it is a decision and not a tidy-up. Until it is taken, exclude it by hand and
   say so. See H20 and the *Reading a number* section of `CLAUDE.md`.
 - **Wire `capture.fore_aft_flags` in, or delete it?** See above.
+- **`metrics.vs_truth` still chooses the axis sign by correlating with the
+  video**, so no score it reports can penalise a mirrored set — which is half of
+  why H44's defect survived so long, the other half being that a near-
+  perpendicular axis FLATTENS the curve and rms rewards that. The owner has asked
+  for "report both": keep the fitted flip so every existing number stays
+  comparable, and report the shipped-sign error and the video in anatomical
+  coordinates alongside it. **Not yet built** — `metrics.py` is a `main` module
+  and was out of scope for H44's branch. Until it is, the gallery is showing a
+  BETTER sign than the pipeline ships, because it draws `curve_pipeline` after
+  the flip, and every camera-left capture (all ten deadlifts, plus
+  `squat_145x4_2`) is drawn mirrored against every camera-right one.
 
 ## Measurement debt
 

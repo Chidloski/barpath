@@ -65,7 +65,7 @@ Nine steps, one module each. `CLAUDE.md` has the mechanism; this is the verdict.
 | 5b drift tilt | `correct.fit_drift_tilt` | **ON since 2026-08-16.** Self-limiting. |
 | 6 wrist→bar offset | `correct.apply_offset` | **ON since 2026-08-06.** |
 | 7 per-rep detrend | `correct.detrend` | **ON**, order 1. Load-bearing for its per-rep INDEPENDENCE. |
-| 8 display axis | `project.py` | From ATTITUDE, via `anatomical_axis`. Sign from `FORE_AFT_SENSE`. |
+| 8 display axis | `project.py` | From ATTITUDE, via `anatomical_axis`. Angle per-lift (`BAR_ANGLE_BY_LIFT`: squat −8°, rest 23°). Sign from `FORE_AFT_SENSE` — **7 of 7 bench, 8 of 10 deadlift, 5 of 10 SQUAT, i.e. chance**. |
 | 9 overlay plot | `plot.py` | Horizontal stretched 4×. |
 | 10 product view | `display.py` | Not a pipeline step. A layer after 9. |
 
@@ -84,31 +84,46 @@ Horizontal is the problem, and it is a deadlift problem.
 
 ## What works
 
-**Step 5b, the fitted drift tilt.** A world-horizontal attitude drift rate,
-fitted against the set's own rep-to-rep dispersion. Self-limiting rather than
-gated on the lift: it finds |β| of 0.001–0.008 °/s on bench and squat against
-0.008–0.051 on deadlift. It also *removed* the per-rep excursion-growth
-statistic that used to be the sharpest IMPACT/SMOOTH split — deadlift compounded
-at +29.2 %/rep against bench's +0.3 and squat's +1.9, and 5b is what fixes it.
-Do not quote the growth statistic as a live class separator.
+**A per-lift display angle — and squat's SIGN still unresolved (H44).**
+Step 8 assumes fore-aft is a fixed direction in watch coordinates, and only that
+vector's HORIZONTAL projection becomes the axis — so the premise survives exactly
+as far as the vector lies flat: 4–6° off horizontal on bench, 0–5° on deadlift,
+**31–55° on squat**. A tipped vector amplifies a body-plane rotation into a
+larger screen one and makes it posture-sensitive, putting the shipped axis a
+median 62° from the video-optimal direction on squat against 12° on bench, and
+making its sign a coin toss — 5 of 10 sets against bench's 7 of 7, wrong on the
+ones the reconstruction tracks best at |correlation| 0.74–0.92.
 
-**Step 6, the wrist-to-bar offset.** Deadlift's horizontal acceleration
-correlation goes 0.12–0.23 → 0.43–0.64 with `d` applied; bench improves on 6 of
-6; the vertical control does not move, which is what makes it a real recovery
-rather than a rescaling. **It does not cash out in position**, and that gap is
-itself a finding, not a footnote.
+**The LINE is a constant, just not 23°:** squat wants −8°, leave-one-CAPTURE-out
+returning −12…−4 at held-out |correlation| 0.75 against 0.62 shipped, where the
+per-set video-optimal axis reaches only 0.79. Bench and deadlift gain nothing and
+keep 23°, bit-identical. It costs `beats_null` — squat 8 of 10 → 7 of 10 while
+the median goes 3.19 → 3.05 cm, because a near-perpendicular axis projects a
+FLATTENED curve and rms rewards flatness (H37's attenuation), so the metric
+mildly preferred the wrong axis. Shipped under correctness-outranks-score.
 
-**Step 7's per-rep INDEPENDENCE, not its closure.** Two free parameters per rep
-with no continuity between them. Making it continuous across the set costs
-8.21 → 17.00 cm. This is the single most load-bearing property in `correct.py`.
+**The SIGN is not a constant, and nothing wrist-derived can be one.** No fixed
+body direction exceeds 6 of 10 on squat over a full-sphere sweep, against bench's
+perfectly consistent 0 of 7 raw, which is the control. The owner's crown
+convention — the crown points where the face points — was tried and **REJECTED at
+6 of 10**; it moved which sets are mirrored, not how many. The reason it cannot
+work is the finding: the azimuth of every watch axis from the lifter's own
+anterior has circular consistency **0.22-0.33 on squat against 0.77-0.80 on
+bench** — scattered round the whole circle. Within a set the wrist holds to 9-13
+degrees, so the posture is stable; it is BETWEEN sets that its bearing moves,
+which is what a hand resting on a bar does and a hand gripping one does not.
+Also eliminated: camera side and a mirrored clip (both owner-confirmed), sync
+(the half-rep lag that lifts the horizontal to +0.61…+0.84 takes the vertical
+from 2-4 cm to 51-86 cm), and a stale tracker cache. The B4 sign gate had been
+red at 11 of 17 throughout, unread.
 
-**Step 8's attitude-derived axis.** The hand is clamped to the bar, so fore-aft
-is a fixed direction in watch coordinates and one angle fixes it. The rotation
+**Step 8's attitude-derived axis (H9), as qualified by H44 above.** The rotation
 axis is **3–25× more reproducible** than the video-identified reference it was
-originally scored against — which means the corpus has no referee sharp enough
-to measure its accuracy, and that its old "41° median error" was substantially
-the referee's noise. Precise is not the same as right; the evidence it is also
-roughly right is deadlift h_rms 4.97 → 3.85 cm, under its own null.
+originally scored against, so its old "41° median error" was substantially the
+referee's noise; the evidence it is also roughly right is deadlift h_rms
+4.97 → 3.85 cm, under its own null. Precise is not the same as right, and H44 is
+what that distinction eventually cost: reproducible per set, and on squat
+reproducibly perpendicular.
 
 **The video referee, `src/vtrack/`.** Uses the owner's prior that the eight
 stickers lie on a circle at even spacing **in the search**, not only in the fit —

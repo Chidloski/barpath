@@ -236,11 +236,37 @@ each step is shaped the way it is, and what was tried instead, is in
    BULGE at mid-rep, not a misplaced endpoint; see `FINDINGS.md` P3.
 8. `project.py` — the display axis comes from the ATTITUDE (H9), via
    `anatomical_axis`: the hand is clamped to the bar, so fore-aft is a fixed
-   direction in watch coordinates and one angle (`BAR_ANGLE_DEG`) fixes it. PCA
-   on horizontal displacement is still computed and still supplies `ratio` and
-   `excursion` for `confidence`, but it is no longer the axis. The SIGN comes
-   from `FORE_AFT_SENSE` (B4). **One step of that derivation has evidence
-   against it** — see P2 and `FINDINGS.md` H15 before relying on the sign.
+   direction in watch coordinates and one angle fixes it. PCA on horizontal
+   displacement is still computed and still supplies `ratio` and `excursion` for
+   `confidence`, but it is no longer the axis.
+
+   **That premise is TRUE FOR BENCH, MARGINAL FOR DEADLIFT AND FALSE FOR SQUAT
+   (H44, 2026-08-24).** Only the HORIZONTAL projection of the body vector becomes
+   the axis, so what matters is how far that vector tips out of horizontal —
+   4-6 degrees on bench, 0-5 on deadlift, **31-55 on squat**. A tipped vector
+   amplifies the mapping and makes it posture-sensitive, which put the shipped
+   axis 62 degrees from the video-optimal one on squat against 12 on bench. So
+   the angle is now per-lift: `BAR_ANGLE_BY_LIFT` holds squat at -8 degrees,
+   everything else keeps `BAR_ANGLE_DEG` = 23 and is bit-identical.
+
+   The SIGN comes from `FORE_AFT_SENSE` (B4), a per-lift constant, and it is
+   right 7 of 7 on bench and 8 of 10 on deadlift.
+
+   **IT IS 5 OF 10 ON SQUAT — chance — so a squat path may render MIRRORED, and
+   nothing in the pipeline can tell.** It is wrong on precisely the sets the
+   reconstruction otherwise tracks best (|correlation| 0.74-0.92), and no fixed
+   body direction repairs it: over a full-sphere sweep the best any constant
+   achieves is 6 of 10, against bench's perfectly consistent 0 of 7 raw. The
+   reason is measured — the azimuth of every watch axis from the lifter's own
+   anterior has circular consistency **0.22-0.33 on squat against 0.77-0.80 on
+   bench**, scattered around the whole circle. Within a set the wrist is stable
+   to 9-13 degrees; it is BETWEEN sets that its bearing moves.
+
+   Five explanations are ELIMINATED and must not be re-opened: the crown
+   convention (tried, 6 of 10, rejected), camera side (owner-confirmed),
+   synchronisation (the half-rep lag that would fix the horizontal takes the
+   vertical from 2-4 cm to 51-86 cm), a mirrored clip (owner: never flipped),
+   and a stale tracker cache. See `project.anatomical_axis` and `TASKS.md`.
 9. `plot.py` — overlay reps, aligned by start point, horizontal stretched 4x.
 
 **Step 10, which is not a step:** `display.py`, the product view (H13). A layer
@@ -321,7 +347,7 @@ shows the pattern.
 
 ## Reading a number
 
-Eight standing facts. A figure that predates one of them is measuring a
+Nine standing facts. A figure that predates one of them is measuring a
 different quantity. `FINDINGS.md` mostly does **not** cross out the superseded
 figure — it records it beside the new one, because what was believed and why it
 was wrong is the record this project runs on. **So check the date before you
@@ -359,6 +385,14 @@ quote, and say which side of the change you are on.**
    pipeline** — including most of the ones in `FINDINGS.md`. Squat and deadlift
    are bit-identical either side and their numbers carry over unchanged. To
    reproduce a pre-H40 bench figure, empty `correct.QUAD_LIFTS`.
+9. **SQUAT's display axis and fore-aft SIGN both changed (H44, 2026-08-24), so
+   every squat horizontal figure measured before that date is on a different
+   axis** — one sitting a median 62 degrees from the video-optimal direction.
+   The axis LINE is now right; **the SIGN is still not**, so a squat figure of
+   any date may be mirrored and squat's fore-aft DIRECTION should not be quoted
+   at all. Bench and deadlift are bit-identical either side and carry over
+   unchanged. To reproduce a pre-H44 squat figure, empty
+   `project.BAR_ANGLE_BY_LIFT`.
 
 ### The one measured constant you should not re-fit
 

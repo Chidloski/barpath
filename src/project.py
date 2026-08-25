@@ -196,6 +196,50 @@ EXCURSION_MAX_M = 0.20
 # SIGN. See `anatomical_axis` and B4.
 BAR_ANGLE_DEG = 23.0
 
+# PER-LIFT OVERRIDE, added 2026-08-24 (H44). 23 degrees is a bench-and-deadlift
+# number and the block above already said so — *"it was NOT separately optimised
+# on squat, and a squat sweep is the obvious next measurement"*. It was, and
+# squat does not like it.
+#
+# WHY SQUAT IS THE SENSITIVE ONE, which is the whole mechanism. Only the
+# HORIZONTAL projection of `body` becomes the display axis, so what matters is
+# how far that vector tips out of the horizontal plane. Measured over the 27
+# scoreable captures:
+#
+#     lift      body vector off horizontal   axis error vs the video-optimal
+#     bench            4 - 6 deg                      12 deg
+#     deadlift         0 - 5 deg                      47 deg
+#     squat           31 - 55 deg                     62 deg
+#
+# A vector lying nearly flat maps a body-plane rotation onto the screen roughly
+# 1:1, so bench is insensitive and its basin is 20 degrees wide. A vector tipped
+# 50 degrees AMPLIFIES that rotation — 23 degrees of body angle becomes 62
+# degrees of screen error — and makes the projected direction sensitive to wrist
+# posture, which varies between sessions. That is why one constant cannot serve
+# all three, and why the failure shows up on squat first.
+#
+# HOW -8 WAS OBTAINED. Swept against the video over the 10 squats, scoring the
+# weighted per-rep correlation of the projected path against the tracked bar.
+# **Leave-one-CAPTURE-out**, which is the standard this repo holds fits to: the
+# ten folds return -12 to -4 degrees, and the held-out |correlation| is 0.75
+# against 0.62 for the shipped 23. The per-set video-optimal axis reaches 0.79,
+# so a single constant recovers essentially all of it. Bench and deadlift were
+# swept the same way and gain nothing (0.93 -> 0.91 and 0.29 -> 0.30), so they
+# keep 23 and are bit-identical either side of this change.
+#
+# **IT COSTS `beats_null`, AND THAT IS RECORDED RATHER THAN HIDDEN.** Squat's
+# median horizontal goes 3.19 -> 3.05 cm but `beats_null` goes 8 of 10 -> 7 of
+# 10. The reason is not subtle: an axis near perpendicular to the true fore-aft
+# projects a FLATTENED curve, and rms rewards flatness (H37's attenuation). The
+# metric mildly prefers the wrong axis. Shipped anyway under the owner's rule of
+# 2026-08-07 — a physically wrong term is not kept because fixing it scores
+# worse; the regression is a second bug to explain.
+#
+# WHAT WOULD FALSIFY IT: a squat capture whose wrist posture puts the body
+# vector back near horizontal, which would make 23 and -8 agree and this entry
+# pointless. Still one lifter and one watch.
+BAR_ANGLE_BY_LIFT = {"squat": -8.0}
+
 # Which anatomical direction the body-frame fore-aft vector points, per lift.
 # +1 means it points ANTERIOR (the way the lifter faces); -1 means POSTERIOR.
 # This is B4 — the sign — and it is closed for the two UPRIGHT lifts and left
@@ -243,9 +287,50 @@ BAR_ANGLE_DEG = 23.0
 # sign here should invert and `sign_agrees_with_geometry` should stay true.
 FORE_AFT_SENSE = {"deadlift": -1.0, "squat": +1.0, "bench": -1.0}
 
+# THE CROWN WAS TRIED AS SQUAT'S SIGN AND REJECTED (H44/H47, 2026-08-25).
+# Recorded rather than deleted, because the measurement is the useful part and
+# the idea is an obvious one to have again.
+#
+# `FORE_AFT_SENSE` above is a per-lift CONSTANT and squat is not a lift that has
+# one: it agrees with the video on **5 of 10 sets**, and is wrong on precisely
+# the sets the reconstruction otherwise tracks BEST, at |correlation| 0.74-0.92.
+# So the curve is good and the arrow on it is a coin toss. No fixed body
+# direction repairs that — swept over the full sphere, the best any constant
+# achieves on squat is 6 of 10, against bench's 0 of 7 raw, which is perfectly
+# consistent and is the control that makes the difference real.
+#
+# The owner supplied an anatomical convention: *"during all reps the crown
+# points in the same horizontal direction as my face does"*. It reads the
+# anterior off the attitude, which is what B4 has always lacked. **It scored 6 of
+# 10 — it moved WHICH sets are mirrored, not how many — and it is not shipped.**
+#
+# WHY IT CANNOT WORK, which is the finding worth keeping. Measured across the
+# corpus, the azimuth of every watch axis from the lifter's own anterior:
+#
+#     axis          squat, circular R      bench, circular R
+#     X (crown)          0.22                    0.80
+#     Y (12 o'clock)     0.26                    0.77
+#     Z (screen)         0.33                    0.77
+#
+# R = 1 means every set agrees, 0 means scattered uniformly. The crown's bearing
+# across the ten squats is +4, -1, -26, -56, -73, +17, +84, +150, -166, -178 —
+# the whole circle. WITHIN a set it is stable to 9-13 degrees, so the owner's
+# posture description is right; what is not repeatable is that posture's BEARING
+# relative to the torso. With the elbow tucked back, a small change in hand width
+# swings the forearm's horizontal bearing a long way, which is why bench — hand
+# clamped to a straight bar, same grip every time — sits at R = 0.80 and squat
+# does not.
+#
+# So squat's fore-aft DIRECTION is not recoverable from wrist attitude by any
+# fixed convention. Eliminated alongside it: camera side (owner-confirmed
+# 2026-08-25), synchronisation (the half-rep lag that would fix the horizontal
+# takes the VERTICAL from 2-4 cm to 51-86 cm), a mirrored clip (owner: never
+# flipped), and a stale tracker cache (all thirteen tracked on one commit).
+# See `TASKS.md`.
+
 
 def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
-                    angle_deg: float = BAR_ANGLE_DEG,
+                    angle_deg: float | None = None,
                     lift: str | None = None) -> np.ndarray:
     """The display axis from ATTITUDE alone, DIRECTED when the lift is known.
 
@@ -263,14 +348,22 @@ def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
     of what is left. Dropping the vertical rather than assuming it is zero
     matters on squat, where the forearm is nowhere near vertical.
 
-    **Read `BAR_ANGLE_DEG` before using this on a new lift or grip.** The angle
-    is a property of how the hand holds the bar, and this function is only as
-    good as that constant.
+    **Read `BAR_ANGLE_DEG` and `BAR_ANGLE_BY_LIFT` before using this on a new
+    lift or grip.** The angle is a property of how the hand holds the bar, and
+    this function is only as good as that constant. `angle_deg=None` looks it up
+    by lift, which is the shipped path; passing a number overrides the lookup.
 
     **THE SIGN IS RESOLVED WHEN `lift` IS GIVEN. B4 is closed (2026-08-16),
     open since 2026-07-30.** With `lift=None` this returns an undirected axis and
     behaves as it did before, which is what a caller with an unknown lift should
     get.
+
+    **THE SIGN IS RIGHT ON BENCH AND DEADLIFT AND UNRESOLVED ON SQUAT.**
+    `FORE_AFT_SENSE` is right 7 of 7 on bench and 8 of 10 on deadlift, and 5 of
+    10 on squat — chance. A squat path may therefore render MIRRORED, and no
+    fixed convention fixes it; the crown was tried and rejected. The comment
+    block above `anatomical_axis` carries the measurement and the list of
+    explanations already eliminated. Do not re-open them.
 
     Two things had to become true, and both are measurements rather than
     arguments. **First, the reconstruction had to agree with itself.** This
@@ -296,14 +389,10 @@ def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
     known bad (`deadlift_170x4_3`, whose clock fits 22.8% drift, and
     `bench_spoto_95x5_2`). Four of six deadlifts disagree on nothing.
 
-    What is still missing is not self-consistency but a CONVENTION: which end of
-    the axis is "toward the lifter". The watch knows its wrist, and the owner's
-    grip is known (mixed, left supinated, so the screen faces the lifter on a
-    deadlift and away on a bench) — and the sign of the screen normal along this
-    axis predicts the sign `vs_truth` chose on 5 of 6 deadlifts and 3 of 3
-    squats. It is not smuggled in here because it needs a grip input the API
-    does not have and an anatomical convention checked against `camera_side`,
-    both of which are changes of their own.
+    **Second, a CONVENTION was needed** — which end of the axis is "toward the
+    lifter" — and it is still missing on SQUAT. This paragraph used to propose
+    the screen normal; the crown was tried instead and rejected at 6 of 10. The
+    block above records why no wrist-derived convention can work there.
     """
     quat = np.asarray(quat, dtype=float)
     inside = np.zeros(len(quat), dtype=bool)
@@ -312,6 +401,8 @@ def anatomical_axis(quat: np.ndarray, bounds: list[tuple[int, int]],
     if not inside.any():
         raise ValueError("anatomical_axis needs at least one rep window")
 
+    if angle_deg is None:
+        angle_deg = BAR_ANGLE_BY_LIFT.get(lift, BAR_ANGLE_DEG)
     phi = np.deg2rad(angle_deg)
     body = np.array([0.0, np.sin(phi), np.cos(phi)])
 
